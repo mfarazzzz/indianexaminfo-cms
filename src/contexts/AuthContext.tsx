@@ -25,24 +25,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
+    // Step 1: fetch the profile + role (no recursive RLS join)
     const { data, error } = await (db as any)
       .from("user_profiles")
-      .select(`
-        id, name, avatar, role_id, is_active, last_login, created_at,
-        roles ( id, slug, name ),
-        role_permissions ( permissions ( slug ) )
-      `)
+      .select(`id, name, avatar, role_id, is_active, last_login, created_at, roles ( id, slug, name )`)
       .eq("id", userId)
       .single();
 
     if (error || !data) return null;
 
+    // Step 2: fetch permissions separately via role_id to avoid invalid FK traversal
     const permissions: string[] = [];
-    if (data.role_permissions) {
-      for (const rp of data.role_permissions as any[]) {
-        if (rp.permissions?.slug) permissions.push(rp.permissions.slug);
+    if (data.role_id) {
+      const { data: rpData } = await (db as any)
+        .from("role_permissions")
+        .select(`permissions ( slug )`)
+        .eq("role_id", data.role_id);
+
+      if (rpData) {
+        for (const rp of rpData as any[]) {
+          if (rp.permissions?.slug) permissions.push(rp.permissions.slug);
+        }
       }
     }
+
     const role = data.roles as any;
     return {
       id: data.id, name: data.name, avatar: data.avatar, roleId: data.role_id ?? "",
