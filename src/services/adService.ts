@@ -88,3 +88,118 @@ export async function getPendingCampaignCount(): Promise<number> {
   const { count } = await db.from("ad_campaigns").select("id", { count: "exact", head: true }).eq("status", "pending-review");
   return count ?? 0;
 }
+
+export async function getCampaignById(id: string): Promise<AdCampaign | null> {
+  const { data, error } = await db.from("ad_campaigns")
+    .select("*, advertisers(name)")
+    .eq("id", id)
+    .single();
+  if (error) return null;
+  const r = data as any;
+  return {
+    id: r.id, advertiserId: r.advertiser_id, advertiserName: r.advertisers?.name,
+    name: r.name, type: r.type, status: r.status, budgetTotal: r.budget_total,
+    budgetSpent: r.budget_spent, budgetDaily: r.budget_daily, billingType: r.billing_type,
+    rate: r.rate, impressions: r.impressions, clicks: r.clicks, ctr: r.ctr,
+    startDate: r.start_date, endDate: r.end_date, targetZones: r.target_zones ?? [],
+    targetCategories: r.target_categories ?? [], notes: r.notes,
+    approvedBy: r.approved_by, approvedAt: r.approved_at, rejectionReason: r.rejection_reason,
+    createdAt: r.created_at, updatedAt: r.updated_at, createdBy: r.created_by,
+  };
+}
+
+export async function createCampaign(input: {
+  advertiserId: string; name: string; type?: string | null;
+  budgetTotal: number; budgetDaily: number; billingType?: string | null; rate?: number;
+  startDate?: string | null; endDate?: string | null;
+  targetZones?: string[]; targetCategories?: string[];
+  notes?: string | null; createdBy?: string | null;
+}): Promise<AdCampaign> {
+  const { data, error } = await db.from("ad_campaigns").insert({
+    advertiser_id: input.advertiserId, name: input.name, type: input.type ?? null,
+    budget_total: input.budgetTotal, budget_daily: input.budgetDaily,
+    billing_type: input.billingType ?? null, rate: input.rate ?? 0,
+    start_date: input.startDate ?? null, end_date: input.endDate ?? null,
+    target_zones: input.targetZones ?? [], target_categories: input.targetCategories ?? [],
+    notes: input.notes ?? null, status: "draft", created_by: input.createdBy ?? null,
+  }).select("*, advertisers(name)").single();
+  if (error) throw error;
+  const r = data as any;
+  return {
+    id: r.id, advertiserId: r.advertiser_id, advertiserName: r.advertisers?.name,
+    name: r.name, type: r.type, status: r.status, budgetTotal: r.budget_total,
+    budgetSpent: r.budget_spent, budgetDaily: r.budget_daily, billingType: r.billing_type,
+    rate: r.rate, impressions: r.impressions, clicks: r.clicks, ctr: r.ctr,
+    startDate: r.start_date, endDate: r.end_date, targetZones: r.target_zones ?? [],
+    targetCategories: r.target_categories ?? [], notes: r.notes,
+    approvedBy: r.approved_by, approvedAt: r.approved_at, rejectionReason: r.rejection_reason,
+    createdAt: r.created_at, updatedAt: r.updated_at, createdBy: r.created_by,
+  };
+}
+
+export async function updateCampaign(id: string, input: Partial<{
+  name: string; type: string | null; budgetTotal: number; budgetDaily: number;
+  billingType: string | null; rate: number; startDate: string | null; endDate: string | null;
+  targetZones: string[]; targetCategories: string[]; notes: string | null;
+}>): Promise<void> {
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.name !== undefined) updates.name = input.name;
+  if (input.type !== undefined) updates.type = input.type;
+  if (input.budgetTotal !== undefined) updates.budget_total = input.budgetTotal;
+  if (input.budgetDaily !== undefined) updates.budget_daily = input.budgetDaily;
+  if (input.billingType !== undefined) updates.billing_type = input.billingType;
+  if (input.rate !== undefined) updates.rate = input.rate;
+  if (input.startDate !== undefined) updates.start_date = input.startDate;
+  if (input.endDate !== undefined) updates.end_date = input.endDate;
+  if (input.targetZones !== undefined) updates.target_zones = input.targetZones;
+  if (input.targetCategories !== undefined) updates.target_categories = input.targetCategories;
+  if (input.notes !== undefined) updates.notes = input.notes;
+  const { error } = await db.from("ad_campaigns").update(updates).eq("id", id);
+  if (error) throw error;
+}
+
+export async function createCreative(input: {
+  campaignId: string; name: string; type?: string | null;
+  imageUrl?: string | null; htmlCode?: string | null;
+  linkUrl: string; altText?: string | null; size?: string | null;
+}): Promise<AdCreative> {
+  const { data, error } = await db.from("ad_creatives").insert({
+    campaign_id: input.campaignId, name: input.name, type: input.type ?? null,
+    image_url: input.imageUrl ?? null, html_code: input.htmlCode ?? null,
+    link_url: input.linkUrl, alt_text: input.altText ?? null, size: input.size ?? null,
+    is_active: true,
+  }).select().single();
+  if (error) throw error;
+  const r = data as any;
+  return {
+    id: r.id, campaignId: r.campaign_id, name: r.name, type: r.type,
+    imageUrl: r.image_url, htmlCode: r.html_code, linkUrl: r.link_url,
+    altText: r.alt_text, size: r.size, isActive: r.is_active,
+    impressions: r.impressions, clicks: r.clicks, createdAt: r.created_at,
+  };
+}
+
+export async function deleteCreative(id: string): Promise<void> {
+  const { error } = await db.from("ad_creatives").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function createAdvertiser(input: {
+  name: string; companyName?: string | null; email?: string | null;
+  phone?: string | null; gstNumber?: string | null; contactPerson?: string | null;
+}): Promise<Advertiser> {
+  const { data, error } = await db.from("advertisers").insert({
+    name: input.name, company_name: input.companyName ?? null,
+    email: input.email ?? null, phone: input.phone ?? null,
+    gst_number: input.gstNumber ?? null, contact_person: input.contactPerson ?? null,
+    status: "active",
+  }).select().single();
+  if (error) throw error;
+  const r = data as any;
+  return {
+    id: r.id, userId: r.user_id, name: r.name, companyName: r.company_name,
+    email: r.email, phone: r.phone, gstNumber: r.gst_number,
+    contactPerson: r.contact_person, status: r.status,
+    totalSpend: r.total_spend, createdAt: r.created_at,
+  };
+}

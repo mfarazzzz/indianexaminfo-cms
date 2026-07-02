@@ -8,45 +8,6 @@ import React, {
 import { supabase } from "@/lib/supabase/client";
 import { db } from "@/lib/supabase/client";
 import type { AuthUser, UserProfile } from "@/types/user";
-import { env } from "@/config/env";
-
-// ---------------------------------------------------------------------------
-// DEV MODE — active when Supabase URL is still the placeholder value.
-// Allows local development without a real Supabase project.
-// Demo credentials: admin@demo.com / demo1234
-// ---------------------------------------------------------------------------
-const IS_DEV_MODE =
-  !env.SUPABASE_URL || env.SUPABASE_URL === "https://your-project.supabase.co";
-
-const DEV_CREDENTIALS = { email: "admin@demo.com", password: "demo1234" };
-
-const DEV_USER: AuthUser = {
-  id: "dev-user-001",
-  email: DEV_CREDENTIALS.email,
-  profile: {
-    id: "dev-user-001",
-    name: "Demo Admin",
-    avatar: null,
-    roleId: "role-superadmin",
-    roleName: "Super Admin",
-    roleSlug: "super-admin",
-    // Grant every permission in dev mode
-    permissions: [
-      "create_post","edit_any_post","edit_own_post","delete_post","publish_post",
-      "create_exam","edit_any_exam","delete_exam","publish_exam",
-      "manage_categories","manage_menus","manage_pages",
-      "upload_media","delete_media",
-      "manage_ads","view_own_ads","manage_ad_zones",
-      "manage_users","manage_roles",
-      "manage_settings","view_analytics","view_audit_log",
-    ],
-    isActive: true,
-    lastLogin: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
-  },
-};
-
-const DEV_SESSION_KEY = "cms_dev_session";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -62,22 +23,6 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  // ── DEV MODE helpers ──────────────────────────────────────────────────────
-  const devSignIn = useCallback(async (email: string, password: string) => {
-    if (email === DEV_CREDENTIALS.email && password === DEV_CREDENTIALS.password) {
-      sessionStorage.setItem(DEV_SESSION_KEY, "1");
-      setUser(DEV_USER);
-      return { error: null };
-    }
-    return { error: `Demo credentials: ${DEV_CREDENTIALS.email} / ${DEV_CREDENTIALS.password}` };
-  }, []);
-
-  const devSignOut = useCallback(async () => {
-    sessionStorage.removeItem(DEV_SESSION_KEY);
-    setUser(null);
-  }, []);
-  // ─────────────────────────────────────────────────────────────────────────
 
   const fetchProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
     const { data, error } = await (db as any)
@@ -101,7 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const role = data.roles as any;
     return {
       id: data.id, name: data.name, avatar: data.avatar, roleId: data.role_id ?? "",
-      roleName: role?.name ?? "", roleSlug: role?.slug ?? "author",
+      roleName: role?.name ?? "", roleSlug: role?.slug ?? "viewer",
       permissions, isActive: data.is_active, lastLogin: data.last_login, createdAt: data.created_at,
     };
   }, []);
@@ -109,17 +54,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadUser = useCallback(async () => {
     setIsLoading(true);
     try {
-      // ── DEV MODE ──────────────────────────────────────────────────────────
-      if (IS_DEV_MODE) {
-        if (sessionStorage.getItem(DEV_SESSION_KEY)) {
-          setUser(DEV_USER);
-        } else {
-          setUser(null);
-        }
-        setIsLoading(false);
-        return;
-      }
-      // ─────────────────────────────────────────────────────────────────────
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
         setUser(null);
@@ -142,13 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     loadUser();
 
-    // ── DEV MODE — no Supabase subscription needed ────────────────────────
-    if (IS_DEV_MODE) return;
-    // ─────────────────────────────────────────────────────────────────────
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        // TOKEN_REFRESHED: token silently renewed — no profile reload needed
         if (event === "TOKEN_REFRESHED") return;
 
         if (event === "SIGNED_OUT") {
@@ -157,8 +86,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        // PASSWORD_RECOVERY, USER_UPDATED, SIGNED_IN (from a different tab /
-        // explicit login) — reload profile to pick up role changes.
         if (session?.user) {
           await loadUser();
         }
@@ -169,9 +96,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadUser]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    // ── DEV MODE ────────────────────────────────────────────────────────────
-    if (IS_DEV_MODE) return devSignIn(email, password);
-    // ────────────────────────────────────────────────────────────────────────
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
     if (!data.user) return { error: "Login failed" };
@@ -194,10 +118,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchProfile]);
 
   const signOut = useCallback(async () => {
-    if (IS_DEV_MODE) return devSignOut();
     await supabase.auth.signOut();
     setUser(null);
-  }, [devSignOut]);
+  }, []);
 
   const refreshUser = useCallback(async () => {
     if (user) await loadUser();
