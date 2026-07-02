@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: Inter, system-ui, sans-serif;
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #F1F5F9; }
+  ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+}
+
+@layer components {
+  /* Form helpers */
+  .form-label {
+    @apply text-sm font-medium text-slate-700 block mb-1.5;
+  }
+  .form-hint {
+    @apply text-xs text-slate-400 mt-1;
+  }
+
+  /* Status badges */
+  .badge-draft       { @apply bg-slate-100 text-slate-600; }
+  .badge-review      { @apply bg-yellow-100 text-yellow-700; }
+  .badge-published   { @apply bg-green-100 text-green-700; }
+  .badge-unpublished { @apply bg-gray-100 text-gray-500; }
+  .badge-active      { @apply bg-blue-100 text-blue-700; }
+  .badge-pending     { @apply bg-orange-100 text-orange-700; }
+
+  /* Tiptap prose editor */
+  .ProseMirror {
+    @apply min-h-72 p-4 text-sm text-slate-800 leading-relaxed focus:outline-none;
+  }
+  .ProseMirror h2 { @apply text-xl font-bold mt-6 mb-2; }
+  .ProseMirror h3 { @apply text-lg font-semibold mt-4 mb-2; }
+  .ProseMirror h4 { @apply text-base font-semibold mt-3 mb-1; }
+  .ProseMirror p  { @apply mb-3 leading-7; }
+  .ProseMirror ul { @apply list-disc pl-5 mb-3 space-y-1; }
+  .ProseMirror ol { @apply list-decimal pl-5 mb-3 space-y-1; }
+  .ProseMirror a  { @apply text-blue-600 underline underline-offset-2; }
+  .ProseMirror table { @apply w-full border-collapse border border-slate-300 mb-4 text-sm; }
+  .ProseMirror th { @apply bg-slate-100 border border-slate-300 px-3 py-2 font-semibold text-left; }
+  .ProseMirror td { @apply border border-slate-300 px-3 py-2; }
+  .ProseMirror blockquote { @apply border-l-4 border-blue-400 pl-4 italic text-slate-600 my-3; }
+  .ProseMirror code { @apply bg-slate-100 px-1.5 py-0.5 rounded text-xs font-mono; }
+  .ProseMirror pre  { @apply bg-slate-900 text-slate-100 p-4 rounded mb-3 text-xs font-mono overflow-auto; }
+  .ProseMirror .is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    @apply text-slate-400 pointer-events-none float-left h-0;
+  }
+
+  /* Info & warning boxes rendered in Tiptap */
+  .ProseMirror .info-box {
+    @apply bg-blue-50 border-l-4 border-blue-400 px-4 py-3 rounded mb-3 text-sm text-blue-900;
+  }
+  .ProseMirror .warning-box {
+    @apply bg-yellow-50 border-l-4 border-yellow-400 px-4 py-3 rounded mb-3 text-sm text-yellow-900;
+  }
+}
