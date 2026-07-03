@@ -88,18 +88,21 @@ export type ContentPost = {
   title: string;
   excerpt: string;
   content: string;
-  examEntityId: string;   // matches frontend field name
-  examEntityName: string; // matches frontend field name
+  examEntityId: string;
+  examEntityName: string;
   pillar: Pillar;
   contentType: ContentType;
 
   quickLinks: { label: string; url: string; isPDF: boolean; isOfficial: boolean }[];
   importantDates?: { label: string; date: string; isUrgent: boolean }[];
+  /** Structured per-content-type fields — schema varies by contentType */
+  contentTypeData: Record<string, unknown>;
+  /** Attachments: PDFs, images, external URLs */
+  attachmentUrls: { label: string; url: string; type: "pdf" | "image" | "external"; isOfficial: boolean }[];
 
   featuredImage?: string;
   tags: string[];
 
-  // CMS workflow (extended from frontend "draft" | "published")
   status: "draft" | "review" | "published" | "unpublished";
   isFeatured: boolean;
   views: number;

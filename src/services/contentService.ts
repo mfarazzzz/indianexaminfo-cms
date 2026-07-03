@@ -11,12 +11,14 @@ function mapRow(row: Record<string, unknown>): ContentPost {
     title: row.title as string,
     excerpt: (row.excerpt as string) ?? "",
     content: (row.content as string) ?? "",
-    examEntityId: (row.exam_entity_id as string) ?? (row.exam_id as string) ?? "",
+    examEntityId: (row.exam_id as string) ?? "",
     examEntityName: (row.exam_entity_name as string) ?? "",
     pillar: row.pillar as Pillar,
     contentType: row.content_type as ContentType,
     quickLinks: (row.quick_links as ContentPost["quickLinks"]) ?? [],
     importantDates: (row.important_dates as ContentPost["importantDates"]) ?? [],
+    contentTypeData: (row.content_type_data as Record<string, unknown>) ?? {},
+    attachmentUrls: (row.attachment_urls as ContentPost["attachmentUrls"]) ?? [],
     featuredImage: row.featured_image as string | undefined,
     tags: (row.tags as string[]) ?? [],
     status: row.status as ContentPost["status"],
@@ -59,14 +61,25 @@ export async function getContentPostById(id: string): Promise<ContentPost | null
 
 export async function createContentPost(input: any): Promise<ContentPost> {
   const { data, error } = await db.from("content_posts").insert({
-    slug: input.slug, title: input.title, excerpt: input.excerpt ?? null,
-    content: input.content ? sanitizeHtml(input.content) : null, exam_id: input.examId ?? null,
-    exam_entity_name: input.examEntityName ?? null, pillar: input.pillar,
-    content_type: input.contentType, quick_links: input.quickLinks ?? [],
-    important_dates: input.importantDates ?? [], featured_image: input.featuredImage ?? null,
-    tags: input.tags ?? [], status: input.status ?? "draft",
-    is_featured: input.isFeatured ?? false, seo_title: input.seoTitle ?? null,
-    seo_description: input.seoDescription ?? null, faqs: input.faqs ?? [],
+    slug: input.slug,
+    title: input.title,
+    excerpt: input.excerpt ?? null,
+    content: input.content ? sanitizeHtml(input.content) : null,
+    exam_id: input.examId ?? null,
+    exam_entity_name: input.examEntityName ?? null,
+    pillar: input.pillar,
+    content_type: input.contentType,
+    quick_links: input.quickLinks ?? [],
+    important_dates: input.importantDates ?? [],
+    content_type_data: input.contentTypeData ?? {},
+    attachment_urls: input.attachmentUrls ?? [],
+    featured_image: input.featuredImage ?? null,
+    tags: input.tags ?? [],
+    status: input.status ?? "draft",
+    is_featured: input.isFeatured ?? false,
+    seo_title: input.seoTitle ?? null,
+    seo_description: input.seoDescription ?? null,
+    faqs: input.faqs ?? [],
     published_at: input.status === "published" ? new Date().toISOString() : null,
     created_by: input.createdBy ?? null,
   }).select().single();
@@ -77,16 +90,28 @@ export async function createContentPost(input: any): Promise<ContentPost> {
 export async function updateContentPost(id: string, input: any): Promise<ContentPost> {
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   const fieldMap: Record<string, string> = {
-    slug:"slug", title:"title", excerpt:"excerpt",
-    examId:"exam_id", examEntityName:"exam_entity_name", pillar:"pillar",
-    contentType:"content_type", quickLinks:"quick_links", importantDates:"important_dates",
-    featuredImage:"featured_image", tags:"tags", isFeatured:"is_featured",
-    seoTitle:"seo_title", seoDescription:"seo_description", faqs:"faqs", updatedBy:"updated_by",
+    slug:            "slug",
+    title:           "title",
+    excerpt:         "excerpt",
+    examId:          "exam_id",
+    examEntityName:  "exam_entity_name",
+    pillar:          "pillar",
+    contentType:     "content_type",
+    quickLinks:      "quick_links",
+    importantDates:  "important_dates",
+    contentTypeData: "content_type_data",
+    attachmentUrls:  "attachment_urls",
+    featuredImage:   "featured_image",
+    tags:            "tags",
+    isFeatured:      "is_featured",
+    seoTitle:        "seo_title",
+    seoDescription:  "seo_description",
+    faqs:            "faqs",
+    updatedBy:       "updated_by",
   };
   for (const [key, col] of Object.entries(fieldMap)) {
     if (input[key] !== undefined) updates[col] = input[key];
   }
-  // Sanitize HTML content separately
   if (input.content !== undefined) updates.content = sanitizeHtml(input.content);
   if (input.status !== undefined) {
     updates.status = input.status;

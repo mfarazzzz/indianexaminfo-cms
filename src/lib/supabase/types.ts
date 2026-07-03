@@ -104,10 +104,13 @@ export interface Database {
           excerpt: string | null;
           content: string | null;
           exam_id: string | null;
+          exam_entity_name: string | null;
           pillar: string;
           content_type: "notification" | "application" | "admit-card" | "date-sheet" | "syllabus" | "answer-key" | "result" | "cutoff" | "previous-papers" | "mock-test" | "study-material" | "books";
           quick_links: Json;
           important_dates: Json;
+          content_type_data: Json;
+          attachment_urls: Json;
           featured_image: string | null;
           tags: string[];
           status: "draft" | "review" | "published" | "unpublished";
