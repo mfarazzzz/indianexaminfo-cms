@@ -114,16 +114,25 @@ export function ExamEditPage() {
   useEffect(() => {
     if (!id || isNew) return;
     setLoading(true);
-    getExamById(id).then((exam) => {
+    getExamById(id).then(async (exam) => {
       if (!exam) { navigate("/exams"); return; }
       setCurrentExam(exam);
       setExamId(exam.id);
-      // Find categoryId by slug
+
+      // Load categories for the exam's pillar first so the dropdown is populated
+      const cats = await getCategories(exam.pillar as Pillar);
+      const filteredCats = cats.filter((c) => !c.parentId);
+      setCategories(filteredCats);
+
+      // Resolve category slug → id
+      const catObj = filteredCats.find((c) => c.slug === exam.category);
+
       form.reset({
         name: exam.name,
         shortName: exam.shortName,
         slug: exam.slug,
         pillar: exam.pillar,
+        categoryId: catObj?.id ?? "",
         entityType: exam.entityType,
         conductingBody: exam.conductingBody,
         officialWebsite: exam.officialWebsite,
