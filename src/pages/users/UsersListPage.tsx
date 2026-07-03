@@ -23,7 +23,7 @@ export function UsersListPage() {
       setRoles(r);
       if (r.length > 0 && !inviteRole) setInviteRole(r[0].id);
     } catch (err) {
-      toast.error(String(err));
+      toast.error("Failed to load users: " + String(err));
     } finally {
       setLoading(false);
     }
@@ -130,7 +130,7 @@ export function UsersListPage() {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">
-                      {user.name[0]?.toUpperCase()}
+                      {(user.name?.[0] ?? user.email?.[0] ?? "?").toUpperCase()}
                     </div>
                     <div>
                       <p className="font-medium text-slate-900">{user.name}</p>
@@ -152,7 +152,7 @@ export function UsersListPage() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1">
-                    <button onClick={() => handlePasswordReset(user.id)}
+                    <button onClick={() => handlePasswordReset(user.email)}
                       title="Reset password" className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
                       <KeyRound size={14} />
                     </button>

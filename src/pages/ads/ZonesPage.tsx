@@ -10,7 +10,10 @@ export function ZonesPage() {
   const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
-    getAdZones().then(setZones).finally(() => setLoading(false));
+    getAdZones()
+      .then(setZones)
+      .catch((err) => toast.error("Failed to load zones: " + String(err)))
+      .finally(() => setLoading(false));
   }, []);
 
   const toggleZone = async (zone: AdZone) => {
@@ -27,8 +30,12 @@ export function ZonesPage() {
   };
 
   const updateFallback = async (id: string, html: string) => {
-    await updateAdZone(id, { fallbackHtml: html });
-    toast.success("Fallback HTML saved.");
+    try {
+      await updateAdZone(id, { fallbackHtml: html });
+      toast.success("Fallback HTML saved.");
+    } catch (err) {
+      toast.error("Save failed: " + String(err));
+    }
   };
 
   if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="animate-spin text-blue-600" size={24} /></div>;

@@ -32,7 +32,9 @@ export function ReportsPage() {
   };
 
   useEffect(() => {
-    getCampaigns({ limit: 100 }).then((r) => setCampaigns(r.data));
+    getCampaigns({ limit: 100 })
+      .then((r) => setCampaigns(r.data))
+      .catch(() => {/* non-critical — filter will still work */});
     load();
   }, []);
 

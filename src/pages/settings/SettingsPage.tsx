@@ -70,12 +70,14 @@ export function SettingsPage() {
   const [local, setLocal] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
-    getAllSettings().then((s) => {
-      setAllSettings(s);
-      const map: Record<string, unknown> = {};
-      s.forEach((item) => { map[item.key] = item.value; });
-      setLocal(map);
-    });
+    getAllSettings()
+      .then((s) => {
+        setAllSettings(s);
+        const map: Record<string, unknown> = {};
+        s.forEach((item) => { map[item.key] = item.value; });
+        setLocal(map);
+      })
+      .catch((err) => toast.error("Failed to load settings: " + String(err)));
   }, []);
 
   const get = (key: string, def: unknown = "") => {

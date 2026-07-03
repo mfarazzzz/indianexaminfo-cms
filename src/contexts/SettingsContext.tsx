@@ -23,7 +23,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const loadSettings = useCallback(async () => {
-    const { data } = await db.from("settings").select("key, value");
+    const { data, error } = await db.from("settings").select("key, value");
+    if (error) {
+      console.warn("[SettingsContext] Failed to load settings:", error.message);
+      // Don't crash — use defaults. Components call getSetting(key, fallback).
+    }
     if (data) {
       const map: Partial<SettingsMap> = {};
       for (const row of data as any[]) {

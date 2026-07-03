@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FileText, BookOpen, Tag, Users, TrendingUp, Clock, Star } from "lucide-react";
-import { supabase } from "@/lib/supabase/client";
+import { db } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatDate, timeAgo } from "@/lib/utils";
@@ -34,14 +34,11 @@ export function DashboardPage() {
     const load = async () => {
       try {
         const [examsRes, contentRes, blogRes, catRes, reviewRes] = await Promise.all([
-          supabase.from("exams").select("id", { count: "exact", head: true }),
-          supabase.from("content_posts").select("id", { count: "exact", head: true }),
-          supabase.from("blog_posts").select("id", { count: "exact", head: true }),
-          supabase.from("categories").select("id", { count: "exact", head: true }),
-          supabase
-            .from("content_posts")
-            .select("id", { count: "exact", head: true })
-            .eq("status", "review"),
+          db.from("exams").select("id", { count: "exact", head: true }),
+          db.from("content_posts").select("id", { count: "exact", head: true }),
+          db.from("blog_posts").select("id", { count: "exact", head: true }),
+          db.from("categories").select("id", { count: "exact", head: true }),
+          db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "review"),
         ]);
 
         setStats({
@@ -55,9 +52,9 @@ export function DashboardPage() {
 
         // Recent activity
         const [recentExams, recentContent, recentBlog] = await Promise.all([
-          supabase.from("exams").select("id, name, status, updated_at").order("updated_at", { ascending: false }).limit(3),
-          supabase.from("content_posts").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
-          supabase.from("blog_posts").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
+          db.from("exams").select("id, name, status, updated_at").order("updated_at", { ascending: false }).limit(3),
+          db.from("content_posts").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
+          db.from("blog_posts").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
         ]);
 
         const items: RecentItem[] = [
@@ -108,7 +105,7 @@ export function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-slate-900">
-          Welcome back, {user?.profile.name?.split(" ")[0]} 👋
+          Welcome back, {user?.profile.name?.split(" ")[0] || user?.email?.split("@")[0] || "Admin"} 👋
         </h1>
         <p className="mt-0.5 text-sm text-slate-500">
           Here's what's happening with IndianExamInfo today.

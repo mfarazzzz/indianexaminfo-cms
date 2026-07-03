@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { getCampaigns, updateCampaignStatus } from "@/services/adService";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -22,6 +23,8 @@ export function CampaignsListPage() {
       const { data: rows, count } = await getCampaigns({ status: statusFilter || undefined });
       setData(rows);
       setTotal(count);
+    } catch (err) {
+      toast.error("Failed to load campaigns: " + String(err));
     } finally {
       setLoading(false);
     }
@@ -31,10 +34,16 @@ export function CampaignsListPage() {
 
   const handleReject = async () => {
     if (!rejectTarget || !rejectReason) return;
-    await updateCampaignStatus(rejectTarget.id, "rejected", { rejectionReason: rejectReason });
-    setRejectTarget(null);
-    setRejectReason("");
-    load();
+    try {
+      await updateCampaignStatus(rejectTarget.id, "rejected", { rejectionReason: rejectReason });
+      toast.success("Campaign rejected.");
+    } catch (err) {
+      toast.error("Reject failed: " + String(err));
+    } finally {
+      setRejectTarget(null);
+      setRejectReason("");
+      load();
+    }
   };
 
   return (

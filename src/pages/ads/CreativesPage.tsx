@@ -14,16 +14,22 @@ export function CreativesPage() {
   const [loadingCreatives, setLoadingCreatives] = useState(false);
 
   useEffect(() => {
-    getCampaigns({ status: "active", limit: 100 }).then((r) => {
-      setCampaigns(r.data);
-      if (r.data.length > 0) setSelectedId(r.data[0].id);
-    }).finally(() => setLoadingCampaigns(false));
+    getCampaigns({ status: "active", limit: 100 })
+      .then((r) => {
+        setCampaigns(r.data);
+        if (r.data.length > 0) setSelectedId(r.data[0].id);
+      })
+      .catch((err) => toast.error("Failed to load campaigns: " + String(err)))
+      .finally(() => setLoadingCampaigns(false));
   }, []);
 
   useEffect(() => {
     if (!selectedId) return;
     setLoadingCreatives(true);
-    getCreatives(selectedId).then(setCreatives).finally(() => setLoadingCreatives(false));
+    getCreatives(selectedId)
+      .then(setCreatives)
+      .catch((err) => toast.error("Failed to load creatives: " + String(err)))
+      .finally(() => setLoadingCreatives(false));
   }, [selectedId]);
 
   const selectedCampaign = campaigns.find((c) => c.id === selectedId);

@@ -115,63 +115,56 @@ export function ExamEditPage() {
   useEffect(() => {
     if (!id || isNew) return;
     setLoading(true);
-    getExamById(id).then(async (exam) => {
-      if (!exam) { navigate("/exams"); return; }
-      setCurrentExam(exam);
-      setExamId(exam.id);
 
-      // Load categories for the exam's pillar first so the dropdown is populated
-      const cats = await getCategories(exam.pillar as Pillar);
-      const filteredCats = cats.filter((c) => !c.parentId);
-      setCategories(filteredCats);
+    const loadExam = async () => {
+      try {
+        const exam = await getExamById(id);
+        if (!exam) { navigate("/exams"); return; }
+        setCurrentExam(exam);
+        setExamId(exam.id);
 
-      // Resolve category slug → id
-      const catObj = filteredCats.find((c) => c.slug === exam.category);
+        const cats = await getCategories(exam.pillar as Pillar);
+        const filteredCats = cats.filter((c) => !c.parentId);
+        setCategories(filteredCats);
 
-      form.reset({
-        name: exam.name,
-        shortName: exam.shortName,
-        slug: exam.slug,
-        pillar: exam.pillar,
-        categoryId: catObj?.id ?? "",
-        entityType: exam.entityType,
-        conductingBody: exam.conductingBody,
-        officialWebsite: exam.officialWebsite,
-        status: exam.status,
-        isFeatured: exam.isFeatured,
-        vacancy: exam.vacancy ?? undefined,
-        academicYear: exam.academicYear,
-        semester: exam.semester,
-        admissionTo: exam.admissionTo,
-        hasAdmitCard: exam.hasAdmitCard,
-        hasResult: exam.hasResult,
-        hasAnswerKey: exam.hasAnswerKey,
-        hasSyllabus: exam.hasSyllabus,
-        hasDateSheet: exam.hasDateSheet,
-        hasMockTest: exam.hasMockTest,
-        hasPreviousPapers: exam.hasPreviousPapers,
-        hasStudyMaterial: exam.hasStudyMaterial,
-        hasApplication: exam.hasApplication,
-        hasNotification: exam.hasNotification,
-        hasCutoff: exam.hasCutoff,
-        dates: exam.dates,
-        eligibilityAge: exam.eligibility?.age,
-        eligibilityQualification: exam.eligibility?.qualification,
-        eligibilityNationality: exam.eligibility?.nationality ?? "Indian Citizen",
-        feeGeneral: exam.applicationFee?.general ?? undefined,
-        feeObc: exam.applicationFee?.obc ?? undefined,
-        feeSc: exam.applicationFee?.sc ?? undefined,
-        feeSt: exam.applicationFee?.st ?? undefined,
-        feeEws: exam.applicationFee?.ews ?? undefined,
-        selectionProcess: exam.selectionProcess ?? [],
-        syllabusHighlights: exam.syllabusHighlights ?? [],
-        tags: exam.tags,
-        searchKeywords: exam.searchKeywords,
-        seoTitle: exam.seoTitle,
-        seoDescription: exam.seoDescription,
-        faqs: exam.faqs ?? [],
-      });
-    }).finally(() => setLoading(false));
+        const catObj = filteredCats.find((c) => c.slug === exam.category);
+
+        form.reset({
+          name: exam.name, shortName: exam.shortName, slug: exam.slug,
+          pillar: exam.pillar, categoryId: catObj?.id ?? "",
+          entityType: exam.entityType, conductingBody: exam.conductingBody,
+          officialWebsite: exam.officialWebsite, status: exam.status,
+          isFeatured: exam.isFeatured, vacancy: exam.vacancy ?? undefined,
+          academicYear: exam.academicYear, semester: exam.semester,
+          admissionTo: exam.admissionTo, hasAdmitCard: exam.hasAdmitCard,
+          hasResult: exam.hasResult, hasAnswerKey: exam.hasAnswerKey,
+          hasSyllabus: exam.hasSyllabus, hasDateSheet: exam.hasDateSheet,
+          hasMockTest: exam.hasMockTest, hasPreviousPapers: exam.hasPreviousPapers,
+          hasStudyMaterial: exam.hasStudyMaterial, hasApplication: exam.hasApplication,
+          hasNotification: exam.hasNotification, hasCutoff: exam.hasCutoff,
+          dates: exam.dates, eligibilityAge: exam.eligibility?.age,
+          eligibilityQualification: exam.eligibility?.qualification,
+          eligibilityNationality: exam.eligibility?.nationality ?? "Indian Citizen",
+          feeGeneral: exam.applicationFee?.general ?? undefined,
+          feeObc: exam.applicationFee?.obc ?? undefined,
+          feeSc: exam.applicationFee?.sc ?? undefined,
+          feeSt: exam.applicationFee?.st ?? undefined,
+          feeEws: exam.applicationFee?.ews ?? undefined,
+          selectionProcess: exam.selectionProcess ?? [],
+          syllabusHighlights: exam.syllabusHighlights ?? [],
+          tags: exam.tags, searchKeywords: exam.searchKeywords,
+          seoTitle: exam.seoTitle, seoDescription: exam.seoDescription,
+          faqs: exam.faqs ?? [],
+        });
+      } catch (err) {
+        toast.error("Failed to load exam: " + String(err));
+        navigate("/exams");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadExam();
   }, [id, isNew, navigate, form]);
 
   const onSubmit = async (data: FormData) => {

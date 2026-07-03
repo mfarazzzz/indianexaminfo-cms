@@ -1,4 +1,4 @@
-import { supabase, db } from "@/lib/supabase/client";
+import { db } from "@/lib/supabase/client";
 import type { Pillar } from "@/types/exam";
 
 export type Category = {

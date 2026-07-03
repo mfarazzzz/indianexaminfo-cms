@@ -63,30 +63,36 @@ export function CampaignEditPage() {
     resolver: zodResolver(creativeSchema),
   });
 
-  // Load advertisers + campaign on mount
   useEffect(() => {
-    getAdvertisers().then(setAdvertisers);
+    getAdvertisers()
+      .then(setAdvertisers)
+      .catch((err) => toast.error("Failed to load advertisers: " + String(err)));
+
     if (!isNew && id) {
       setLoading(true);
-      getCampaignById(id).then((c) => {
-        if (!c) { navigate("/ads/campaigns"); return; }
-        setCampaign(c);
-        reset({
-          advertiserId: c.advertiserId, name: c.name,
-          type: c.type as FormData["type"] ?? undefined,
-          billingType: c.billingType as FormData["billingType"] ?? undefined,
-          rate: c.rate, budgetTotal: c.budgetTotal, budgetDaily: c.budgetDaily,
-          startDate: c.startDate ?? undefined, endDate: c.endDate ?? undefined,
-          notes: c.notes ?? undefined,
-        });
-      }).finally(() => setLoading(false));
+      getCampaignById(id)
+        .then((c) => {
+          if (!c) { navigate("/ads/campaigns"); return; }
+          setCampaign(c);
+          reset({
+            advertiserId: c.advertiserId, name: c.name,
+            type: c.type as FormData["type"] ?? undefined,
+            billingType: c.billingType as FormData["billingType"] ?? undefined,
+            rate: c.rate, budgetTotal: c.budgetTotal, budgetDaily: c.budgetDaily,
+            startDate: c.startDate ?? undefined, endDate: c.endDate ?? undefined,
+            notes: c.notes ?? undefined,
+          });
+        })
+        .catch((err) => { toast.error("Failed to load campaign: " + String(err)); navigate("/ads/campaigns"); })
+        .finally(() => setLoading(false));
     }
   }, [id, isNew, navigate, reset]);
 
-  // Load creatives when tab switches
   useEffect(() => {
     if (!isNew && id && activeTab === "creatives") {
-      getCreatives(id).then(setCreatives);
+      getCreatives(id)
+        .then(setCreatives)
+        .catch((err) => toast.error("Failed to load creatives: " + String(err)));
     }
   }, [activeTab, id, isNew]);
 

@@ -36,18 +36,18 @@ export function FrontendSync({ onSync, className }: FrontendSyncProps) {
       const r = await onSync(frontendUrl as string, token as string);
       setResult(r);
       setLastSynced(new Date().toISOString());
-      setState(r.failed.length === 0 ? "success" : "error");
+      const nextState = r.failed.length === 0 ? "success" : "error";
+      setState(nextState);
       if (r.failed.length > 0) {
         setError(`${r.failed.length} path(s) failed to revalidate.`);
+      }
+      // Auto-reset success after 5 seconds (use nextState, not stale closure)
+      if (nextState === "success") {
+        setTimeout(() => setState("idle"), 5000);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setState("error");
-    }
-
-    // Auto-reset success state after 5 seconds
-    if (state === "success") {
-      setTimeout(() => setState("idle"), 5000);
     }
   };
 

@@ -55,12 +55,17 @@ export function MenusPage() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   useEffect(() => {
-    getMenus().then((m) => { setMenus(m); if (m.length > 0) setSelected(m[0].id); }).finally(() => setLoading(false));
+    getMenus()
+      .then((m) => { setMenus(m); if (m.length > 0) setSelected(m[0].id); })
+      .catch((err) => toast.error("Failed to load menus: " + String(err)))
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     if (!selected) return;
-    getMenuWithItems(selected).then((m) => setItems(m.items || []));
+    getMenuWithItems(selected)
+      .then((m) => setItems(m.items || []))
+      .catch((err) => toast.error("Failed to load menu items: " + String(err)));
   }, [selected]);
 
   const handleDragEnd = (event: DragEndEvent) => {

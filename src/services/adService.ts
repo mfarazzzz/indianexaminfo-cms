@@ -16,7 +16,8 @@ export async function updateAdZone(id: string, input: Partial<AdZone>): Promise<
   if (input.isActive !== undefined) updates.is_active = input.isActive;
   if (input.fallbackHtml !== undefined) updates.fallback_html = input.fallbackHtml;
   if (input.name !== undefined) updates.name = input.name;
-  await db.from("ad_zones").update(updates).eq("id", id);
+  const { error } = await db.from("ad_zones").update(updates).eq("id", id);
+  if (error) throw error;
 }
 
 export async function getAdvertisers(): Promise<Advertiser[]> {
@@ -57,7 +58,8 @@ export async function updateCampaignStatus(id: string, status: AdCampaign["statu
   const updates: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
   if (opts?.approvedBy) { updates.approved_by = opts.approvedBy; updates.approved_at = new Date().toISOString(); }
   if (opts?.rejectionReason) updates.rejection_reason = opts.rejectionReason;
-  await db.from("ad_campaigns").update(updates).eq("id", id);
+  const { error } = await db.from("ad_campaigns").update(updates).eq("id", id);
+  if (error) throw error;
 }
 
 export async function getCreatives(campaignId: string): Promise<AdCreative[]> {

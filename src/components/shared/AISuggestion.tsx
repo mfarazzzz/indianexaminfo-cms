@@ -69,8 +69,6 @@ export function AISuggestion({
       >
         {loading ? (
           <Loader2 size={12} className="animate-spin" />
-        ) : loading ? (
-          <RefreshCw size={12} />
         ) : (
           <Sparkles size={12} />
         )}

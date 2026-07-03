@@ -2,11 +2,14 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BarChart2, TrendingUp, DollarSign, CheckCircle, Loader2 } from "lucide-react";
 import { getCampaigns, updateCampaignStatus, getAdZones } from "@/services/adService";
+import { useAuth } from "@/hooks/useAuth";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { toast } from "sonner";
 import type { AdCampaign } from "@/types/ad";
 
 export function AdDashboardPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
   const [pending, setPending] = useState<AdCampaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,7 +21,8 @@ export function AdDashboardPage() {
     ]).then(([all, pend]) => {
       setCampaigns(all.data);
       setPending(pend.data);
-    }).finally(() => setLoading(false));
+    }).catch((err) => toast.error("Failed to load campaigns: " + String(err)))
+      .finally(() => setLoading(false));
   }, []);
 
   const active = campaigns.filter((c) => c.status === "active");
@@ -32,9 +36,14 @@ export function AdDashboardPage() {
     { label: "Pending Approval", value: pending.length, icon: <CheckCircle size={18} className="text-yellow-600" />, href: "/ads/campaigns?status=pending-review", highlight: pending.length > 0 },
   ];
 
-  const approve = async (id: string, approvedBy: string) => {
-    await updateCampaignStatus(id, "active", { approvedBy });
-    setPending(pending.filter((c) => c.id !== id));
+  const approve = async (id: string) => {
+    try {
+      await updateCampaignStatus(id, "active", { approvedBy: user?.id });
+      setPending((prev) => prev.filter((c) => c.id !== id));
+      toast.success("Campaign approved.");
+    } catch (err) {
+      toast.error("Approve failed: " + String(err));
+    }
   };
 
   return (
@@ -75,7 +84,7 @@ export function AdDashboardPage() {
                         className="rounded border border-slate-200 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50">
                         Review
                       </button>
-                      <button onClick={() => approve(c.id, "admin")}
+                      <button onClick={() => approve(c.id)}
                         className="rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700">
                         Approve
                       </button>

@@ -42,8 +42,13 @@ export function CategoriesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setCategories(await getCategories()); }
-    finally { setLoading(false); }
+    try {
+      setCategories(await getCategories());
+    } catch (err) {
+      toast.error("Failed to load categories: " + String(err));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -91,10 +96,10 @@ export function CategoriesPage() {
       setShowForm(false);
       load();
 
-      // Revalidate
+      // Revalidate (fire-and-forget — don't block on failure)
       const url = getSetting("frontend_url", SITE.frontendUrl) as string;
       const token = getSetting("revalidate_token", "") as string;
-      if (token) revalidateAll(url, token);
+      if (token) revalidateAll(url, token).catch(() => {/* non-critical */});
     } catch (err) {
       toast.error(String(err));
     } finally {

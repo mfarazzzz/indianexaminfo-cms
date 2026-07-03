@@ -68,24 +68,31 @@ export function BlogEditPage() {
   const watchedSection = watch("section");
   const watchedSlug = watch("slug");
 
-  useEffect(() => { getAuthors().then(setAuthors); }, []);
+  useEffect(() => {
+    getAuthors()
+      .then(setAuthors)
+      .catch(() => {/* non-critical — author dropdown just stays empty */});
+  }, []);
 
   useEffect(() => {
     if (!id || isNew) return;
     setLoading(true);
-    getBlogPostById(id).then((post) => {
-      if (!post) { navigate("/blog"); return; }
-      form.reset({
-        title: post.title, slug: post.slug, excerpt: post.excerpt,
-        content: post.content, section: post.section, postType: post.postType,
-        authorId: post.author?.id, featuredImage: post.featuredImage,
-        featuredImageCaption: post.featuredImageCaption, tags: post.tags,
-        relatedExamSlugs: post.relatedExamSlugs, status: post.status,
-        isFeatured: post.isFeatured, isBreaking: post.isBreaking, isPinned: post.isPinned,
-        seoTitle: post.seoTitle, seoDescription: post.seoDescription,
-        canonicalUrl: post.canonicalUrl, faqs: post.faqs ?? [],
-      });
-    }).finally(() => setLoading(false));
+    getBlogPostById(id)
+      .then((post) => {
+        if (!post) { navigate("/blog"); return; }
+        form.reset({
+          title: post.title, slug: post.slug, excerpt: post.excerpt,
+          content: post.content, section: post.section, postType: post.postType,
+          authorId: post.author?.id, featuredImage: post.featuredImage,
+          featuredImageCaption: post.featuredImageCaption, tags: post.tags,
+          relatedExamSlugs: post.relatedExamSlugs, status: post.status,
+          isFeatured: post.isFeatured, isBreaking: post.isBreaking, isPinned: post.isPinned,
+          seoTitle: post.seoTitle, seoDescription: post.seoDescription,
+          canonicalUrl: post.canonicalUrl, faqs: post.faqs ?? [],
+        });
+      })
+      .catch((err) => { toast.error("Failed to load post: " + String(err)); navigate("/blog"); })
+      .finally(() => setLoading(false));
   }, [id, isNew, navigate, form]);
 
   useEffect(() => {

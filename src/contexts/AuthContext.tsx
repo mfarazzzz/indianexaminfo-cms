@@ -24,17 +24,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
-    // Step 1: fetch the profile + role (no recursive RLS join)
+  const fetchProfile = useCallback(async (userId: string): Promise<{ profile: UserProfile | null; fetchError: boolean }> => {
     const { data, error } = await (db as any)
       .from("user_profiles")
       .select(`id, name, avatar, role_id, is_active, last_login, created_at, roles ( id, slug, name )`)
       .eq("id", userId)
       .single();
 
-    if (error || !data) return null;
+    // Distinguish "no profile row" from a transient DB/network error
+    if (error) {
+      // PGRST116 = row not found — genuine missing profile
+      if (error.code === "PGRST116") return { profile: null, fetchError: false };
+      // Anything else = transient error — don't sign the user out
+      console.error("[AuthContext] fetchProfile DB error:", error.message);
+      return { profile: null, fetchError: true };
+    }
+    if (!data) return { profile: null, fetchError: false };
 
-    // Step 2: fetch permissions separately via role_id to avoid invalid FK traversal
     const permissions: string[] = [];
     if (data.role_id) {
       const { data: rpData } = await (db as any)
@@ -51,9 +57,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const role = data.roles as any;
     return {
-      id: data.id, name: data.name, avatar: data.avatar, roleId: data.role_id ?? "",
-      roleName: role?.name ?? "", roleSlug: role?.slug ?? "viewer",
-      permissions, isActive: data.is_active, lastLogin: data.last_login, createdAt: data.created_at,
+      fetchError: false,
+      profile: {
+        id: data.id,
+        email: "",       // filled in by caller who has the auth session
+        name: data.name ?? "",
+        avatar: data.avatar,
+        roleId: data.role_id ?? "",
+        roleName: role?.name ?? "",
+        roleSlug: role?.slug ?? "viewer",
+        permissions,
+        isActive: data.is_active,
+        lastLogin: data.last_login,
+        createdAt: data.created_at,
+      },
     };
   }, []);
 
@@ -61,19 +78,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        setUser(null);
+      if (!session?.user) { setUser(null); return; }
+
+      const { profile, fetchError } = await fetchProfile(session.user.id);
+
+      // Only sign out if the profile is genuinely absent — not on transient errors
+      if (fetchError) {
+        // DB error: keep existing user state, just stop loading
         return;
       }
-
-      const profile = await fetchProfile(session.user.id);
       if (!profile || !profile.isActive) {
         await supabase.auth.signOut();
         setUser(null);
         return;
       }
 
-      setUser({ id: session.user.id, email: session.user.email ?? "", profile });
+      setUser({
+        id: session.user.id,
+        email: session.user.email ?? "",
+        profile: { ...profile, email: session.user.email ?? "" },
+      });
     } finally {
       setIsLoading(false);
     }
@@ -106,20 +130,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) return { error: error.message };
     if (!data.user) return { error: "Login failed" };
 
-    const profile = await fetchProfile(data.user.id);
+    const { profile, fetchError } = await fetchProfile(data.user.id);
+    if (fetchError) return { error: "Could not load your profile. Please try again." };
     if (!profile) return { error: "Profile not found. Contact your administrator." };
     if (!profile.isActive) {
       await supabase.auth.signOut();
       return { error: "Your account has been deactivated. Contact Super Admin." };
     }
 
-    // Update last_login
-    await db
-      .from("user_profiles")
-      .update({ last_login: new Date().toISOString() })
-      .eq("id", data.user.id);
+    await db.from("user_profiles").update({ last_login: new Date().toISOString() }).eq("id", data.user.id);
 
-    setUser({ id: data.user.id, email: data.user.email ?? "", profile });
+    setUser({
+      id: data.user.id,
+      email: data.user.email ?? "",
+      profile: { ...profile, email: data.user.email ?? "" },
+    });
     return { error: null };
   }, [fetchProfile]);
 

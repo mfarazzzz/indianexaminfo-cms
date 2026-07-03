@@ -35,7 +35,8 @@ export async function getMenuWithItems(menuId: string): Promise<Menu & { items: 
 }
 
 export async function saveMenuItems(menuId: string, items: Omit<MenuItem, "createdAt">[], userId?: string): Promise<void> {
-  await db.from("menu_items").delete().eq("menu_id", menuId);
+  const { error: deleteError } = await db.from("menu_items").delete().eq("menu_id", menuId);
+  if (deleteError) throw deleteError;
   if (items.length > 0) {
     const { error } = await db.from("menu_items").insert(
       items.map((item) => ({

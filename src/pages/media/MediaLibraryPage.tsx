@@ -63,10 +63,14 @@ export function MediaLibraryPage() {
 
   const handleSaveAlt = async () => {
     if (!selected) return;
-    await updateMediaAlt(selected.id, altText);
-    toast.success("Alt text saved.");
-    setItems(items.map((i) => i.id === selected.id ? { ...i, altText } : i));
-    setSelected({ ...selected, altText });
+    try {
+      await updateMediaAlt(selected.id, altText);
+      toast.success("Alt text saved.");
+      setItems(items.map((i) => i.id === selected.id ? { ...i, altText } : i));
+      setSelected({ ...selected, altText });
+    } catch (err) {
+      toast.error("Save failed: " + String(err));
+    }
   };
 
   const copyUrl = (url: string) => {

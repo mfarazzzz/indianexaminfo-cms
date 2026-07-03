@@ -2,14 +2,37 @@ import { supabase, db } from "@/lib/supabase/client";
 import type { UserProfile, Role } from "@/types/user";
 
 export async function getUserProfiles(): Promise<UserProfile[]> {
+  // Join auth.users via a view or fetch emails separately
   const { data, error } = await db.from("user_profiles")
     .select("*, roles(id, slug, name)")
     .order("created_at", { ascending: false });
   if (error) throw error;
+
+  // Fetch emails from auth.users for each profile id
+  const ids = (data ?? []).map((r: any) => r.id);
+  const emailMap: Record<string, string> = {};
+  if (ids.length > 0) {
+    const { data: authData } = await (db as any)
+      .from("auth_user_emails")
+      .select("id, email");
+    // If the view doesn't exist, fall back to empty map — non-fatal
+    if (authData) {
+      for (const row of authData as any[]) emailMap[row.id] = row.email ?? "";
+    }
+  }
+
   return (data ?? []).map((r: any) => ({
-    id: r.id, name: r.name, avatar: r.avatar, roleId: r.role_id,
-    roleName: r.roles?.name ?? "", roleSlug: r.roles?.slug ?? "author",
-    permissions: [], isActive: r.is_active, lastLogin: r.last_login, createdAt: r.created_at,
+    id: r.id,
+    email: emailMap[r.id] ?? "",
+    name: r.name ?? "",
+    avatar: r.avatar,
+    roleId: r.role_id ?? "",
+    roleName: r.roles?.name ?? "",
+    roleSlug: (r.roles?.slug ?? "viewer") as UserProfile["roleSlug"],
+    permissions: [],
+    isActive: r.is_active,
+    lastLogin: r.last_login,
+    createdAt: r.created_at,
   }));
 }
 

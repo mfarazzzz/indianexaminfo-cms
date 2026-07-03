@@ -15,6 +15,7 @@ export type Role = {
 
 export type UserProfile = {
   id: string;
+  email: string;
   name: string;
   avatar: string | null;
   roleId: string;

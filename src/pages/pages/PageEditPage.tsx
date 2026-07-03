@@ -38,12 +38,15 @@ export function PageEditPage() {
   useEffect(() => {
     if (!id || isNew) return;
     setLoading(true);
-    getPageById(id).then((page) => {
-      if (!page) { navigate("/pages"); return; }
-      setIsSystem(page.isSystem);
-      setContent(page.content ?? "");
-      reset({ title: page.title, slug: page.slug, metaTitle: page.metaTitle ?? "", metaDescription: page.metaDescription ?? "", status: page.status, content: page.content ?? "" });
-    }).finally(() => setLoading(false));
+    getPageById(id)
+      .then((page) => {
+        if (!page) { navigate("/pages"); return; }
+        setIsSystem(page.isSystem);
+        setContent(page.content ?? "");
+        reset({ title: page.title, slug: page.slug, metaTitle: page.metaTitle ?? "", metaDescription: page.metaDescription ?? "", status: page.status, content: page.content ?? "" });
+      })
+      .catch((err) => { toast.error("Failed to load page: " + String(err)); navigate("/pages"); })
+      .finally(() => setLoading(false));
   }, [id, isNew, navigate, reset]);
 
   const onSubmit = async (data: FormData) => {
