@@ -103,12 +103,13 @@ export function ExamEditPage() {
   const watchedSlug = watch("slug");
   const watchedSeoTitle = watch("seoTitle");
 
-  // Load categories when pillar changes
+  // Load categories when pillar changes (but not during initial exam load)
   useEffect(() => {
+    if (loading) return; // Don't reset categories while loading exam
     getCategories(watchedPillar as Pillar).then((cats) => {
       setCategories(cats.filter((c) => !c.parentId));
     });
-  }, [watchedPillar]);
+  }, [watchedPillar, loading]);
 
   // Load exam for edit
   useEffect(() => {
