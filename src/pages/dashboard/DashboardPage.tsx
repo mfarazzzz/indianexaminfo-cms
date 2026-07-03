@@ -58,26 +58,26 @@ export function DashboardPage() {
         ]);
 
         const items: RecentItem[] = [
-          ...(recentExams.data ?? []).map((r) => ({
-            id: (r as Record<string, unknown>).id as string,
-            title: (r as Record<string, unknown>).name as string,
+          ...(recentExams.data ?? []).map((r: { id: string; name: string; status: string; updated_at: string }) => ({
+            id: r.id,
+            title: r.name,
             type: "exam" as const,
-            status: (r as Record<string, unknown>).status as string,
-            updatedAt: (r as Record<string, unknown>).updated_at as string,
+            status: r.status,
+            updatedAt: r.updated_at,
           })),
-          ...(recentContent.data ?? []).map((r) => ({
-            id: (r as Record<string, unknown>).id as string,
-            title: (r as Record<string, unknown>).title as string,
+          ...(recentContent.data ?? []).map((r: { id: string; title: string; status: string; updated_at: string }) => ({
+            id: r.id,
+            title: r.title,
             type: "content" as const,
-            status: (r as Record<string, unknown>).status as string,
-            updatedAt: (r as Record<string, unknown>).updated_at as string,
+            status: r.status,
+            updatedAt: r.updated_at,
           })),
-          ...(recentBlog.data ?? []).map((r) => ({
-            id: (r as Record<string, unknown>).id as string,
-            title: (r as Record<string, unknown>).title as string,
+          ...(recentBlog.data ?? []).map((r: { id: string; title: string; status: string; updated_at: string }) => ({
+            id: r.id,
+            title: r.title,
             type: "blog" as const,
-            status: (r as Record<string, unknown>).status as string,
-            updatedAt: (r as Record<string, unknown>).updated_at as string,
+            status: r.status,
+            updatedAt: r.updated_at,
           })),
         ]
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
