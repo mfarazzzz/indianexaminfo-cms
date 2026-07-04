@@ -7,7 +7,7 @@ import { renderHook, act, waitFor } from '@testing-library/react'
 import React from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useModulesTab } from './useModulesTab'
-import { makeModule } from '@/src/__tests__/fixtures'
+import { makeModule } from '@/__tests__/fixtures'
 
 vi.mock('@/services/entity/moduleService', () => ({
   listModules:     vi.fn(),
