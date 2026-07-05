@@ -4,7 +4,6 @@ import { AppShell } from "@/components/layout/AppShell";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { Loader2 } from "lucide-react";
-import { env } from "@/config/env";
 
 function Loading() {
   return (
@@ -32,7 +31,6 @@ function lazyPage(
 
 const DashboardPage     = lazyPage(() => import("@/pages/dashboard/DashboardPage"),     "DashboardPage");
 const ExamsListPage     = lazyPage(() => import("@/pages/exams/ExamsListPage"),         "ExamsListPage");
-const ExamEditPage      = lazyPage(() => import("@/pages/exams/ExamEditPage"),          "ExamEditPage");
 const ExamEditorPage    = lazyPage(() => import("@/pages/exams/ExamEditorPage"),        "ExamEditorPage");
 const ContentListPage   = lazyPage(() => import("@/pages/content/ContentListPage"),     "ContentListPage");
 const ContentEditPage   = lazyPage(() => import("@/pages/content/ContentEditPage"),     "ContentEditPage");
@@ -65,8 +63,8 @@ export const router = createBrowserRouter([
         children: [
           { path: "/dashboard",         element: <DashboardPage /> },
           { path: "/exams",             element: <ExamsListPage /> },
-          { path: "/exams/new",         element: env.NEW_EXAM_EDITOR ? <ExamEditorPage /> : <ExamEditPage /> },
-          { path: "/exams/:id",         element: env.NEW_EXAM_EDITOR ? <ExamEditorPage /> : <ExamEditPage /> },
+          { path: "/exams/new",         element: <ExamEditorPage /> },
+          { path: "/exams/:id",         element: <ExamEditorPage /> },
           { path: "/content",           element: <ContentListPage /> },
           { path: "/content/new",       element: <ContentEditPage /> },
           { path: "/content/:id",       element: <ContentEditPage /> },

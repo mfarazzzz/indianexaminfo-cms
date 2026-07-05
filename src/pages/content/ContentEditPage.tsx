@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2, Plus, Trash2, Save, Link as LinkIcon, FileText, Ima
 import { getContentPostById, createContentPost, updateContentPost } from "@/services/contentService";
 import { searchExams } from "@/services/examService";
 import { RichEditor } from "@/components/shared/RichEditor";
+import { PageErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { SlugInput } from "@/components/shared/SlugInput";
 import { AISuggestion } from "@/components/shared/AISuggestion";
 import { FrontendSync } from "@/components/shared/FrontendSync";
@@ -238,7 +239,7 @@ function ContentTypeFields({ contentType, value, onChange }: {
 }
 
 // ── Main page component ──────────────────────────────────────────────────
-export function ContentEditPage() {
+function ContentEditPageInner() {
   const { id } = useParams<{ id: string }>();
   const isNew = !id || id === "new";
   const navigate = useNavigate();
@@ -637,4 +638,14 @@ export function ContentEditPage() {
       </div>
     </form>
   );
+}
+
+/** Exported component — wrapped in a local ErrorBoundary so a single bad post
+ *  doesn't crash the AppShell. The boundary displays a user-friendly recovery UI. */
+export function ContentEditPage() {
+  return (
+    <PageErrorBoundary>
+      <ContentEditPageInner />
+    </PageErrorBoundary>
+  )
 }

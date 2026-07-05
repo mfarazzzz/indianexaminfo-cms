@@ -39,9 +39,9 @@ jobs:
       - name: Tests with coverage
         run: npm run test:coverage
         env:
-          # Provide stub values so the Supabase client does not throw at import time
           VITE_SUPABASE_URL: https://placeholder.supabase.co
           VITE_SUPABASE_ANON_KEY: placeholder-anon-key
+          VITE_FRONTEND_URL: https://indianexaminfo.com
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -58,3 +58,4 @@ jobs:
         env:
           VITE_SUPABASE_URL: https://placeholder.supabase.co
           VITE_SUPABASE_ANON_KEY: placeholder-anon-key
+          VITE_FRONTEND_URL: https://indianexaminfo.com
