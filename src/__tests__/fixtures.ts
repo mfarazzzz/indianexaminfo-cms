@@ -3,8 +3,6 @@
  *
  * Each factory returns a structurally complete, valid record with all required
  * fields defaulted. Override any field by passing a partial object.
- *
- * All defaults pass their corresponding Zod schema validation.
  */
 import type { EntityModule, ModuleBlock, TimelineEvent } from '@/types/entity'
 
@@ -13,9 +11,8 @@ import type { EntityModule, ModuleBlock, TimelineEvent } from '@/types/entity'
 let moduleCounter = 0
 
 export function makeModule(overrides: Partial<EntityModule> = {}): EntityModule {
-  const id = overrides.id ?? `module-${++moduleCounter}`
-  return {
-    id,
+  const base: EntityModule = {
+    id:                `module-${++moduleCounter}`,
     entityId:          'entity-1',
     moduleType:        'overview',
     subTitle:          null,
@@ -34,9 +31,8 @@ export function makeModule(overrides: Partial<EntityModule> = {}): EntityModule 
     createdBy:         null,
     updatedBy:         null,
     deletedAt:         null,
-    ...overrides,
-    id,
   }
+  return { ...base, ...overrides }
 }
 
 // ── makeBlock ─────────────────────────────────────────────────────────────────
@@ -44,9 +40,8 @@ export function makeModule(overrides: Partial<EntityModule> = {}): EntityModule 
 let blockCounter = 0
 
 export function makeBlock(overrides: Partial<ModuleBlock> = {}): ModuleBlock {
-  const id = overrides.id ?? `block-${++blockCounter}`
-  return {
-    id,
+  const base: ModuleBlock = {
+    id:           `block-${++blockCounter}`,
     moduleId:     'module-1',
     blockType:    'heading',
     displayOrder: 0,
@@ -55,9 +50,8 @@ export function makeBlock(overrides: Partial<ModuleBlock> = {}): ModuleBlock {
     createdAt:    '2025-01-01T00:00:00Z',
     updatedAt:    '2025-01-01T00:00:00Z',
     deletedAt:    null,
-    ...overrides,
-    id,
   }
+  return { ...base, ...overrides }
 }
 
 // ── makeTimelineEvent ─────────────────────────────────────────────────────────
@@ -65,9 +59,8 @@ export function makeBlock(overrides: Partial<ModuleBlock> = {}): ModuleBlock {
 let eventCounter = 0
 
 export function makeTimelineEvent(overrides: Partial<TimelineEvent> = {}): TimelineEvent {
-  const id = overrides.id ?? `event-${++eventCounter}`
-  return {
-    id,
+  const base: TimelineEvent = {
+    id:           `event-${++eventCounter}`,
     entityId:     'entity-1',
     title:        'Application Start',
     eventType:    'application-start',
@@ -87,7 +80,6 @@ export function makeTimelineEvent(overrides: Partial<TimelineEvent> = {}): Timel
     createdAt:    '2025-01-01T00:00:00Z',
     updatedAt:    '2025-01-01T00:00:00Z',
     deletedAt:    null,
-    ...overrides,
-    id,
   }
+  return { ...base, ...overrides }
 }

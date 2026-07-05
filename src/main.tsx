@@ -7,7 +7,11 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { router } from "@/router";
 import { queryClient } from "@/lib/queryClient";
+import { registerCoreBlocks } from "@/lib/blocks/coreBlocks";
 import "./index.css";
+
+// Register all built-in block types before any component renders
+registerCoreBlocks()
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

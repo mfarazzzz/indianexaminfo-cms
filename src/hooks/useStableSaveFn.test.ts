@@ -9,24 +9,27 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useStableSaveFn } from './useStableSaveFn'
 
+// Cast helper — test mocks are simpler than the strict type requires
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const asSubmit = (fn: any) => fn as Parameters<typeof useStableSaveFn>[0]
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const asSave   = (fn: any) => fn as Parameters<typeof useStableSaveFn>[1]
+
 describe('useStableSaveFn', () => {
   it('returns the same callback reference across 3+ re-renders', () => {
     const saveFn = vi.fn().mockResolvedValue(undefined)
     const handleSubmit = vi.fn((fn: () => void) => fn)
 
     const { result, rerender } = renderHook(
-      ({ save, submit }) => useStableSaveFn(submit, save),
+      ({ save, submit }) => useStableSaveFn(asSubmit(submit), asSave(save)),
       { initialProps: { save: saveFn, submit: handleSubmit } }
     )
 
     const firstRef = result.current
-
     rerender({ save: saveFn, submit: handleSubmit })
     expect(result.current).toBe(firstRef)
-
     rerender({ save: saveFn, submit: handleSubmit })
     expect(result.current).toBe(firstRef)
-
     rerender({ save: saveFn, submit: handleSubmit })
     expect(result.current).toBe(firstRef)
   })
@@ -37,49 +40,32 @@ describe('useStableSaveFn', () => {
     const handleSubmit = vi.fn((fn: () => void) => fn)
 
     const { result, rerender } = renderHook(
-      ({ save }) => useStableSaveFn(handleSubmit, save),
+      ({ save }) => useStableSaveFn(asSubmit(handleSubmit), asSave(save)),
       { initialProps: { save: saveFn1 } }
     )
 
-    // Capture reference before update
     const stableRef = result.current
-
-    // Update to saveFn2
     rerender({ save: saveFn2 })
-
-    // Same reference as before
     expect(result.current).toBe(stableRef)
 
-    // Invoke — should call saveFn2, not saveFn1
     await act(async () => { await result.current() })
-
     expect(saveFn2).toHaveBeenCalled()
     expect(saveFn1).not.toHaveBeenCalled()
   })
 
   it('always calls the latest saveFn at invocation time (stale-closure safety)', async () => {
-    // The key property: even if saveFn changes after the stable callback is returned,
-    // invoking the stable callback calls the CURRENT saveFn, not the old one.
     let callCount1 = 0
     let callCount2 = 0
-
     const saveFn1 = vi.fn(async () => { callCount1++ })
     const saveFn2 = vi.fn(async () => { callCount2++ })
-
-    // handleSubmit just calls the passed fn directly (simplest possible wrapper)
-    const handleSubmit = (fn: (...args: unknown[]) => unknown) => () => Promise.resolve(fn())
+    const handleSubmit = (fn: (...args: unknown[]) => unknown) => async () => { await fn() }
 
     const { result, rerender } = renderHook(
-      ({ save }) => useStableSaveFn(handleSubmit, save),
+      ({ save }) => useStableSaveFn(asSubmit(handleSubmit), asSave(save)),
       { initialProps: { save: saveFn1 } }
     )
 
-    // Rerender with saveFn2 and flush effects
-    await act(async () => {
-      rerender({ save: saveFn2 })
-    })
-
-    // Invoke the stable callback — should use saveFn2 because the effect updated the ref
+    await act(async () => { rerender({ save: saveFn2 }) })
     await act(async () => { await result.current() })
 
     expect(callCount2).toBe(1)
@@ -91,7 +77,7 @@ describe('useStableSaveFn', () => {
     const handleSubmit = vi.fn((fn: () => void) => fn)
 
     const { result, rerender } = renderHook(
-      ({ n }) => useStableSaveFn(handleSubmit, saveFn),
+      ({ n }) => useStableSaveFn(asSubmit(handleSubmit), asSave(saveFn)),
       { initialProps: { n: 0 } }
     )
 

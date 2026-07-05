@@ -29,9 +29,12 @@ function makeDef(type: string, editorTestId: string, rendererTestId: string): Bl
   return {
     type,
     label: type,
-    icon: () => null,
-    editor: () => React.createElement('div', { 'data-testid': editorTestId }, `editor:${type}`),
-    renderer: () => React.createElement('div', { 'data-testid': rendererTestId }, `renderer:${type}`),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    icon: (() => null) as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    editor: (() => React.createElement('div', { 'data-testid': editorTestId }, `editor:${type}`)) as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderer: (() => React.createElement('div', { 'data-testid': rendererTestId }, `renderer:${type}`)) as any,
     schema: z.object({}),
     defaultContent: {},
   }

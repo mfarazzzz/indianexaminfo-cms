@@ -13,9 +13,9 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type HandleSubmit = (fn: (...args: any[]) => unknown) => () => Promise<void>
+type HandleSubmit = (fn: (...args: any[]) => any) => (...args: any[]) => any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SaveFn = (...args: any[]) => Promise<unknown>
+type SaveFn = (...args: any[]) => any
 
 export function useStableSaveFn(
   handleSubmit: HandleSubmit,

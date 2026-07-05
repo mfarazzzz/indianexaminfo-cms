@@ -28,9 +28,12 @@ function makeDef(type: string): BlockDefinition {
   return {
     type,
     label: `Label for ${type}`,
-    icon: NoopComponent,
-    editor: NoopComponent as BlockDefinition['editor'],
-    renderer: NoopComponent as BlockDefinition['renderer'],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    icon: NoopComponent as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    editor: NoopComponent as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderer: NoopComponent as any,
     schema: z.object({ type: z.literal(type) }),
     defaultContent: { type },
   }
