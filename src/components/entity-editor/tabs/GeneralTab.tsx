@@ -88,8 +88,19 @@ export function GeneralTab({ entityId }: { entityId: string }) {
     },
   })
 
+  // Track whether we have populated the form from server data at least once.
+  // We only reset on the FIRST successful load (seedRef.current === false) and
+  // never again after that — background refetches must never overwrite unsaved
+  // user edits. If the user explicitly saves, we set seedRef back to false so
+  // the next confirmed server value is loaded cleanly.
+  const seedRef = useRef(false)
+
   useEffect(() => {
-    if (entity) reset({
+    if (!entity) return
+    if (seedRef.current) return // already seeded — do NOT overwrite dirty state
+
+    seedRef.current = true
+    reset({
       name: entity.name, shortName: entity.shortName ?? '',
       slug: entity.slug, conductingBody: entity.conductingBody ?? '',
       officialWebsite: entity.officialWebsite ?? '',
@@ -108,8 +119,10 @@ export function GeneralTab({ entityId }: { entityId: string }) {
     else clearDirty('general')
   }, [isDirty, markDirty, clearDirty])
 
-  const pillar = watch('pillar')
-  const name   = watch('name')
+  const pillar   = watch('pillar')
+  const name     = watch('name')
+  const tags     = watch('tags')
+  const keywords = watch('searchKeywords')
 
   const { data: categories = [] } = useQuery({
     queryKey: categoryKeys.byPillar(pillar ?? 'all'),
@@ -122,6 +135,9 @@ export function GeneralTab({ entityId }: { entityId: string }) {
     onSuccess: (saved) => {
       toast.success(isNew ? 'Exam created' : 'Saved')
       clearDirty('general')
+      // Allow the next server response to re-seed the form with confirmed values.
+      // This is the only place we intentionally accept a server overwrite.
+      seedRef.current = false
       qc.invalidateQueries({ queryKey: entityKeys.detail(saved.id) })
       qc.invalidateQueries({ queryKey: entityKeys.lists() })
       if (isNew) window.history.replaceState({}, '', `/exams/${saved.id}`)
@@ -337,7 +353,7 @@ export function GeneralTab({ entityId }: { entityId: string }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Tags" hint="Comma-separated values">
             <input placeholder="banking, ibps, po" className={inputCls}
-              defaultValue={(entity?.tags ?? []).join(', ')}
+              value={(tags ?? []).join(', ')}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 const vals = e.target.value.split(',').map((t: string) => t.trim()).filter(Boolean)
                 setValue('tags', vals, { shouldDirty: true })
@@ -346,7 +362,7 @@ export function GeneralTab({ entityId }: { entityId: string }) {
           </Field>
           <Field label="Search Keywords" hint="Comma-separated values">
             <input placeholder="ibps po 2025, bank exam" className={inputCls}
-              defaultValue={(entity?.searchKeywords ?? []).join(', ')}
+              value={(keywords ?? []).join(', ')}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 const vals = e.target.value.split(',').map((t: string) => t.trim()).filter(Boolean)
                 setValue('searchKeywords', vals, { shouldDirty: true })

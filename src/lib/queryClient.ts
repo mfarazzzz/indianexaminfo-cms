@@ -8,7 +8,11 @@ export const queryClient = new QueryClient({
       retry:                2,
       refetchOnWindowFocus: false,       // Tab-switch should NOT reload CMS data
       refetchOnReconnect:   true,        // DO refetch after network reconnect
-      refetchOnMount:       true,        // DO refetch on first mount
+      // "always" re-fetches only when the cached data is actually stale (> staleTime).
+      // Previously `true` caused a network refetch on every component mount even when
+      // fresh data was already cached, which triggered GeneralTab's reset() effect and
+      // wiped unsaved form values every time the user switched back to the tab.
+      refetchOnMount:       'always',
     },
     mutations: {
       retry: 0,
