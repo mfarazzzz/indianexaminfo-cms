@@ -60,9 +60,12 @@ const mockUpdateEntity  = vi.mocked(updateEntity)
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-function makeEntity(overrides: Record<string, unknown> = {}) {
+import type { Entity } from '@/types/entity'
+
+function makeEntity(overrides: Partial<Entity> = {}): Entity {
   return {
     id:               'entity-1',
+    entityType:       'exam',
     name:             'IBPS PO',
     shortName:        'IBPS PO',
     slug:             'ibps-po',
@@ -82,6 +85,8 @@ function makeEntity(overrides: Record<string, unknown> = {}) {
     tags:             [],
     searchKeywords:   [],
     lang:             'en',
+    metadata:         {},
+    createdAt:        '2025-01-01T00:00:00Z',
     updatedAt:        '2025-01-01T00:00:00Z',
     ...overrides,
   }
