@@ -74,8 +74,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const loadUser = useCallback(async () => {
-    setIsLoading(true);
+  const loadUser = useCallback(async (showSpinner = true) => {
+    if (showSpinner) setIsLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) { setUser(null); return; }
@@ -99,16 +99,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile: { ...profile, email: session.user.email ?? "" },
       });
     } finally {
-      setIsLoading(false);
+      if (showSpinner) setIsLoading(false);
     }
   }, [fetchProfile]);
 
   useEffect(() => {
-    loadUser();
+    loadUser(); // initial load — spinner is appropriate here
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        // These events fire on every tab focus and must never remount the editor.
+        // TOKEN_REFRESHED — Supabase silently rotated the JWT: no user change.
+        // INITIAL_SESSION  — Supabase replays the session on tab focus in some
+        //                    browser/SDK version combinations.
+        // USER_UPDATED     — Profile metadata changed; the session is still valid.
+        //                    Re-read the user silently without a spinner.
         if (event === "TOKEN_REFRESHED") return;
+        if (event === "INITIAL_SESSION") return;
 
         if (event === "SIGNED_OUT") {
           setUser(null);
@@ -116,8 +123,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        // USER_UPDATED or any other event: refresh user data silently
+        // (showSpinner = false so ProtectedRoute never unmounts the editor)
         if (session?.user) {
-          await loadUser();
+          await loadUser(false);
         }
       }
     );
