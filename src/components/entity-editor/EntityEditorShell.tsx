@@ -1,10 +1,8 @@
 import React, { lazy, Suspense, useCallback, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import * as Tabs from '@radix-ui/react-tabs'
 import * as AlertDialog from '@radix-ui/react-alert-dialog'
 import { Loader2, Clock, AlertCircle } from 'lucide-react'
-import { entityKeys } from '@/lib/queryKeys'
-import { getEntityById } from '@/services/entity/entityService'
+import { useEntityQuery } from '@/hooks/useEntityQuery'
 import { useEditorUI } from '@/contexts/EditorUIContext'
 import { WORKFLOW_STATUS_LABELS } from '@/types/entity'
 import type { WorkflowStatus } from '@/types/entity'
@@ -104,11 +102,7 @@ export function EntityEditorShell({ entityId }: EntityEditorShellProps) {
   const { state, setActiveTab, isTabDirty, clearDirty } = useEditorUI()
   const [pendingTab, setPendingTab] = useState<TabId | null>(null)
 
-  const { data: entity, isLoading } = useQuery({
-    queryKey: entityKeys.detail(entityId ?? 'new'),
-    queryFn: () => (entityId ? getEntityById(entityId) : Promise.resolve(null)),
-    enabled: !!entityId,
-  })
+  const { data: entity, isLoading } = useEntityQuery(entityId)
 
   const handleTabChange = useCallback((newTab: string) => {
     if (isTabDirty(state.activeTab)) {

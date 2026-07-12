@@ -8,9 +8,10 @@ import { ChevronDown, Check, Loader2, RefreshCw, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import { EntityCreateSchema, generateSlug } from '@/lib/validation/entitySchemas'
 import type { EntityCreateInput } from '@/lib/validation/entitySchemas'
-import { getEntityById, createEntity, updateEntity } from '@/services/entity/entityService'
+import { createEntity, updateEntity } from '@/services/entity/entityService'
 import { getCategories } from '@/services/categoryService'
 import { entityKeys, categoryKeys } from '@/lib/queryKeys'
+import { useEntityQuery } from '@/hooks/useEntityQuery'
 import { useEditorUI } from '@/contexts/EditorUIContext'
 import { useAutosave } from '@/hooks/useAutosave'
 import {
@@ -68,11 +69,7 @@ export function GeneralTab({ entityId }: { entityId: string }) {
   const { markDirty, clearDirty } = useEditorUI()
   const isNew = !entityId
 
-  const { data: entity } = useQuery({
-    queryKey: entityKeys.detail(entityId),
-    queryFn: () => getEntityById(entityId),
-    enabled: !!entityId,
-  })
+  const { data: entity } = useEntityQuery(entityId || null)
 
   const {
     register, handleSubmit, control, watch, setValue, reset,
