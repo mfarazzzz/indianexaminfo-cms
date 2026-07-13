@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus, Trash2, Save } from "lucide-react";
 import { getBlogPostById, createBlogPost, updateBlogPost, getAuthors } from "@/services/blogService";
-import { searchExams } from "@/services/examService";
+import { searchEntities } from "@/services/entity/entityService";
 import { RichEditor } from "@/components/shared/RichEditor";
 import { SlugInput } from "@/components/shared/SlugInput";
 import { AISuggestion } from "@/components/shared/AISuggestion";
@@ -97,7 +97,7 @@ export function BlogEditPage() {
 
   useEffect(() => {
     if (!examSearch || examSearch.length < 2) { setExamResults([]); return; }
-    searchExams(examSearch).then((results) => setExamResults(results.map((e) => ({ slug: e.slug, name: e.name }))));
+    searchEntities(examSearch).then((results: import("@/types/entity").EntityListItem[]) => setExamResults(results.map((e: import("@/types/entity").EntityListItem) => ({ slug: e.slug, name: e.name }))));
   }, [examSearch]);
 
   const addRelatedExam = (slug: string) => {

@@ -1,45 +1,46 @@
 /**
- * entity.ts — Core types for the Content OS (ELMS) generic content engine.
- * An "entity" is the universal parent: exam, job, scholarship, admission, etc.
+ * entity.ts — Core types for the Content OS generic content engine.
+ * An "entity" is the universal parent: exam, job, scholarship, news article, etc.
  * entity_type is a free-text field — not an enum — so new types need no schema change.
+ *
+ * M3.8/M3.9: Updated workflow states. Added template_snapshot, content_type_id,
+ * last_verified_at, stage_key, event_subtype. (ADR-001, ADR-005, ADR-007)
  */
 
-// ── Workflow ─────────────────────────────────────────────────────────────────
+import type { TemplateConfiguration } from './lifecycle-template'
+
+// ── Workflow (ADR-007 — Universal, no per-template variance) ─────────────────
 
 export type WorkflowStatus =
   | 'draft'
-  | 'in_review'
-  | 'seo_review'
-  | 'legal_review'
-  | 'scheduled'
+  | 'review'
   | 'published'
   | 'archived'
+  | 'hidden'
+  | 'deleted'
 
 /** Tuple of all valid WorkflowStatus values — used for Zod enum validation */
 export const WORKFLOW_STATUS_VALUES = [
-  'draft', 'in_review', 'seo_review', 'legal_review',
-  'scheduled', 'published', 'archived',
+  'draft', 'review', 'published', 'archived', 'hidden', 'deleted',
 ] as const
 
 export const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
-  draft:        'Draft',
-  in_review:    'In Review',
-  seo_review:   'SEO Review',
-  legal_review: 'Legal Review',
-  scheduled:    'Scheduled',
-  published:    'Published',
-  archived:     'Archived',
+  draft:     'Draft',
+  review:    'In Review',
+  published: 'Published',
+  archived:  'Archived',
+  hidden:    'Hidden',
+  deleted:   'Deleted',
 }
 
-/** All valid state transitions (from → to[]) */
+/** All valid state transitions (from → to[]).  Source of truth for all workflow validation. */
 export const WORKFLOW_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
-  draft:        ['in_review'],
-  in_review:    ['seo_review', 'draft'],
-  seo_review:   ['legal_review', 'draft'],
-  legal_review: ['scheduled', 'published', 'draft'],
-  scheduled:    ['published', 'draft'],
-  published:    ['archived', 'draft'],
-  archived:     ['draft'],
+  draft:     ['review'],
+  review:    ['draft', 'published'],
+  published: ['archived', 'hidden'],
+  archived:  ['draft'],
+  hidden:    ['draft', 'archived'],
+  deleted:   [],  // terminal state
 }
 
 // ── Block system ─────────────────────────────────────────────────────────────
@@ -117,19 +118,28 @@ export interface EntityModule {
 
 export interface Entity {
   id: string
-  entityType: string          // 'exam' | 'job' | 'scholarship' | ... (extensible)
+  entityType: string          // free-text — extensible without schema changes (ADR-001)
   slug: string
   name: string
   shortName?: string | null
-  conductingBody?: string | null
   officialWebsite?: string | null
+  // Classification (FK references)
+  pillar?: string | null      // references pillar.slug
+  contentTypeId?: string | null
+  templateVersionId?: string | null  // read-only audit reference (ADR-005)
+  /** Immutable after creation — frozen copy of template version's configuration */
+  templateSnapshot: TemplateConfiguration
+  // Descriptive taxonomy FKs
+  conductingBodyId?: string | null
   categoryId?: string | null
-  pillar?: string | null
+  departmentId?: string | null
+  examLevelId?: string | null
+  examModeId?: string | null
+  applicationModeId?: string | null
+  // Legacy text fields
   subType?: string | null
-  examLevel?: string | null
-  examMode?: string | null
-  applicationMode?: string | null
   examFrequency?: string | null
+  // Workflow (ADR-007 — universal state machine)
   workflowStatus: WorkflowStatus
   isFeatured: boolean
   priority?: number | null
@@ -140,6 +150,10 @@ export interface Entity {
   publishedAt?: string | null
   publishedBy?: string | null
   lang: string
+  // Verification (separate from updated_at — ADR-011)
+  lastVerifiedAt?: string | null
+  lastVerifiedBy?: string | null
+  // Template-specific fields stored as JSONB (dynamic field definitions with storeIn:'metadata')
   metadata: Record<string, unknown>
   createdAt: string
   updatedAt: string
@@ -197,12 +211,16 @@ export interface EntityOverview {
 export interface TimelineEvent {
   id: string
   entityId: string
+  /** Loose reference to template's stage definition by key (NOT a FK) */
+  stageKey?: string | null
+  /** Optional subtype within a stage, e.g. 'application_open', 'application_close' */
+  eventSubtype?: string | null
   title: string
   eventType: string
-  eventDate: string
+  eventDate?: string | null   // nullable: stub events created without dates
   eventTime?: string | null
   description?: string | null
-  status: 'upcoming' | 'active' | 'passed' | 'postponed' | 'cancelled'
+  status: 'pending' | 'upcoming' | 'active' | 'passed' | 'postponed' | 'cancelled'
   badgeColor: string
   isHighlighted: boolean
   isFeatured: boolean

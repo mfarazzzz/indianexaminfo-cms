@@ -30,6 +30,13 @@ function lazyPage(
 }
 
 const DashboardPage     = lazyPage(() => import("@/pages/dashboard/DashboardPage"),     "DashboardPage");
+// M3.8: Pillar-agnostic entity pages
+const EntityListPage    = lazyPage(() => import("@/pages/entities/EntityListPage"),     "EntityListPage");
+const EntityEditorPage  = lazyPage(() => import("@/pages/entities/EntityEditorPage"),   "EntityEditorPage");
+const EntityCreationPage = lazyPage(() => import("@/pages/entities/EntityCreationPage"),"EntityCreationPage");
+// M3.8: Taxonomy manager
+const TaxonomyManagerPage = lazyPage(() => import("@/pages/taxonomy/TaxonomyManagerPage"), "TaxonomyManagerPage");
+// Legacy pages (kept for non-entity features)
 const ExamsListPage     = lazyPage(() => import("@/pages/exams/ExamsListPage"),         "ExamsListPage");
 const ExamEditorPage    = lazyPage(() => import("@/pages/exams/ExamEditorPage"),        "ExamEditorPage");
 const ContentListPage   = lazyPage(() => import("@/pages/content/ContentListPage"),     "ContentListPage");
@@ -62,8 +69,17 @@ export const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { path: "/dashboard",         element: <DashboardPage /> },
-          { path: "/exams",             element: <ExamsListPage /> },
-          { path: "/exams/new",         element: <ExamEditorPage /> },
+          // M3.8: Pillar-agnostic entity routes (zero code change for new pillars)
+          { path: "/entities",             element: <EntityListPage /> },
+          { path: "/entities/:pillar",     element: <EntityListPage /> },
+          { path: "/entities/:pillar/new", element: <EntityCreationPage /> },
+          { path: "/entities/:pillar/:id", element: <EntityEditorPage /> },
+          // M3.8: Taxonomy manager
+          { path: "/taxonomy",             element: <TaxonomyManagerPage /> },
+          { path: "/taxonomy/:type",       element: <TaxonomyManagerPage /> },
+          // Legacy routes → redirect to new pillar-agnostic routes
+          { path: "/exams",             element: <Navigate to="/entities/recruitment" replace /> },
+          { path: "/exams/new",         element: <Navigate to="/entities/recruitment/new" replace /> },
           { path: "/exams/:id",         element: <ExamEditorPage /> },
           { path: "/content",           element: <ContentListPage /> },
           { path: "/content/new",       element: <ContentEditPage /> },

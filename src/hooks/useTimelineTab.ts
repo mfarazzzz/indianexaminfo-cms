@@ -158,9 +158,9 @@ export function useTimelineTab(entityId: string): UseTimelineTabReturn {
   const duplicateMutation = useMutation({
     mutationFn: (event: TimelineEvent) => {
       const input: TimelineEventInput = {
-        title: event.title, eventType: event.eventType, eventDate: event.eventDate,
+        title: event.title, eventType: event.eventType, eventDate: event.eventDate ?? '',
         eventTime: event.eventTime ?? undefined, description: event.description ?? undefined,
-        status: event.status, badgeColor: event.badgeColor as TimelineEventInput['badgeColor'],
+        status: (event.status === 'pending' ? 'upcoming' : event.status) as TimelineEventInput['status'], badgeColor: event.badgeColor as TimelineEventInput['badgeColor'],
         isHighlighted: event.isHighlighted, isFeatured: event.isFeatured,
         officialLink: event.officialLink ?? undefined, pdfLink: event.pdfLink ?? undefined,
         visibility: event.visibility, displayOrder: events.length,

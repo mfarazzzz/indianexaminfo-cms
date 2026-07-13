@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus, Trash2, Save, Link as LinkIcon, FileText, Image as ImageIcon } from "lucide-react";
 import { getContentPostById, createContentPost, updateContentPost } from "@/services/contentService";
-import { searchExams } from "@/services/examService";
+import { searchEntities } from "@/services/entity/entityService";
 import { RichEditor } from "@/components/shared/RichEditor";
 import { PageErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { SlugInput } from "@/components/shared/SlugInput";
@@ -300,7 +300,7 @@ function ContentEditPageInner() {
 
   useEffect(() => {
     if (!examSearch || examSearch.length < 2) { setExamResults([]); return; }
-    searchExams(examSearch).then(setExamResults);
+    searchEntities(examSearch).then(items => setExamResults(items.map(e => ({ id: e.id, name: e.name, slug: e.slug, pillar: e.pillar as import("@/types/exam").Pillar, status: e.workflowStatus }))));
   }, [examSearch]);
 
   const selectExam = (exam: { id: string; name: string; slug: string; pillar: Pillar }) => {

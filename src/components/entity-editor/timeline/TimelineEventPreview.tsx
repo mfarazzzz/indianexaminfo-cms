@@ -31,8 +31,8 @@ export function TimelineEventPreview({ event, onClose }: TimelineEventPreviewPro
   }, [onClose])
 
   const formattedDate = (() => {
-    try { return format(parseISO(event.eventDate), 'd MMM yyyy') }
-    catch { return event.eventDate }
+    try { return event.eventDate ? format(parseISO(event.eventDate), 'd MMM yyyy') : 'TBD' }
+    catch { return event.eventDate ?? 'TBD' }
   })()
 
   const badgeCls = BADGE_COLOR_MAP[event.badgeColor] ?? BADGE_COLOR_MAP.blue

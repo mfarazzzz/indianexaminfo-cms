@@ -52,3 +52,54 @@ export const categoryKeys = {
   all:    ()                            => ['categories'] as const,
   byPillar: (pillar: string)            => ['categories', 'pillar', pillar] as const,
 } as const
+
+// ── M3.8 / M3.9 additions ─────────────────────────────────────────────────────
+
+export const pillarKeys = {
+  all:    () => ['pillars'] as const,
+  list:   () => ['pillars', 'list'] as const,
+  detail: (id: string) => ['pillars', 'detail', id] as const,
+} as const
+
+export const templateKeys = {
+  all:      ()                    => ['templates'] as const,
+  list:     (pillarId?: string)   => ['templates', 'list', pillarId ?? 'all'] as const,
+  detail:   (id: string)          => ['templates', 'detail', id] as const,
+  versions: (templateId: string)  => ['templates', 'versions', templateId] as const,
+} as const
+
+export const contentTypeKeys = {
+  all:    ()                  => ['content-types'] as const,
+  list:   (pillarId?: string) => ['content-types', 'list', pillarId ?? 'all'] as const,
+  detail: (id: string)        => ['content-types', 'detail', id] as const,
+} as const
+
+export const relationshipKeys = {
+  all:  ()                     => ['relationships'] as const,
+  list: (entityId: string)     => ['relationships', 'list', entityId] as const,
+} as const
+
+export const amendmentKeys = {
+  all:       ()                => ['amendments'] as const,
+  list:      (entityId: string)=> ['amendments', 'list', entityId] as const,
+  published: (entityId: string)=> ['amendments', 'published', entityId] as const,
+} as const
+
+export const localizationKeys = {
+  all:    ()                                => ['localizations'] as const,
+  entity: (entityId: string, lang: string) => ['localizations', entityId, lang] as const,
+} as const
+
+export const slugHistoryKeys = {
+  list: (entityId: string) => ['slug-history', entityId] as const,
+} as const
+
+export const taxonomyKeys = {
+  all:    ()                            => ['taxonomy'] as const,
+  list:   (table: string)               => ['taxonomy', table, 'list'] as const,
+  detail: (table: string, id: string)   => ['taxonomy', table, 'detail', id] as const,
+} as const
+
+export const healthKeys = {
+  entity: (entityId: string) => ['health', entityId] as const,
+} as const

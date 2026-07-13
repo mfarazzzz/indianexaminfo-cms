@@ -70,10 +70,9 @@ describe('EntityCreateSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('rejects empty conductingBody', () => {
+  it('accepts empty conductingBody (field is now optional — FK conductingBodyId preferred)', () => {
     const result = EntityCreateSchema.safeParse({ ...valid, conductingBody: '' })
-    expect(result.success).toBe(false)
-    expect(result.error?.issues[0].path).toContain('conductingBody')
+    expect(result.success).toBe(true)
   })
 
   it('rejects invalid URL for officialWebsite', () => {

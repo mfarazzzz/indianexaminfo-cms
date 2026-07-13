@@ -36,7 +36,7 @@ export const EntityCreateSchema = z.object({
   name:            z.string().min(1, 'Exam name is required').max(200, 'Max 200 characters'),
   shortName:       z.string().max(100).optional().nullable(),
   slug:            slugSchema,
-  conductingBody:  z.string().min(1, 'Conducting body is required').max(200, 'Max 200 characters'),
+  conductingBody:  z.string().max(200).optional().nullable(),
   officialWebsite: urlSchema,
   categoryId:      z.string().uuid().optional().nullable(),
   pillar:          z.string().optional().nullable(),

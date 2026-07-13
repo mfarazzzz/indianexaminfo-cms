@@ -99,11 +99,11 @@ export function GeneralTab({ entityId }: { entityId: string }) {
     seedRef.current = true
     reset({
       name: entity.name, shortName: entity.shortName ?? '',
-      slug: entity.slug, conductingBody: entity.conductingBody ?? '',
+      slug: entity.slug, conductingBody: entity.conductingBodyId ?? (entity as unknown as Record<string,string>).conductingBody ?? '',
       officialWebsite: entity.officialWebsite ?? '',
       categoryId: entity.categoryId, pillar: entity.pillar,
-      subType: entity.subType ?? 'exam', examLevel: entity.examLevel,
-      examMode: entity.examMode, applicationMode: entity.applicationMode,
+      subType: entity.subType ?? 'exam', examLevel: entity.examLevelId ?? null,
+      examMode: entity.examModeId ?? null, applicationMode: entity.applicationModeId ?? null,
       examFrequency: entity.examFrequency, workflowStatus: entity.workflowStatus,
       isFeatured: entity.isFeatured, priority: entity.priority,
       featuredUntil: entity.featuredUntil ? entity.featuredUntil.slice(0, 10) : null,

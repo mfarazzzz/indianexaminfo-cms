@@ -39,14 +39,19 @@ function mapRow(row: Record<string, unknown>): Entity {
     slug:                row.slug as string,
     name:                row.name as string,
     shortName:           row.short_name as string | null,
-    conductingBody:      row.conducting_body as string | null,
     officialWebsite:     row.official_website as string | null,
+    // M3.8 taxonomy FK columns
+    conductingBodyId:    row.conducting_body_id as string | null,
     categoryId:          row.category_id as string | null,
+    departmentId:        row.department_id as string | null,
+    examLevelId:         row.exam_level_id as string | null,
+    examModeId:          row.exam_mode_id as string | null,
+    applicationModeId:   row.application_mode_id as string | null,
     pillar:              row.pillar as string | null,
+    contentTypeId:       row.content_type_id as string | null,
+    templateVersionId:   row.template_version_id as string | null,
+    templateSnapshot:    (row.template_snapshot as import('@/types/lifecycle-template').TemplateConfiguration) ?? {} as import('@/types/lifecycle-template').TemplateConfiguration,
     subType:             row.sub_type as string | null,
-    examLevel:           row.exam_level as string | null,
-    examMode:            row.exam_mode as string | null,
-    applicationMode:     row.application_mode as string | null,
     examFrequency:       row.exam_frequency as string | null,
     workflowStatus:      row.workflow_status as Entity['workflowStatus'],
     isFeatured:          row.is_featured as boolean,
@@ -58,6 +63,8 @@ function mapRow(row: Record<string, unknown>): Entity {
     publishedAt:         row.published_at as string | null,
     publishedBy:         row.published_by as string | null,
     lang:                (row.lang as string) ?? 'en',
+    lastVerifiedAt:      row.last_verified_at as string | null,
+    lastVerifiedBy:      row.last_verified_by as string | null,
     metadata:            (row.metadata as Record<string, unknown>) ?? {},
     createdAt:           row.created_at as string,
     updatedAt:           row.updated_at as string,
@@ -159,8 +166,12 @@ export async function createEntity(input: EntityCreateInput): Promise<Entity> {
 
 export async function updateEntity(
   id: string,
-  input: Partial<EntityCreateInput>
+  input: Partial<EntityCreateInput>,
+  userId?: string
 ): Promise<Entity> {
+  // Fetch current slug before updating (for slug history)
+  const current = await getEntityById(id)
+
   const updates: Record<string, unknown> = {}
   const fieldMap: Record<string, string> = {
     slug: 'slug', name: 'name', shortName: 'short_name',
@@ -185,6 +196,95 @@ export async function updateEntity(
     .select('*')
     .single()
   if (error) throw error
+  const updated = mapRow(data as Record<string, unknown>)
+
+  // Record slug change if slug was updated
+  if (current && input.slug && input.slug !== current.slug && current.pillar) {
+    try {
+      const { recordSlugChange } = await import('./slugHistoryService')
+      await recordSlugChange(id, current.slug, input.slug, current.pillar, userId)
+    } catch {
+      // Non-fatal: slug history failure should not block the save
+    }
+  }
+
+  return updated
+}
+
+// ── Workflow transition ───────────────────────────────────────────────────────
+
+export async function transitionWorkflow(
+  id: string,
+  targetStatus: import('@/types/entity').WorkflowStatus,
+  userId: string
+): Promise<Entity> {
+  const { WORKFLOW_TRANSITIONS } = await import('@/types/entity')
+  const entity = await getEntityById(id)
+  if (!entity) throw new Error(`Entity ${id} not found`)
+
+  const allowed = WORKFLOW_TRANSITIONS[entity.workflowStatus]
+  if (!allowed.includes(targetStatus)) {
+    throw new Error(
+      `Cannot transition from '${entity.workflowStatus}' to '${targetStatus}'.` +
+      ` Allowed: ${allowed.join(', ') || 'none'}`
+    )
+  }
+
+  // Publishing gate: require SEO completeness
+  if (targetStatus === 'published') {
+    const { getPublishReadiness } = await import('./healthService')
+    const issues = await getPublishReadiness(id)
+    if (issues.length > 0) {
+      throw new Error(`Cannot publish: ${issues.join('; ')}`)
+    }
+  }
+
+  const { data, error } = await db
+    .from('entity')
+    .update({ workflow_status: targetStatus })
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw error
+
+  // Record workflow event
+  await db.from('entity_event_log').insert({
+    entity_id:  id,
+    event_type: `workflow.${targetStatus}`,
+    actor_id:   userId,
+    payload:    { from: entity.workflowStatus, to: targetStatus },
+  })
+
+  return mapRow(data as Record<string, unknown>)
+}
+
+// ── Verify content ────────────────────────────────────────────────────────────
+
+export async function verifyEntity(
+  id: string,
+  userId: string,
+  source?: string,
+  notes?: string
+): Promise<Entity> {
+  const now = new Date().toISOString()
+  const { data, error } = await db
+    .from('entity')
+    .update({ last_verified_at: now, last_verified_by: userId })
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw error
+
+  // Audit log
+  await db.from('entity_activity_log').insert({
+    entity_id:   id,
+    actor_id:    userId,
+    action:      'verification',
+    target_type: 'entity',
+    target_id:   id,
+    changes:     { verified_at: now, source: source ?? null, notes: notes ?? null },
+  })
+
   return mapRow(data as Record<string, unknown>)
 }
 

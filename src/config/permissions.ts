@@ -31,6 +31,13 @@ export const P = {
   MANAGE_SETTINGS:   "manage_settings",
   VIEW_ANALYTICS:    "view_analytics",
   VIEW_AUDIT_LOG:    "view_audit_log",
+  // M3.8 — Structural taxonomy governance
+  MANAGE_STRUCTURAL_TAXONOMY: "manage_structural_taxonomy",
+  // M3.8 — Content operations
+  PUBLISH_ENTITY:    "publish_entity",
+  VERIFY_CONTENT:    "verify_content",
+  MANAGE_RELATIONSHIPS: "manage_relationships",
+  MANAGE_AMENDMENTS: "manage_amendments",
 } as const;
 
 export type PermissionSlug = typeof P[keyof typeof P];

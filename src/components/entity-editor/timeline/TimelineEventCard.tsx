@@ -62,9 +62,10 @@ export function TimelineEventCard({
   const { handleSubmit, formState: { isDirty }, reset } = useForm<TimelineEventInput>({
     resolver: zodResolver(TimelineEventSchema),
     defaultValues: {
-      title: event.title, eventType: event.eventType, eventDate: event.eventDate,
+      title: event.title, eventType: event.eventType, eventDate: event.eventDate ?? '',
       eventTime: event.eventTime ?? undefined, description: event.description ?? undefined,
-      status: event.status, badgeColor: event.badgeColor as TimelineEventInput['badgeColor'],
+      status: (event.status === 'pending' ? 'upcoming' : event.status) as TimelineEventInput['status'],
+      badgeColor: event.badgeColor as TimelineEventInput['badgeColor'],
       isHighlighted: event.isHighlighted, isFeatured: event.isFeatured,
       officialLink: event.officialLink ?? undefined, pdfLink: event.pdfLink ?? undefined,
       visibility: event.visibility, displayOrder: event.displayOrder,
@@ -73,7 +74,7 @@ export function TimelineEventCard({
   })
 
   // Reset when event data changes from server
-  useEffect(() => { reset({ title: event.title, eventType: event.eventType, eventDate: event.eventDate }) }, [event.id, reset])
+  useEffect(() => { reset({ title: event.title, eventType: event.eventType, eventDate: event.eventDate ?? '' }) }, [event.id, reset])
 
   // ── Autosave (ARCHITECTURE.md §5.3 pattern) ─────────────────────────────
   const autosaveFnRef = useRef<() => Promise<void>>(async () => {})
@@ -104,8 +105,8 @@ export function TimelineEventCard({
   }, [])
 
   const formattedDate = (() => {
-    try { return format(parseISO(event.eventDate), 'd MMM yyyy') }
-    catch { return event.eventDate }
+    try { return event.eventDate ? format(parseISO(event.eventDate), 'd MMM yyyy') : 'TBD' }
+    catch { return event.eventDate ?? 'TBD' }
   })()
 
   return (
@@ -168,9 +169,10 @@ export function TimelineEventCard({
         <div className="border-t border-slate-100 px-4 pb-4">
           <TimelineEventForm
             defaultValues={{
-              title: event.title, eventType: event.eventType, eventDate: event.eventDate,
+              title: event.title, eventType: event.eventType, eventDate: event.eventDate ?? '',
               eventTime: event.eventTime ?? undefined, description: event.description ?? undefined,
-              status: event.status, badgeColor: event.badgeColor as TimelineEventInput['badgeColor'],
+              status: (event.status === 'pending' ? 'upcoming' : event.status) as TimelineEventInput['status'],
+              badgeColor: event.badgeColor as TimelineEventInput['badgeColor'],
               isHighlighted: event.isHighlighted, isFeatured: event.isFeatured,
               officialLink: event.officialLink ?? undefined, pdfLink: event.pdfLink ?? undefined,
               visibility: event.visibility, displayOrder: event.displayOrder,
