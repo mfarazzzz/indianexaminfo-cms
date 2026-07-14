@@ -1,154 +1,200 @@
 /**
- * EntityCreationPage.tsx — 3-step entity creation wizard.
- * On success, navigates to the new entity's editor.
+ * EntityCreationPage.tsx — Content creation flow.
+ *
+ * Simple, fast, predictable. No AI. No technical language.
+ * Editor selects: Title → Content Domain → Content Type → Create.
+ *
+ * The platform automatically:
+ * - Resolves the correct lifecycle template from the content type's pillar
+ * - Creates the entity with frozen snapshot
+ * - Navigates to the Workspace
+ *
+ * No mention of: Entity, Lifecycle Template, Schema, Snapshot, Internal IDs.
  */
-import { useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Loader2, ChevronRight, ChevronLeft, Check } from 'lucide-react'
-import { useEntityCreationWizard } from '@/hooks/useEntityCreationWizard'
-import { useTemplates } from '@/hooks/useTemplates'
-import { useContentTypes } from '@/hooks/useContentTypes'
+import { useMutation } from '@tanstack/react-query'
+import { Loader2, ArrowRight } from 'lucide-react'
+import { toast } from 'sonner'
 import { usePillars } from '@/hooks/usePillars'
+import { useContentTypes } from '@/hooks/useContentTypes'
+import { useTemplates } from '@/hooks/useTemplates'
+import { createEntity } from '@/services/entity/entityService'
+import { getActiveTemplateVersion } from '@/services/template/templateService'
 import { cn } from '@/lib/utils'
 
+// ── Domain display config (editorial labels, no technical terms) ───────────────
+
+const DOMAIN_ICONS: Record<string, string> = {
+  'recruitment':     '💼',
+  'entrance-exam':   '📝',
+  'board-university':'🎓',
+  'news-editorial':  '📰',
+}
+
 export function EntityCreationPage() {
-  const { pillar: pillarParam } = useParams<{ pillar?: string }>()
   const navigate = useNavigate()
+  const { pillar: pillarParam } = useParams<{ pillar?: string }>()
 
-  const {
-    step, data, updateData, goNext, goBack,
-    handleCreate, createdEntity, isCreating, createError,
-    canProceedStep1, canProceedStep2,
-  } = useEntityCreationWizard()
+  // ── State ─────────────────────────────────────────────────────────────────
+  const [title, setTitle] = useState('')
+  const [selectedDomain, setSelectedDomain] = useState<string>(pillarParam ?? '')
+  const [selectedContentType, setSelectedContentType] = useState<string>('')
 
-  const { data: pillars = [] } = usePillars()
-  const { data: templates = [] } = useTemplates(data.pillar?.id)
-  const { data: contentTypes = [] } = useContentTypes(data.pillar?.id)
+  // ── Data ──────────────────────────────────────────────────────────────────
+  const { data: domains = [] } = usePillars()
+  const { data: contentTypes = [] } = useContentTypes(
+    domains.find(d => d.slug === selectedDomain)?.id
+  )
+  const { data: templates = [] } = useTemplates(
+    domains.find(d => d.slug === selectedDomain)?.id
+  )
 
-  // Pre-select pillar from URL param
+  // Pre-select domain from URL param
   useEffect(() => {
-    if (pillarParam && pillars.length > 0 && !data.pillar) {
-      const found = pillars.find(p => p.slug === pillarParam)
-      if (found) updateData({ pillar: found })
+    if (pillarParam && domains.length > 0) {
+      setSelectedDomain(pillarParam)
     }
-  }, [pillarParam, pillars, data.pillar, updateData])
+  }, [pillarParam, domains])
 
-  // Navigate on successful creation
+  // Reset content type when domain changes
   useEffect(() => {
-    if (createdEntity) {
-      navigate(`/entities/${createdEntity.pillar}/${createdEntity.id}`)
-    }
-  }, [createdEntity, navigate])
+    setSelectedContentType('')
+  }, [selectedDomain])
+
+  // ── Create mutation ───────────────────────────────────────────────────────
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (!title.trim()) throw new Error('Please enter a title')
+      if (!selectedDomain) throw new Error('Please select a content domain')
+
+      // Automatically resolve the lifecycle template for this domain
+      // Use the first active template for the selected pillar
+      const template = templates[0]
+      if (!template) throw new Error('No content configuration available for this domain. Please contact an administrator.')
+
+      // Get the active version of this template
+      const version = await getActiveTemplateVersion(template.id)
+      if (!version) throw new Error('Content configuration not ready. Please contact an administrator.')
+
+      // Create the entity — platform handles slug, snapshot, SEO skeleton
+      return createEntity({
+        name:              title.trim(),
+        slug:              '', // auto-generated from title
+        pillar:            selectedDomain,
+        contentTypeId:     selectedContentType || undefined,
+        templateVersionId: version.id,
+        workflowStatus:    'draft',
+        isFeatured:        false,
+        tags:              [],
+        searchKeywords:    [],
+        lang:              'en',
+        metadata:          {},
+      })
+    },
+    onSuccess: (entity) => {
+      toast.success('Content created')
+      navigate(`/entities/${entity.pillar}/${entity.id}`)
+    },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    },
+  })
+
+  // ── Derived state ─────────────────────────────────────────────────────────
+  const canCreate = title.trim().length >= 2 && !!selectedDomain
+  const selectedDomainLabel = domains.find(d => d.slug === selectedDomain)?.label ?? ''
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
-      {/* Step indicator */}
-      <div className="flex items-center gap-2 mb-8">
-        {[1, 2, 3].map(n => (
-          <div key={n} className="flex items-center gap-2">
-            <div className={cn(
-              'h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors',
-              step === n ? 'bg-blue-600 text-white' :
-              step > n  ? 'bg-green-500 text-white' :
-              'bg-gray-200 text-gray-500'
-            )}>
-              {step > n ? <Check className="h-4 w-4" /> : n}
-            </div>
-            {n < 3 && <div className={cn('h-0.5 w-12', step > n ? 'bg-green-500' : 'bg-gray-200')} />}
-          </div>
-        ))}
-        <span className="ml-3 text-sm text-gray-500">
-          {step === 1 ? 'Basic Info' : step === 2 ? 'Choose Template' : 'Review & Create'}
-        </span>
+    <div className="max-w-xl mx-auto px-6 py-12">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-slate-900">Create New Content</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Start writing. The platform handles everything else.
+        </p>
       </div>
 
-      {/* Step 1 — Name + Pillar */}
-      {step === 1 && (
-        <div className="space-y-5">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">Name your entity</h2>
-            <p className="text-sm text-gray-500">Use the full official name, including the year.</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Entity Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={data.name}
-              onChange={e => updateData({ name: e.target.value })}
-              placeholder="e.g. SSC CGL Recruitment 2026"
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Pillar <span className="text-red-500">*</span>
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              {pillars.map(p => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => updateData({ pillar: p, template: null, contentType: null })}
-                  className={cn(
-                    'text-left p-3 rounded-lg border-2 text-sm transition-colors',
-                    data.pillar?.id === p.id
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 hover:border-gray-300'
+      <div className="space-y-6">
+
+        {/* ── Title ────────────────────────────────────────────────────────── */}
+        <div>
+          <label htmlFor="content-title" className="block text-sm font-medium text-slate-700 mb-1.5">
+            What are you writing about?
+          </label>
+          <input
+            id="content-title"
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="e.g. SSC CGL Recruitment 2026"
+            className="w-full border border-slate-200 rounded-lg px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            autoFocus
+            maxLength={200}
+          />
+          {title.length > 0 && (
+            <p className="text-xs text-slate-400 mt-1 text-right">{title.length}/200</p>
+          )}
+        </div>
+
+        {/* ── Content Domain ───────────────────────────────────────────────── */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Content Domain
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {domains.map(domain => (
+              <button
+                key={domain.slug}
+                type="button"
+                onClick={() => setSelectedDomain(domain.slug)}
+                className={cn(
+                  'flex items-center gap-3 p-3 rounded-lg border-2 text-left transition-all',
+                  selectedDomain === domain.slug
+                    ? 'border-blue-500 bg-blue-50 shadow-sm'
+                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                )}
+              >
+                <span className="text-xl" aria-hidden="true">
+                  {DOMAIN_ICONS[domain.slug] ?? '📄'}
+                </span>
+                <div>
+                  <p className={cn(
+                    'text-sm font-medium',
+                    selectedDomain === domain.slug ? 'text-blue-700' : 'text-slate-700'
+                  )}>
+                    {domain.label}
+                  </p>
+                  {domain.description && (
+                    <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">
+                      {domain.description}
+                    </p>
                   )}
-                >
-                  <div className="font-medium">{p.label}</div>
-                  {p.description && <div className="text-xs text-gray-400 mt-0.5 truncate">{p.description}</div>}
-                </button>
-              ))}
-            </div>
+                </div>
+              </button>
+            ))}
           </div>
         </div>
-      )}
 
-      {/* Step 2 — Template + Content Type */}
-      {step === 2 && (
-        <div className="space-y-5">
+        {/* ── Content Type (optional refinement) ───────────────────────────── */}
+        {selectedDomain && contentTypes.length > 0 && (
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">Choose template & type</h2>
-            <p className="text-sm text-gray-500">The template determines which modules and fields are available.</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Lifecycle Template</label>
-            <div className="grid grid-cols-2 gap-3">
-              {templates.map(t => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => updateData({ template: t })}
-                  className={cn(
-                    'text-left p-3 rounded-lg border-2 text-sm transition-colors',
-                    data.template?.id === t.id
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 hover:border-gray-300'
-                  )}
-                >
-                  <div className="font-medium">{t.name}</div>
-                  {t.description && <div className="text-xs text-gray-400 mt-0.5 truncate">{t.description}</div>}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Content Type</label>
-            <div className="grid grid-cols-3 gap-2">
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Content Type <span className="text-slate-400 font-normal">(optional)</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
               {contentTypes.map(ct => (
                 <button
                   key={ct.id}
                   type="button"
-                  onClick={() => updateData({ contentType: ct })}
+                  onClick={() => setSelectedContentType(
+                    selectedContentType === ct.id ? '' : ct.id
+                  )}
                   className={cn(
-                    'text-left p-2.5 rounded-lg border-2 text-xs transition-colors',
-                    data.contentType?.id === ct.id
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 hover:border-gray-300'
+                    'px-3 py-1.5 rounded-full text-sm border transition-all',
+                    selectedContentType === ct.id
+                      ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                   )}
                 >
                   {ct.label}
@@ -156,83 +202,51 @@ export function EntityCreationPage() {
               ))}
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Step 3 — Review */}
-      {step === 3 && (
-        <div className="space-y-5">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">Review & Create</h2>
-            <p className="text-sm text-gray-500">Confirm details before creating the entity.</p>
-          </div>
-          <dl className="bg-gray-50 rounded-lg p-4 space-y-3 text-sm">
-            <div className="flex gap-4">
-              <dt className="font-medium text-gray-600 w-32 shrink-0">Name</dt>
-              <dd className="text-gray-900">{data.name}</dd>
-            </div>
-            <div className="flex gap-4">
-              <dt className="font-medium text-gray-600 w-32 shrink-0">Pillar</dt>
-              <dd className="text-gray-900">{data.pillar?.label}</dd>
-            </div>
-            <div className="flex gap-4">
-              <dt className="font-medium text-gray-600 w-32 shrink-0">Template</dt>
-              <dd className="text-gray-900">{data.template?.name}</dd>
-            </div>
-            <div className="flex gap-4">
-              <dt className="font-medium text-gray-600 w-32 shrink-0">Content Type</dt>
-              <dd className="text-gray-900">{data.contentType?.label}</dd>
-            </div>
-            <div className="flex gap-4">
-              <dt className="font-medium text-gray-600 w-32 shrink-0">Layout</dt>
-              <dd className="text-gray-500 text-xs">{data.template?.frontendLayout}</dd>
-            </div>
-            <div className="flex gap-4">
-              <dt className="font-medium text-gray-600 w-32 shrink-0">Schema.org</dt>
-              <dd className="text-gray-500 text-xs">{data.template?.defaultSchemaOrgType}</dd>
-            </div>
-          </dl>
+        {/* ── Create Button ────────────────────────────────────────────────── */}
+        <div className="pt-4 border-t">
+          <button
+            type="button"
+            onClick={() => createMutation.mutate()}
+            disabled={!canCreate || createMutation.isPending}
+            className={cn(
+              'w-full flex items-center justify-center gap-2 px-6 py-3 rounded-lg text-sm font-medium transition-all',
+              canCreate
+                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+            )}
+          >
+            {createMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                Create {selectedDomainLabel || 'Content'}
+                <ArrowRight className="h-4 w-4" />
+              </>
+            )}
+          </button>
 
-          {createError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-600">
-              {(createError as Error).message}
-            </div>
+          {createMutation.isError && (
+            <p className="text-sm text-red-600 mt-2 text-center" role="alert">
+              {(createMutation.error as Error).message}
+            </p>
           )}
         </div>
-      )}
 
-      {/* Navigation buttons */}
-      <div className="flex items-center justify-between mt-8 pt-6 border-t">
-        <button
-          type="button"
-          onClick={step === 1 ? () => navigate(-1) : goBack}
-          className="flex items-center gap-1.5 text-sm px-4 py-2 rounded ring-1 ring-gray-200 hover:bg-gray-50"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          {step === 1 ? 'Cancel' : 'Back'}
-        </button>
-
-        {step < 3 ? (
+        {/* ── Cancel ───────────────────────────────────────────────────────── */}
+        <div className="text-center">
           <button
             type="button"
-            onClick={goNext}
-            disabled={(step === 1 && !canProceedStep1) || (step === 2 && !canProceedStep2)}
-            className="flex items-center gap-1.5 text-sm px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
+            onClick={() => navigate(-1)}
+            className="text-sm text-slate-500 hover:text-slate-700"
           >
-            Next
-            <ChevronRight className="h-4 w-4" />
+            ← Cancel
           </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => handleCreate()}
-            disabled={isCreating}
-            className="flex items-center gap-1.5 text-sm px-5 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
-          >
-            {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            {isCreating ? 'Creating…' : 'Create Entity'}
-          </button>
-        )}
+        </div>
       </div>
     </div>
   )
