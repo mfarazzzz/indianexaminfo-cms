@@ -126,14 +126,14 @@ export async function createExam(input: ExamCreateInput): Promise<ExamEntity> {
       name: input.name,
       short_name: input.shortName,
       pillar: input.pillar,
-      category_id: input.categoryId ?? null,
-      subcategory_id: input.subcategoryId ?? null,
+      category_id: input.categoryId || null,
+      subcategory_id: input.subcategoryId || null,
       entity_type: input.entityType,
       conducting_body: input.conductingBody,
-      official_website: input.officialWebsite ?? null,
+      official_website: input.officialWebsite || null,
       status: input.status ?? "upcoming",
       is_featured: input.isFeatured ?? false,
-      created_by: input.createdBy ?? null,
+      created_by: input.createdBy || null,
     })
     .select(LIST_SELECT)
     .single();
@@ -233,9 +233,15 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
     faqs: "faqs",
   };
 
+  // UUID fields that must be null instead of empty string
+  const UUID_FIELDS = new Set(["category_id", "subcategory_id"]);
+
   for (const [key, col] of Object.entries(fieldMap)) {
     if ((input as any)[key] !== undefined) {
-      updates[col] = (input as any)[key];
+      let value = (input as any)[key];
+      // Convert empty strings to null for UUID FK columns
+      if (UUID_FIELDS.has(col) && value === "") value = null;
+      updates[col] = value;
     }
   }
 

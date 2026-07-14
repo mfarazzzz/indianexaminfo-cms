@@ -6,14 +6,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Plus, Trash2, Save, Link as LinkIcon, FileText, Image as ImageIcon } from "lucide-react";
 import { getContentPostById, createContentPost, updateContentPost } from "@/services/contentService";
-import { searchEntities } from "@/services/entity/entityService";
+import { searchExams } from "@/services/examService";
+import { revalidateAfterModuleSave } from "@/lib/revalidation/revalidationService";
 import { RichEditor } from "@/components/shared/RichEditor";
 import { PageErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { SlugInput } from "@/components/shared/SlugInput";
 import { AISuggestion } from "@/components/shared/AISuggestion";
-import { FrontendSync } from "@/components/shared/FrontendSync";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { revalidateContentPost } from "@/lib/api/frontend";
 import { CONTENT_TYPES } from "@/config/site";
 import { usePillars } from "@/hooks/usePillars";
 import { CONTENT_TYPE_CONFIGS } from "@/config/contentTypeFields";
@@ -302,7 +301,7 @@ function ContentEditPageInner() {
 
   useEffect(() => {
     if (!examSearch || examSearch.length < 2) { setExamResults([]); return; }
-    searchEntities(examSearch).then(items => setExamResults(items.map(e => ({ id: e.id, name: e.name, slug: e.slug, pillar: e.pillar ?? '', status: e.workflowStatus }))));
+    searchExams(examSearch).then(items => setExamResults(items.map(e => ({ id: e.id, name: e.name, slug: e.slug, pillar: e.pillar ?? '', status: e.status }))));
   }, [examSearch]);
 
   const selectExam = (exam: { id: string; name: string; slug: string; pillar: string }) => {
@@ -324,6 +323,8 @@ function ContentEditPageInner() {
       } else {
         await updateContentPost(id!, { ...data, updatedBy: user?.id });
         toast.success("Post saved!");
+        // Background revalidation — non-blocking
+        revalidateAfterModuleSave({ examSlug: examSlug || "exam", pillar: data.pillar, categorySlug: "", contentType: data.contentType });
       }
     } catch (err) {
       toast.error("Save failed: " + getErrorMessage(err));
@@ -620,22 +621,6 @@ function ContentEditPageInner() {
               onBlur={(e) => setValue("tags", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
               className="w-full rounded border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
           </div>
-
-          {/* Frontend Sync */}
-          {!isNew && (
-            <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <h3 className="mb-2 text-sm font-semibold">Frontend Sync</h3>
-              <FrontendSync onSync={(url, token) =>
-                revalidateContentPost({
-                  pillar: watchedPillar,
-                  categorySlug: categorySlug || "category",
-                  examSlug: examSlug || "exam",
-                  contentType: watchedContentType,
-                  postSlug: watchedSlug,
-                }, url, token)
-              } />
-            </div>
-          )}
         </div>
       </div>
     </form>
