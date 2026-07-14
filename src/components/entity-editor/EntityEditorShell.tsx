@@ -12,6 +12,8 @@ import * as AlertDialog from '@radix-ui/react-alert-dialog'
 import { Loader2, Clock, AlertCircle, ShieldCheck } from 'lucide-react'
 import { useEntityQuery } from '@/hooks/useEntityQuery'
 import { useEditorUI } from '@/contexts/EditorUIContext'
+import { PillarProvider } from '@/contexts/PillarContext'
+import { usePillars } from '@/hooks/usePillars'
 import { WORKFLOW_STATUS_LABELS } from '@/types/entity'
 import type { WorkflowStatus } from '@/types/entity'
 import type { ModuleVisibilityConfig } from '@/types/lifecycle-template'
@@ -95,6 +97,9 @@ export function EntityEditorShell({ entityId }: EntityEditorShellProps) {
   const [pendingTab, setPendingTab] = useState<string | null>(null)
 
   const { data: entity, isLoading } = useEntityQuery(entityId)
+  // Fetch pillars once here and provide to all child tabs via context (REQ-001).
+  // This prevents each tab from making its own pillar query.
+  const { data: pillars = [] } = usePillars()
 
   // ── Derive enabled tabs from template_snapshot.moduleVisibility ──────────────
   // This is the key M3.8 change: zero hardcoded tab arrays.
@@ -144,6 +149,7 @@ export function EntityEditorShell({ entityId }: EntityEditorShellProps) {
   const statusStyle = STATUS_STYLES[status] ?? STATUS_STYLES.draft
 
   return (
+    <PillarProvider pillars={pillars}>
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="border-b bg-white px-6 py-3 flex items-center justify-between gap-4 shrink-0 shadow-sm">
@@ -257,5 +263,6 @@ export function EntityEditorShell({ entityId }: EntityEditorShellProps) {
         </AlertDialog.Portal>
       </AlertDialog.Root>
     </div>
+    </PillarProvider>
   )
 }

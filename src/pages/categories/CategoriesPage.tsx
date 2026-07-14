@@ -7,15 +7,14 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { SlugInput } from "@/components/shared/SlugInput";
 import { revalidateAll } from "@/lib/api/frontend";
 import { useSettings } from "@/hooks/useSettings";
-import { PILLARS } from "@/config/site";
+import { usePillars } from "@/hooks/usePillars";
 import { SITE } from "@/config/site";
-import type { Pillar } from "@/types/exam";
 
 type FormData = {
   name: string;
   slug: string;
   shortName: string;
-  pillar: Pillar;
+  pillar: string;
   parentId: string;
   description: string;
   icon: string;
@@ -26,9 +25,10 @@ type FormData = {
 
 export function CategoriesPage() {
   const { getSetting } = useSettings();
+  const { data: pillars = [] } = usePillars();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pillarFilter, setPillarFilter] = useState<Pillar>("sarkari-naukri");
+  const [pillarFilter, setPillarFilter] = useState<string>("recruitment");
   const [editing, setEditing] = useState<Category | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
@@ -139,9 +139,9 @@ export function CategoriesPage() {
 
       {/* Pillar tabs */}
       <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 w-fit">
-        {PILLARS.map((p) => (
-          <button key={p.value} onClick={() => setPillarFilter(p.value as Pillar)}
-            className={`rounded px-4 py-1.5 text-sm font-medium transition-colors ${pillarFilter === p.value ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+        {pillars.map((p) => (
+          <button key={p.slug} onClick={() => setPillarFilter(p.slug)}
+            className={`rounded px-4 py-1.5 text-sm font-medium transition-colors ${pillarFilter === p.slug ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
             {p.label}
           </button>
         ))}
@@ -238,7 +238,7 @@ export function CategoriesPage() {
                 <div>
                   <label className="form-label text-xs">Pillar *</label>
                   <select {...register("pillar")} className="w-full rounded border border-slate-200 px-3 py-2 text-sm focus:outline-none">
-                    {PILLARS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                    {pillars.map((p) => <option key={p.slug} value={p.slug}>{p.label}</option>)}
                   </select>
                 </div>
                 <div>

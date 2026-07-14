@@ -1,22 +1,20 @@
 /**
- * snapshotService.ts — Template snapshot management.
- * A snapshot is a frozen copy of the template version's configuration stored
- * on the entity at creation time. IMMUTABLE after creation (ADR-005).
- *
- * Only createSnapshot() is provided — there is NO upgradeSnapshot().
+ * snapshotService.ts — Template snapshot management (ADR-005).
+ * Snapshot stored in entity_snapshot table (separate from entity — REQ-041.4).
+ * IMMUTABLE after creation. Only createSnapshot() is provided — no upgradeSnapshot().
  */
 import { db } from '@/lib/supabase/client'
 import type { TemplateConfiguration } from '@/types/lifecycle-template'
 
 /**
- * Copies the template version's configuration into entity.template_snapshot.
- * Must be called inside the createEntity() transaction.
+ * Copies the template version's configuration into entity_snapshot.
+ * Called inside createEntity() immediately after the entity INSERT.
+ * REQ-002.6, REQ-041.4
  */
 export async function createSnapshot(
   entityId: string,
   versionId: string
 ): Promise<void> {
-  // Fetch the version configuration
   const { data: version, error: fetchError } = await db
     .from('lifecycle_template_version')
     .select('configuration')
@@ -27,13 +25,29 @@ export async function createSnapshot(
     throw new Error(`Template version ${versionId} not found`)
   }
 
-  // Write the snapshot to the entity
-  const { error: updateError } = await db
-    .from('entity')
-    .update({ template_snapshot: version.configuration })
-    .eq('id', entityId)
+  const { error: insertError } = await db
+    .from('entity_snapshot')
+    .insert({
+      entity_id: entityId,
+      snapshot:  version.configuration,
+    })
 
-  if (updateError) throw updateError
+  if (insertError) throw insertError
+}
+
+/**
+ * Reads the snapshot for an entity.
+ * Returns null if no snapshot exists (e.g. legacy entities).
+ */
+export async function getSnapshot(entityId: string): Promise<TemplateConfiguration | null> {
+  const { data, error } = await db
+    .from('entity_snapshot')
+    .select('snapshot')
+    .eq('entity_id', entityId)
+    .single()
+
+  if (error || !data) return null
+  return data.snapshot as TemplateConfiguration
 }
 
 /**
@@ -53,7 +67,7 @@ export async function getActiveVersion(templateId: string): Promise<{
 
   if (error || !data) return null
   return {
-    id: data.id as string,
+    id:            data.id as string,
     configuration: data.configuration as TemplateConfiguration,
   }
 }

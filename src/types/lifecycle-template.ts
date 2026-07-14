@@ -75,11 +75,21 @@ export interface TimelineStageDefinition {
 
 // ── Lifecycle Rules ───────────────────────────────────────────────────────────
 
+/**
+ * Lifecycle rules define ordering constraints between timeline stages.
+ * Evaluated by timelineService.evaluateLifecycleRules() on every timeline date save.
+ * REQ-005
+ */
 export interface LifecycleRule {
-  ruleType: 'must_follow' | 'cannot_precede' | 'requires'
+  ruleType: 'must_follow' | 'cannot_precede' | 'requires' | 'minimum_gap' | 'maximum_gap'
   subjectStage: string
   objectStage: string
   errorMessage: string
+  /** For minimum_gap / maximum_gap rules: the gap in calendar days */
+  minimumDays?: number
+  maximumDays?: number
+  /** 'error' blocks save; 'warning' shows inline warning but permits save (REQ-005.2) */
+  severity: 'error' | 'warning'
 }
 
 // ── Module Visibility ─────────────────────────────────────────────────────────

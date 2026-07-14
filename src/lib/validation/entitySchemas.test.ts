@@ -46,12 +46,14 @@ describe('EntityCreateSchema', () => {
     name: 'IBPS PO 2025',
     shortName: 'IBPS PO',
     slug: 'ibps-po-2025',
-    conductingBody: 'Institute of Banking Personnel Selection',
+    // conductingBody removed — FK conductingBodyId is now the field (REQ-007)
+    templateVersionId: '00000000-0000-0000-0000-000000000001',
     workflowStatus: 'draft' as const,
     isFeatured: false,
     tags: [],
     searchKeywords: [],
     lang: 'en',
+    metadata: {},
   }
 
   it('accepts a valid input', () => {
@@ -71,7 +73,8 @@ describe('EntityCreateSchema', () => {
   })
 
   it('accepts empty conductingBody (field is now optional — FK conductingBodyId preferred)', () => {
-    const result = EntityCreateSchema.safeParse({ ...valid, conductingBody: '' })
+    // conductingBodyId is a nullable UUID FK; omitting it is valid
+    const result = EntityCreateSchema.safeParse({ ...valid, conductingBodyId: null })
     expect(result.success).toBe(true)
   })
 

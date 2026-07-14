@@ -50,7 +50,9 @@ function mapRow(row: Record<string, unknown>): Entity {
     pillar:              row.pillar as string | null,
     contentTypeId:       row.content_type_id as string | null,
     templateVersionId:   row.template_version_id as string | null,
-    templateSnapshot:    (row.template_snapshot as import('@/types/lifecycle-template').TemplateConfiguration) ?? {} as import('@/types/lifecycle-template').TemplateConfiguration,
+    // templateSnapshot is populated by getEntityById after a join with entity_snapshot.
+    // The entity row itself has no template_snapshot column (moved to entity_snapshot in M1).
+    templateSnapshot:    {} as import('@/types/lifecycle-template').TemplateConfiguration,
     subType:             row.sub_type as string | null,
     examFrequency:       row.exam_frequency as string | null,
     workflowStatus:      row.workflow_status as Entity['workflowStatus'],
@@ -115,51 +117,91 @@ export async function listEntities(
   return { data: (data ?? []).map(mapListRow), count: count ?? 0 }
 }
 
-// ── Get by ID ─────────────────────────────────────────────────────────────────
+// ── Get by ID (with snapshot join) ───────────────────────────────────────────
 
 export async function getEntityById(id: string): Promise<Entity | null> {
-  const { data, error } = await db
-    .from('entity')
-    .select('*')
-    .eq('id', id)
-    .is('deleted_at', null)
-    .single()
-  if (error || data == null) return null
-  return mapRow(data as Record<string, unknown>)
+  // Fetch entity and its snapshot in parallel.
+  // template_snapshot does NOT exist on the entity row — it lives in entity_snapshot
+  // (moved in M1 migration 005 for performance). We join it here so that
+  // EntityEditorShell.templateSnapshot.moduleVisibility is always populated.
+  const [entityResult, snapshotResult] = await Promise.all([
+    db.from('entity').select('*').eq('id', id).is('deleted_at', null).single(),
+    db.from('entity_snapshot').select('snapshot').eq('entity_id', id).single(),
+  ])
+
+  if (entityResult.error || entityResult.data == null) return null
+
+  const entity = mapRow(entityResult.data as Record<string, unknown>)
+
+  // Overlay the snapshot — this is what EntityEditorShell uses for tab visibility
+  if (snapshotResult.data) {
+    entity.templateSnapshot = snapshotResult.data.snapshot as import('@/types/lifecycle-template').TemplateConfiguration
+  }
+
+  return entity
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
 export async function createEntity(input: EntityCreateInput): Promise<Entity> {
   const slug = input.slug || generateSlug(input.name)
+
+  // Validate slug availability before insert
+  const available = await checkEntitySlug(slug, input.pillar ?? null)
+  if (!available) {
+    // Auto-append year as per REQ-008.8
+    const year = new Date().getFullYear()
+    const yearSlug = `${slug}-${year}`
+    const yearAvailable = await checkEntitySlug(yearSlug, input.pillar ?? null)
+    if (!yearAvailable) {
+      throw new Error(`URL path '${slug}' is already in use. Please choose a different name.`)
+    }
+  }
+
+  const finalSlug = available ? slug : `${slug}-${new Date().getFullYear()}`
+
   const { data, error } = await db
     .from('entity')
     .insert({
-      entity_type:      'exam',
-      slug,
-      name:             input.name,
-      short_name:       input.shortName ?? null,
-      conducting_body:  input.conductingBody,
-      official_website: input.officialWebsite ?? null,
-      category_id:      input.categoryId ?? null,
-      pillar:           input.pillar ?? null,
-      sub_type:         input.subType ?? null,
-      exam_level:       input.examLevel ?? null,
-      exam_mode:        input.examMode ?? null,
-      application_mode: input.applicationMode ?? null,
-      exam_frequency:   input.examFrequency ?? null,
-      workflow_status:  input.workflowStatus ?? 'draft',
-      is_featured:      input.isFeatured ?? false,
-      priority:         input.priority ?? null,
-      featured_until:   input.featuredUntil ?? null,
-      tags:             input.tags ?? [],
-      search_keywords:  input.searchKeywords ?? [],
-      lang:             input.lang ?? 'en',
+      entity_type:         'exam',
+      slug:                finalSlug,
+      name:                input.name,
+      short_name:          input.shortName ?? null,
+      conducting_body_id:  input.conductingBodyId ?? null,
+      official_website:    input.officialWebsite ?? null,
+      category_id:         input.categoryId ?? null,
+      pillar:              input.pillar ?? null,
+      content_type_id:     input.contentTypeId ?? null,
+      template_version_id: input.templateVersionId,
+      workflow_status:     input.workflowStatus ?? 'draft',
+      is_featured:         input.isFeatured ?? false,
+      priority:            input.priority ?? null,
+      featured_until:      input.featuredUntil ?? null,
+      tags:                input.tags ?? [],
+      search_keywords:     input.searchKeywords ?? [],
+      lang:                input.lang ?? 'en',
+      metadata:            input.metadata ?? {},
     })
     .select('*')
     .single()
   if (error) throw error
-  return mapRow(data as Record<string, unknown>)
+
+  const entity = mapRow(data as Record<string, unknown>)
+
+  // Write immutable snapshot to entity_snapshot table (ADR-005, REQ-041.4)
+  const { createSnapshot } = await import('../template/snapshotService')
+  await createSnapshot(entity.id, input.templateVersionId!)
+
+  // Seed skeleton SEO row so getEntityFull never returns null seo
+  await db.from('entity_seo').insert({
+    entity_id: entity.id,
+  }).throwOnError()
+
+  // Note: entity_slug_history is NOT written on creation — only on slug changes.
+  // Writing old_slug === new_slug at creation time corrupts resolveSlug() for
+  // soft-deleted entities (DB-005 fix).
+
+  return entity
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -173,21 +215,42 @@ export async function updateEntity(
   const current = await getEntityById(id)
 
   const updates: Record<string, unknown> = {}
+
+  // fieldMap: EntityCreateInput key → entity table column name.
+  // Only columns that actually exist on the entity table are listed here.
+  // Legacy columns (conducting_body, exam_level, exam_mode, etc.) were removed
+  // in M1 migration 006 — they must NOT appear here.
   const fieldMap: Record<string, string> = {
-    slug: 'slug', name: 'name', shortName: 'short_name',
-    conductingBody: 'conducting_body', officialWebsite: 'official_website',
-    categoryId: 'category_id', pillar: 'pillar', subType: 'sub_type',
-    examLevel: 'exam_level', examMode: 'exam_mode',
-    applicationMode: 'application_mode', examFrequency: 'exam_frequency',
-    workflowStatus: 'workflow_status', isFeatured: 'is_featured',
-    priority: 'priority', featuredUntil: 'featured_until',
-    tags: 'tags', searchKeywords: 'search_keywords', lang: 'lang',
+    slug:              'slug',
+    name:              'name',
+    shortName:         'short_name',
+    conductingBodyId:  'conducting_body_id',   // UUID FK — was missing (VERIFIED-001)
+    officialWebsite:   'official_website',
+    categoryId:        'category_id',
+    pillar:            'pillar',
+    contentTypeId:     'content_type_id',
+    workflowStatus:    'workflow_status',
+    isFeatured:        'is_featured',
+    priority:          'priority',
+    featuredUntil:     'featured_until',
+    tags:              'tags',
+    searchKeywords:    'search_keywords',
+    lang:              'lang',
+    metadata:          'metadata',             // was missing (VERIFIED-001)
   }
+
   for (const [key, col] of Object.entries(fieldMap)) {
     if ((input as Record<string, unknown>)[key] !== undefined) {
       updates[col] = (input as Record<string, unknown>)[key]
     }
   }
+
+  // Always update updated_at explicitly as a pre-trigger safety net.
+  // The DB trigger (migration 009) handles this too, but explicit is safer
+  // during the window between code deploy and migration apply.
+  updates.updated_at = new Date().toISOString()
+  if (userId) updates.updated_by = userId
+
   const { data, error } = await db
     .from('entity')
     .update(updates)
@@ -246,6 +309,16 @@ export async function transitionWorkflow(
     .select('*')
     .single()
   if (error) throw error
+
+  // Create revision snapshot on publish (REQ-016.7)
+  if (targetStatus === 'published') {
+    const { getEntityFull } = await import('./entityService')
+    const { createRevision } = await import('./revisionService')
+    const full = await getEntityFull(id)
+    if (full) {
+      await createRevision(id, full as unknown as Record<string, unknown>, 'Published', userId)
+    }
+  }
 
   // Record workflow event
   await db.from('entity_event_log').insert({
@@ -381,14 +454,14 @@ export async function bulkUpdateCategory(
 
 /**
  * Returns a fully-hydrated EntityFull by fetching all satellite tables in parallel.
- * This is the single source of truth for preview, publish, revision snapshots,
- * AI context, and frontend rendering.
+ * Snapshot loaded from entity_snapshot table (separate from entity row — REQ-041.4).
  */
 export async function getEntityFull(id: string): Promise<EntityFull | null> {
   const entity = await getEntityById(id)
   if (!entity) return null
 
   const [
+    snapshotData,
     timelineEvents,
     modules,
     seo,
@@ -401,6 +474,7 @@ export async function getEntityFull(id: string): Promise<EntityFull | null> {
     downloads,
     links,
   ] = await Promise.all([
+    import('../template/snapshotService').then(m => m.getSnapshot(id)),
     listTimeline(id),
     listModules(id),
     getSeo(id),
@@ -414,9 +488,15 @@ export async function getEntityFull(id: string): Promise<EntityFull | null> {
     listLinks(id),
   ])
 
-  return {
+  // Merge snapshot into entity (entity.templateSnapshot kept for type compat)
+  const entityWithSnapshot = {
     ...entity,
-    overview: null,          // populated by overviewService when implemented
+    templateSnapshot: snapshotData ?? ({} as import('@/types/lifecycle-template').TemplateConfiguration),
+  }
+
+  return {
+    ...entityWithSnapshot,
+    overview: null,
     timelineEvents,
     modules,
     seo,
@@ -428,9 +508,9 @@ export async function getEntityFull(id: string): Promise<EntityFull | null> {
     syllabusSubjects,
     downloads,
     links,
-    media: EMPTY_MEDIA,      // populated by mediaService when implemented
-    revisions: [],           // populated by revisionService on demand
-    brokenLinkCount: 0,      // populated by broken-link-scan Edge Function
-    completenessScore: 0,    // populated by completenessScore utility
+    media: EMPTY_MEDIA,
+    revisions: [],
+    brokenLinkCount: 0,
+    completenessScore: 0,
   }
 }

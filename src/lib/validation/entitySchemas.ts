@@ -33,25 +33,28 @@ export function generateSlug(name: string): string {
 // ── Entity (General tab) ─────────────────────────────────────────────────────
 
 export const EntityCreateSchema = z.object({
-  name:            z.string().min(1, 'Exam name is required').max(200, 'Max 200 characters'),
-  shortName:       z.string().max(100).optional().nullable(),
-  slug:            slugSchema,
-  conductingBody:  z.string().max(200).optional().nullable(),
-  officialWebsite: urlSchema,
-  categoryId:      z.string().uuid().optional().nullable(),
-  pillar:          z.string().optional().nullable(),
-  subType:         z.string().optional().nullable(),
-  examLevel:       z.string().optional().nullable(),
-  examMode:        z.string().optional().nullable(),
-  applicationMode: z.string().optional().nullable(),
-  examFrequency:   z.string().optional().nullable(),
-  workflowStatus:  z.enum(WORKFLOW_STATUS_VALUES).default('draft'),
-  isFeatured:      z.boolean().default(false),
-  priority:        z.number().int().min(1).max(999).optional().nullable(),
-  featuredUntil:   z.string().optional().nullable(),
-  tags:            z.array(z.string()).default([]),
-  searchKeywords:  z.array(z.string()).default([]),
-  lang:            z.string().default('en'),
+  name:               z.string().min(1, 'Name is required').max(200, 'Max 200 characters'),
+  shortName:          z.string().max(100).optional().nullable(),
+  slug:               slugSchema,
+  // Taxonomy FKs (REQ-006, REQ-007)
+  conductingBodyId:   z.string().uuid().optional().nullable(),
+  officialWebsite:    urlSchema,
+  categoryId:         z.string().uuid().optional().nullable(),
+  pillar:             z.string().optional().nullable(),
+  contentTypeId:      z.string().uuid().optional().nullable(),
+  // Template (REQ-002, REQ-006) — required for entity creation; optional on updates
+  templateVersionId:  z.string().uuid({ message: 'A valid template is required' }).optional(),
+  // Legacy fields preserved for backward compat
+  subType:            z.string().optional().nullable(),
+  examFrequency:      z.string().optional().nullable(),
+  workflowStatus:     z.enum(WORKFLOW_STATUS_VALUES).default('draft'),
+  isFeatured:         z.boolean().default(false),
+  priority:           z.number().int().min(1).max(999).optional().nullable(),
+  featuredUntil:      z.string().optional().nullable(),
+  tags:               z.array(z.string()).default([]),
+  searchKeywords:     z.array(z.string()).default([]),
+  lang:               z.string().default('en'),
+  metadata:           z.record(z.unknown()).default({}),
 })
 
 export type EntityCreateInput = z.infer<typeof EntityCreateSchema>

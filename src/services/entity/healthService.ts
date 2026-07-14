@@ -110,9 +110,12 @@ function translationCoverage(
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export async function computeEntityHealth(entityId: string): Promise<EntityHealth> {
-  // Run all queries in parallel
+  // Run all queries in parallel.
+  // Note: entity_snapshot is fetched separately because template_snapshot
+  // was moved out of the entity row in M1 migration 005 (VERIFIED-002 fix).
   const [
     entityResult,
+    snapshotResult,
     seoResult,
     modulesResult,
     linksResult,
@@ -120,13 +123,14 @@ export async function computeEntityHealth(entityId: string): Promise<EntityHealt
     locResult,
   ] = await Promise.all([
     db.from('entity').select('*').eq('id', entityId).single(),
+    db.from('entity_snapshot').select('snapshot').eq('entity_id', entityId).single(),
     db.from('entity_seo').select('*').eq('entity_id', entityId).single(),
     db.from('entity_module')
       .select('id, module_type, entity_module_block(id)')
       .eq('entity_id', entityId)
       .is('deleted_at', null),
     db.from('entity_link')
-      .select('id, status')
+      .select('id, broken_link_status')
       .eq('entity_id', entityId)
       .is('deleted_at', null),
     db.from('entity_amendment')
@@ -142,9 +146,14 @@ export async function computeEntityHealth(entityId: string): Promise<EntityHealt
   const entity = entityResult.data as Record<string, unknown> | null
   if (!entity) throw new Error(`Entity ${entityId} not found`)
 
+  // Load moduleVisibility from entity_snapshot, not from the entity row.
+  // entity.template_snapshot does not exist on the entity table (moved in M1).
+  const snapshotData = snapshotResult.data as { snapshot: { moduleVisibility?: ModuleVisibilityMap } } | null
+  const moduleVisibility: ModuleVisibilityMap = snapshotData?.snapshot?.moduleVisibility ?? {}
+
   const seo = seoResult.data as Record<string, unknown> | null
   const modules = (modulesResult.data ?? []) as Array<{ module_type: string; entity_module_block: Array<{ id: string }> }>
-  const links = (linksResult.data ?? []) as Array<{ status: string }>
+  const links = (linksResult.data ?? []) as Array<{ broken_link_status: string }>
   const publishedAmendments = (amendmentsResult.data ?? [])
   const locRows = (locResult.data ?? []) as { lang: string; field_key: string }[]
 
@@ -155,13 +164,11 @@ export async function computeEntityHealth(entityId: string): Promise<EntityHealt
     moduleBlockCounts.set(mod.module_type, current + (mod.entity_module_block?.length ?? 0))
   }
 
-  const snapshot = entity.template_snapshot as { moduleVisibility?: ModuleVisibilityMap } | null
-  const moduleVisibility = snapshot?.moduleVisibility ?? {}
-
   const missing = missingRequiredModules(moduleVisibility, moduleBlockCounts)
   const seoScore = scoreSeo(seo)
   const completenessScore = scoreCompleteness(entity, seo)
-  const broken = links.filter(l => l.status === 'inactive').length
+  // Count genuinely broken links — broken_link_status = 'broken' (not 'inactive' which means editor-hidden)
+  const broken = links.filter(l => l.broken_link_status === 'broken').length
   const hasPublishedAmendment = publishedAmendments.length > 0
   const coverage = translationCoverage(locRows)
   const vStatus = verificationStatus(entity.last_verified_at as string | null)

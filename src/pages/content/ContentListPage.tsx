@@ -7,9 +7,10 @@ import { DataTable } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { getContentPosts, deleteContentPost, type ContentPost } from "@/services/contentService";
-import { PILLARS, CONTENT_TYPES } from "@/config/site";
+import { CONTENT_TYPES } from "@/config/site";
+import { usePillars } from "@/hooks/usePillars";
 import { formatDate } from "@/lib/utils";
-import type { Pillar, ContentType } from "@/types/exam";
+import type { ContentType } from "@/types/exam";
 
 export function ContentListPage() {
   const navigate = useNavigate();
@@ -18,11 +19,12 @@ export function ContentListPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [pillar, setPillar] = useState<Pillar | "">("");
+  const [pillar, setPillar] = useState<string>("");
   const [contentType, setContentType] = useState<ContentType | "">("");
   const [status, setStatus] = useState(searchParams.get("status") ?? "");
   const [deleteTarget, setDeleteTarget] = useState<ContentPost | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const { data: pillars = [] } = usePillars();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -148,10 +150,10 @@ export function ContentListPage() {
           <option value="">All Types</option>
           {CONTENT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
-        <select value={pillar} onChange={(e) => setPillar(e.target.value as Pillar | "")}
+        <select value={pillar} onChange={(e) => setPillar(e.target.value)}
           className="rounded border border-slate-200 px-3 py-2 text-sm focus:outline-none">
           <option value="">All Pillars</option>
-          {PILLARS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+          {pillars.map((p) => <option key={p.slug} value={p.slug}>{p.label}</option>)}
         </select>
         <select value={status} onChange={(e) => setStatus(e.target.value)}
           className="rounded border border-slate-200 px-3 py-2 text-sm focus:outline-none">

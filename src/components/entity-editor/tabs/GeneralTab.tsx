@@ -14,13 +14,14 @@ import { entityKeys, categoryKeys } from '@/lib/queryKeys'
 import { useEntityQuery } from '@/hooks/useEntityQuery'
 import { useEditorUI } from '@/contexts/EditorUIContext'
 import { useAutosave } from '@/hooks/useAutosave'
+import { usePillarContext } from '@/contexts/PillarContext'
 import {
   FormField as Field, FieldGroup, SectionHeader, inputCls,
 } from '@/components/shared/form/FormField'
 import { cn } from '@/lib/utils'
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-const PILLARS    = ['sarkari-naukri', 'entrance-exam', 'board-university'] as const
+// ── Constants (non-pillar — these remain as static values) ────────────────────
+// PILLARS constant removed — loaded from DB via usePillars() hook (REQ-001)
 const SUB_TYPES  = ['exam', 'board', 'university', 'recruitment'] as const
 const LEVELS     = ['national', 'state', 'university', 'board', 'district'] as const
 const MODES      = ['online', 'offline', 'hybrid'] as const
@@ -64,10 +65,14 @@ function SimpleSelect({ value, onValueChange, placeholder, options, disabled }: 
 }
 
 // ── GeneralTab ────────────────────────────────────────────────────────────────
-export function GeneralTab({ entityId }: { entityId: string }) {
+export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: string; pillars?: import('@/types/pillar').Pillar[] }) {
   const qc = useQueryClient()
   const { markDirty, clearDirty } = useEditorUI()
   const isNew = !entityId
+  // Use pillars from context (provided by EntityEditorShell) or fall back to prop.
+  // This avoids a per-component query that breaks fake-timer tests.
+  const contextPillars = usePillarContext()
+  const pillars = pillarsProp ?? contextPillars
 
   const { data: entity } = useEntityQuery(entityId || null)
 
@@ -77,11 +82,11 @@ export function GeneralTab({ entityId }: { entityId: string }) {
   } = useForm<EntityCreateInput>({
     resolver: zodResolver(EntityCreateSchema),
     defaultValues: {
-      name: '', shortName: '', slug: '', conductingBody: '', officialWebsite: '',
-      categoryId: null, pillar: null, subType: 'exam', examLevel: null, examMode: null,
-      applicationMode: null, examFrequency: null, workflowStatus: 'draft',
-      isFeatured: false, priority: null, featuredUntil: null,
-      tags: [], searchKeywords: [], lang: 'en',
+      name: '', shortName: '', slug: '', conductingBodyId: null, officialWebsite: '',
+      categoryId: null, pillar: null,
+      workflowStatus: 'draft', isFeatured: false, priority: null,
+      featuredUntil: null, tags: [], searchKeywords: [], lang: 'en',
+      metadata: {},
     },
   })
 
@@ -99,15 +104,14 @@ export function GeneralTab({ entityId }: { entityId: string }) {
     seedRef.current = true
     reset({
       name: entity.name, shortName: entity.shortName ?? '',
-      slug: entity.slug, conductingBody: entity.conductingBodyId ?? (entity as unknown as Record<string,string>).conductingBody ?? '',
+      slug: entity.slug, conductingBodyId: entity.conductingBodyId ?? null,
       officialWebsite: entity.officialWebsite ?? '',
       categoryId: entity.categoryId, pillar: entity.pillar,
-      subType: entity.subType ?? 'exam', examLevel: entity.examLevelId ?? null,
-      examMode: entity.examModeId ?? null, applicationMode: entity.applicationModeId ?? null,
-      examFrequency: entity.examFrequency, workflowStatus: entity.workflowStatus,
+      workflowStatus: entity.workflowStatus,
       isFeatured: entity.isFeatured, priority: entity.priority,
       featuredUntil: entity.featuredUntil ? entity.featuredUntil.slice(0, 10) : null,
       tags: entity.tags, searchKeywords: entity.searchKeywords, lang: entity.lang,
+      metadata: entity.metadata ?? {},
     })
   }, [entity, reset])
 
@@ -219,10 +223,10 @@ export function GeneralTab({ entityId }: { entityId: string }) {
             </div>
           </Field>
 
-          <Field label="Conducting Body" required error={errors.conductingBody?.message}>
+          <Field label="Conducting Body" error={errors.conductingBodyId?.message}>
             <input maxLength={200} placeholder="e.g. Institute of Banking Personnel Selection"
-              className={inputCls} {...register('conductingBody')}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => { register('conductingBody').onChange(e); scheduleAutosave() }} />
+              className={inputCls} {...register('conductingBodyId')}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => { register('conductingBodyId').onChange(e); scheduleAutosave() }} />
           </Field>
 
           <Field label="Official Website" error={errors.officialWebsite?.message}>
@@ -240,7 +244,7 @@ export function GeneralTab({ entityId }: { entityId: string }) {
           <Field label="Pillar">
             <Controller name="pillar" control={control} render={({ field }) => (
               <SimpleSelect value={field.value} placeholder="Select pillar"
-                options={PILLARS.map(p => ({ value: p, label: p }))}
+                options={pillars.map(p => ({ value: p.slug, label: p.label }))}
                 onValueChange={(v) => { field.onChange(v || null); setValue('categoryId', null); scheduleAutosave() }} />
             )} />
           </Field>
@@ -255,43 +259,47 @@ export function GeneralTab({ entityId }: { entityId: string }) {
           </Field>
 
           <Field label="Entity Type">
-            <Controller name="subType" control={control} render={({ field }) => (
-              <SimpleSelect value={field.value ?? 'exam'}
-                options={SUB_TYPES.map(t => ({ value: t, label: t }))}
-                onValueChange={(v) => { field.onChange(v); scheduleAutosave() }} />
-            )} />
+            <SimpleSelect
+              value={watch('metadata')?.entitySubType as string ?? 'exam'}
+              options={SUB_TYPES.map(t => ({ value: t, label: t }))}
+              onValueChange={(v) => { setValue('metadata', { ...watch('metadata'), entitySubType: v }, { shouldDirty: true }); scheduleAutosave() }}
+            />
           </Field>
 
           <Field label="Exam Level">
-            <Controller name="examLevel" control={control} render={({ field }) => (
-              <SimpleSelect value={field.value} placeholder="Select level"
-                options={LEVELS.map(l => ({ value: l, label: l }))}
-                onValueChange={(v) => { field.onChange(v || null); scheduleAutosave() }} />
-            )} />
+            <SimpleSelect
+              value={watch('metadata')?.examLevel as string ?? ''}
+              placeholder="Select level"
+              options={LEVELS.map(l => ({ value: l, label: l }))}
+              onValueChange={(v) => { setValue('metadata', { ...watch('metadata'), examLevel: v || null }, { shouldDirty: true }); scheduleAutosave() }}
+            />
           </Field>
 
           <Field label="Exam Mode">
-            <Controller name="examMode" control={control} render={({ field }) => (
-              <SimpleSelect value={field.value} placeholder="Select mode"
-                options={MODES.map(m => ({ value: m, label: m }))}
-                onValueChange={(v) => { field.onChange(v || null); scheduleAutosave() }} />
-            )} />
+            <SimpleSelect
+              value={watch('metadata')?.examMode as string ?? ''}
+              placeholder="Select mode"
+              options={MODES.map(m => ({ value: m, label: m }))}
+              onValueChange={(v) => { setValue('metadata', { ...watch('metadata'), examMode: v || null }, { shouldDirty: true }); scheduleAutosave() }}
+            />
           </Field>
 
           <Field label="Application Mode">
-            <Controller name="applicationMode" control={control} render={({ field }) => (
-              <SimpleSelect value={field.value} placeholder="Select"
-                options={APP_MODES.map(m => ({ value: m, label: m }))}
-                onValueChange={(v) => { field.onChange(v || null); scheduleAutosave() }} />
-            )} />
+            <SimpleSelect
+              value={watch('metadata')?.applicationMode as string ?? ''}
+              placeholder="Select"
+              options={APP_MODES.map(m => ({ value: m, label: m }))}
+              onValueChange={(v) => { setValue('metadata', { ...watch('metadata'), applicationMode: v || null }, { shouldDirty: true }); scheduleAutosave() }}
+            />
           </Field>
 
           <Field label="Exam Frequency">
-            <Controller name="examFrequency" control={control} render={({ field }) => (
-              <SimpleSelect value={field.value} placeholder="Select frequency"
-                options={FREQS.map(f => ({ value: f, label: f }))}
-                onValueChange={(v) => { field.onChange(v || null); scheduleAutosave() }} />
-            )} />
+            <SimpleSelect
+              value={watch('metadata')?.examFrequency as string ?? ''}
+              placeholder="Select frequency"
+              options={FREQS.map(f => ({ value: f, label: f }))}
+              onValueChange={(v) => { setValue('metadata', { ...watch('metadata'), examFrequency: v || null }, { shouldDirty: true }); scheduleAutosave() }}
+            />
           </Field>
 
           <Field label="Workflow Status">

@@ -14,13 +14,14 @@ import { AISuggestion } from "@/components/shared/AISuggestion";
 import { FrontendSync } from "@/components/shared/FrontendSync";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { revalidateContentPost } from "@/lib/api/frontend";
-import { CONTENT_TYPES, PILLARS } from "@/config/site";
+import { CONTENT_TYPES } from "@/config/site";
+import { usePillars } from "@/hooks/usePillars";
 import { CONTENT_TYPE_CONFIGS } from "@/config/contentTypeFields";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermission } from "@/hooks/usePermission";
 import { P } from "@/config/permissions";
 import { cn, slugify } from "@/lib/utils";
-import type { Pillar, ContentType } from "@/types/exam";
+import type { ContentType } from "@/types/exam";
 
 const schema = z.object({
   title:           z.string().min(1, "Title required"),
@@ -245,11 +246,12 @@ function ContentEditPageInner() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canPublish = usePermission(P.PUBLISH_POST);
+  const { data: pillars = [] } = usePillars();
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [examSearch, setExamSearch] = useState("");
-  const [examResults, setExamResults] = useState<{ id: string; name: string; slug: string; pillar: Pillar; status: string }[]>([]);
+  const [examResults, setExamResults] = useState<{ id: string; name: string; slug: string; pillar: string; status: string }[]>([]);
   const [examSlug, setExamSlug] = useState("");
   const [categorySlug, setCategorySlug] = useState("");
 
@@ -300,10 +302,10 @@ function ContentEditPageInner() {
 
   useEffect(() => {
     if (!examSearch || examSearch.length < 2) { setExamResults([]); return; }
-    searchEntities(examSearch).then(items => setExamResults(items.map(e => ({ id: e.id, name: e.name, slug: e.slug, pillar: e.pillar as import("@/types/exam").Pillar, status: e.workflowStatus }))));
+    searchEntities(examSearch).then(items => setExamResults(items.map(e => ({ id: e.id, name: e.name, slug: e.slug, pillar: e.pillar ?? '', status: e.workflowStatus }))));
   }, [examSearch]);
 
-  const selectExam = (exam: { id: string; name: string; slug: string; pillar: Pillar }) => {
+  const selectExam = (exam: { id: string; name: string; slug: string; pillar: string }) => {
     setValue("examId", exam.id);
     setValue("examEntityName", exam.name);
     setValue("pillar", exam.pillar);
@@ -404,7 +406,7 @@ function ContentEditPageInner() {
               <div>
                 <label className="form-label">Pillar</label>
                 <select {...register("pillar")} className="w-full rounded border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-                  {PILLARS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                  {pillars.map((p) => <option key={p.slug} value={p.slug}>{p.label}</option>)}
                 </select>
               </div>
             </div>

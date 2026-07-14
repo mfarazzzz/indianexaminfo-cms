@@ -52,26 +52,30 @@ export function useEntityCreationWizard() {
 
   const createMutation = useMutation<Entity, Error, void>({
     mutationFn: async () => {
-      if (!data.name.trim())     throw new Error('Entity name is required')
-      if (!data.pillar)          throw new Error('Pillar is required')
-      if (!data.template)        throw new Error('Lifecycle template is required')
-      if (!data.contentType)     throw new Error('Content type is required')
+      if (!data.name.trim())   throw new Error('Name is required')
+      if (!data.pillar)        throw new Error('Content domain is required')
+      if (!data.template)      throw new Error('Content type is required')
+      if (!data.contentType)   throw new Error('Content sub-type is required')
 
-      // Resolve the active template version — this supplies template_version_id
+      // Resolve the active template version — supplies template_version_id
       const version = await getActiveTemplateVersion(data.template.id)
       if (!version) {
-        throw new Error(`No active version found for template "${data.template.name}"`)
+        throw new Error(`No active version found for "${data.template.name}". Please contact an administrator.`)
       }
 
       return createEntity({
-        name:             data.name.trim(),
-        slug:             data.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 80),
-        conductingBody:   '',
-        pillar:           data.pillar.slug,
-        lang:             'en',
-        // Store template and content type in metadata until EntityCreateInput is updated
-        ...(({ conductingBody: _c, ...rest }) => rest)({ conductingBody: '' }),
-      } as import('@/lib/validation/entitySchemas').EntityCreateInput)
+        name:              data.name.trim(),
+        slug:              '',  // auto-generated from name in service (REQ-006.3)
+        pillar:            data.pillar.slug,
+        contentTypeId:     data.contentType.id,
+        templateVersionId: version.id,
+        lang:              'en',
+        metadata:          {},
+        tags:              [],
+        searchKeywords:    [],
+        isFeatured:        false,
+        workflowStatus:    'draft',
+      })
     },
   })
 

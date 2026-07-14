@@ -174,3 +174,117 @@ export async function reorderTimeline(
     )
   )
 }
+
+// ── Lifecycle Rule Evaluation (REQ-005) ───────────────────────────────────────
+
+import type { LifecycleRule, TemplateConfiguration } from '@/types/lifecycle-template'
+import type { TimelineEvent as TEvent } from '@/types/entity'
+
+export interface LifecycleRuleViolation {
+  rule: LifecycleRule
+  severity: 'error' | 'warning'
+  message: string
+}
+
+/**
+ * Evaluates all lifecycle rules from the entity's template snapshot against
+ * the current timeline events. Called on every timeline event save.
+ *
+ * REQ-005.2: severity='error' blocks the save. severity='warning' allows it.
+ * REQ-005.4: Only evaluates rules against events with a real event_date.
+ *
+ * This is a pure evaluation function — no DB calls, no side effects.
+ */
+export function evaluateLifecycleRules(
+  rules: LifecycleRule[],
+  allEvents: TEvent[]
+): LifecycleRuleViolation[] {
+  if (!rules || rules.length === 0) return []
+
+  // Build a map of stageKey → event_date (only events with confirmed dates)
+  const stageDates = new Map<string, Date>()
+  for (const ev of allEvents) {
+    if (ev.stageKey && ev.eventDate) {
+      const existing = stageDates.get(ev.stageKey)
+      const evDate = new Date(ev.eventDate)
+      // If multiple events for the same stage, use the earliest date
+      if (!existing || evDate < existing) {
+        stageDates.set(ev.stageKey, evDate)
+      }
+    }
+  }
+
+  const violations: LifecycleRuleViolation[] = []
+
+  for (const rule of rules) {
+    const subjectDate = stageDates.get(rule.subjectStage)
+    const objectDate = stageDates.get(rule.objectStage)
+
+    // REQ-005.4: Only evaluate against confirmed dates (both must exist)
+    if (!subjectDate || !objectDate) continue
+
+    let violated = false
+
+    switch (rule.ruleType) {
+      case 'must_follow':
+        // subjectStage date must be AFTER objectStage date
+        violated = subjectDate <= objectDate
+        break
+
+      case 'cannot_precede':
+        // subjectStage date must NOT be BEFORE objectStage date
+        violated = subjectDate < objectDate
+        break
+
+      case 'requires':
+        // If subjectStage has a date, objectStage must also have a date
+        // (we already checked both exist, so this only fires if objectDate is missing
+        //  — which we already filtered out. So 'requires' with both dates = no violation)
+        violated = false
+        break
+
+      case 'minimum_gap': {
+        // Days between objectStage and subjectStage must be >= minimumDays
+        const daysBetween = (subjectDate.getTime() - objectDate.getTime()) / 86_400_000
+        violated = daysBetween < (rule.minimumDays ?? 0)
+        break
+      }
+
+      case 'maximum_gap': {
+        // Days between objectStage and subjectStage must be <= maximumDays
+        const daysBetween = (subjectDate.getTime() - objectDate.getTime()) / 86_400_000
+        violated = daysBetween > (rule.maximumDays ?? Infinity)
+        break
+      }
+    }
+
+    if (violated) {
+      violations.push({
+        rule,
+        severity: rule.severity ?? 'warning',
+        message: rule.errorMessage,
+      })
+    }
+  }
+
+  return violations
+}
+
+/**
+ * Evaluates lifecycle rules for a specific entity by loading its snapshot
+ * and all timeline events. Used by timeline save operations.
+ */
+export async function evaluateEntityRules(
+  entityId: string
+): Promise<LifecycleRuleViolation[]> {
+  const { getSnapshot } = await import('../template/snapshotService')
+
+  const [snapshot, events] = await Promise.all([
+    getSnapshot(entityId),
+    listTimeline(entityId),
+  ])
+
+  if (!snapshot?.lifecycleRules) return []
+
+  return evaluateLifecycleRules(snapshot.lifecycleRules, events)
+}

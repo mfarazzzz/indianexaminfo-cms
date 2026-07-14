@@ -5,11 +5,9 @@ export const SITE = {
   cmsUrl:      "https://cms.indianexaminfo.com",
 } as const;
 
-export const PILLARS = [
-  { value: "sarkari-naukri",  label: "Sarkari Naukri"   },
-  { value: "entrance-exam",   label: "Entrance Exams"   },
-  { value: "board-university",label: "Board / University"},
-] as const;
+// PILLARS constant removed — content domains are database-driven (REQ-001).
+// Use the usePillars() hook to load domains at runtime.
+// Do NOT add a PILLARS constant back to this file.
 
 export const CONTENT_TYPES = [
   { value: "notification",    label: "Notification"     },
