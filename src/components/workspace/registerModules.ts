@@ -52,31 +52,42 @@ const MODULE_SEEDS: ModuleSeed[] = [
   { key: 'health',            label: 'Health',            icon: 'Activity',       group: 'workflow',   defaultOrder: 19, permission: null,                     hasHealthWidget: true },
 ]
 
-// ── Placeholder editor factory ────────────────────────────────────────────────
-// Phase 2: all editors render a simple placeholder.
-// Phase 3: replace with real lazy imports.
+// ── Editor loaders (lazy imports — each editor is a separate code chunk) ──────
 
-function makePlaceholderEditor(key: string) {
-  return () => Promise.resolve({
-    default: function PlaceholderModuleEditor({ entityId }: { entityId: string }) {
-      // Minimal placeholder — renders module name + entity ID
-      const el = document.createElement('div')
-      // Using a functional component that returns JSX
-      return null as unknown as JSX.Element
-    }
-  })
+const EDITOR_LOADERS: Record<string, () => Promise<{ default: React.ComponentType<{ entityId: string }> }>> = {
+  general:           () => import('./editors/GeneralEditor'),
+  overview:          () => import('./editors/OverviewEditor'),
+  timeline:          () => import('./editors/TimelineEditor'),
+  eligibility:       () => import('./editors/EligibilityEditor'),
+  vacancy:           () => import('./editors/VacancyEditor'),
+  fee:               () => import('./editors/FeeEditor'),
+  exam_pattern:      () => import('./editors/ExamPatternEditor'),
+  selection_process: () => import('./editors/SelectionProcessEditor'),
+  syllabus:          () => import('./editors/SyllabusEditor'),
+  modules:           () => import('./editors/ModulesEditor'),
+  downloads:         () => import('./editors/DownloadsEditor'),
+  links:             () => import('./editors/LinksEditor'),
+  media:             () => import('./editors/MediaEditor'),
+  seo:               () => import('./editors/SEOEditor'),
+  relationships:     () => import('./editors/RelationshipsEditor'),
+  amendments:        () => import('./editors/AmendmentsEditor'),
+  publishing:        () => import('./editors/PublishingEditor'),
+  health:            () => import('./editors/HealthEditor'),
+  verification:      () => import('./editors/VerificationEditor'),
 }
 
-// We use a single shared placeholder for all modules in Phase 2
-const placeholderLoader = () => import('./PlaceholderEditor')
+// Fallback for any module not in the map (should never happen with correct seeds)
+const fallbackLoader = () => import('./PlaceholderEditor')
 
 // ── Register all modules ──────────────────────────────────────────────────────
+
+import type React from 'react'
 
 export function initializeModuleRegistry(): void {
   for (const seed of MODULE_SEEDS) {
     registerModule({
       ...seed,
-      editor: placeholderLoader,
+      editor: EDITOR_LOADERS[seed.key] ?? fallbackLoader,
       inspector: null,
     })
   }
