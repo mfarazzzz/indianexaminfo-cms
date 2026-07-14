@@ -77,9 +77,9 @@ export const router = createBrowserRouter([
           // M3.8: Taxonomy manager
           { path: "/taxonomy",             element: <TaxonomyManagerPage /> },
           { path: "/taxonomy/:type",       element: <TaxonomyManagerPage /> },
-          // Legacy routes → redirect to new pillar-agnostic routes
-          { path: "/exams",             element: <Navigate to="/entities/recruitment" replace /> },
-          { path: "/exams/new",         element: <Navigate to="/entities/recruitment/new" replace /> },
+          // Exam Manager — directly targets legacy `exams` table (what frontend reads)
+          { path: "/exams",             element: <ExamsListPage /> },
+          { path: "/exams/new",         element: <ExamEditorPage /> },
           { path: "/exams/:id",         element: <ExamEditorPage /> },
           { path: "/content",           element: <ContentListPage /> },
           { path: "/content/new",       element: <ContentEditPage /> },
