@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/utils";
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BarChart2, TrendingUp, DollarSign, CheckCircle, Loader2 } from "lucide-react";
@@ -21,7 +22,7 @@ export function AdDashboardPage() {
     ]).then(([all, pend]) => {
       setCampaigns(all.data);
       setPending(pend.data);
-    }).catch((err) => toast.error("Failed to load campaigns: " + String(err)))
+    }).catch((err) => toast.error("Failed to load campaigns: " + getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -42,7 +43,7 @@ export function AdDashboardPage() {
       setPending((prev) => prev.filter((c) => c.id !== id));
       toast.success("Campaign approved.");
     } catch (err) {
-      toast.error("Approve failed: " + String(err));
+      toast.error("Approve failed: " + getErrorMessage(err));
     }
   };
 

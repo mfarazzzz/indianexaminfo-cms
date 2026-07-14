@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { getCampaigns, updateCampaignStatus } from "@/services/adService";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
-import { formatDate } from "@/lib/utils";
+import { formatDate , getErrorMessage } from "@/lib/utils";
 import type { AdCampaign } from "@/types/ad";
 
 export function CampaignsListPage() {
@@ -24,7 +24,7 @@ export function CampaignsListPage() {
       setData(rows);
       setTotal(count);
     } catch (err) {
-      toast.error("Failed to load campaigns: " + String(err));
+      toast.error("Failed to load campaigns: " + getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -38,7 +38,7 @@ export function CampaignsListPage() {
       await updateCampaignStatus(rejectTarget.id, "rejected", { rejectionReason: rejectReason });
       toast.success("Campaign rejected.");
     } catch (err) {
-      toast.error("Reject failed: " + String(err));
+      toast.error("Reject failed: " + getErrorMessage(err));
     } finally {
       setRejectTarget(null);
       setRejectReason("");

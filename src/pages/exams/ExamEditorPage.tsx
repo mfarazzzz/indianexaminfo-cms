@@ -39,7 +39,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   revalidateAfterExamSave, revalidateAfterModuleSave,
 } from "@/lib/revalidation/revalidationService";
-import { cn, slugify } from "@/lib/utils";
+import { cn, slugify , getErrorMessage } from "@/lib/utils";
 import type { ExamEntity, Pillar, ContentType } from "@/types/exam";
 
 // ── Schema ──────────────────────────────────────────────────────────────────
@@ -220,7 +220,7 @@ export function ExamEditorPage() {
         // Background batched revalidation — debounced, non-blocking
         revalidateAfterExamSave({ id: id!, slug: data.slug, pillar: data.pillar, categorySlug: exam?.category ?? "" });
       }
-    } catch (err) { toast.error("Save failed: " + String(err)); }
+    } catch (err) { toast.error("Save failed: " + getErrorMessage(err)); }
     finally { setSaving(false); }
   };
 
@@ -497,7 +497,7 @@ function ModulesTab({ form, examId, examName, pillar, entityType, moduleData, se
       toast.success(`${mod?.label ?? moduleId} saved`);
       // Background batched revalidation — debounced with exam save if both happen
       revalidateAfterModuleSave({ examSlug: form.getValues("slug"), pillar, categorySlug: "", contentType: moduleId });
-    } catch (err) { toast.error(`Save failed: ${String(err)}`); }
+    } catch (err) { toast.error(`Save failed: ${getErrorMessage(err)}`); }
     finally { setModuleSaving(null); }
   };
 

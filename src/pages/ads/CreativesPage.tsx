@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/utils";
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, ExternalLink } from "lucide-react";
@@ -20,7 +21,7 @@ export function CreativesPage() {
         setCampaigns(r.data);
         if (r.data.length > 0) setSelectedId(r.data[0].id);
       })
-      .catch((err) => toast.error("Failed to load campaigns: " + String(err)))
+      .catch((err) => toast.error("Failed to load campaigns: " + getErrorMessage(err)))
       .finally(() => setLoadingCampaigns(false));
   }, []);
 
@@ -29,7 +30,7 @@ export function CreativesPage() {
     setLoadingCreatives(true);
     getCreatives(selectedId)
       .then(setCreatives)
-      .catch((err) => toast.error("Failed to load creatives: " + String(err)))
+      .catch((err) => toast.error("Failed to load creatives: " + getErrorMessage(err)))
       .finally(() => setLoadingCreatives(false));
   }, [selectedId]);
 

@@ -4,7 +4,7 @@ import { Upload, Trash2, Copy, Loader2, Image, Search } from "lucide-react";
 import { getMediaItems, uploadMedia, deleteMedia, updateMediaAlt, type MediaItem } from "@/services/mediaService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useAuth } from "@/hooks/useAuth";
-import { formatDate } from "@/lib/utils";
+import { formatDate , getErrorMessage } from "@/lib/utils";
 
 export function MediaLibraryPage() {
   const { user } = useAuth();
@@ -21,7 +21,7 @@ export function MediaLibraryPage() {
   const load = async () => {
     setLoading(true);
     try { setItems(await getMediaItems(folder || undefined)); }
-    catch (err) { toast.error(String(err)); }
+    catch (err) { toast.error(getErrorMessage(err)); }
     finally { setLoading(false); }
   };
 
@@ -55,7 +55,7 @@ export function MediaLibraryPage() {
       if (selected?.id === deleteTarget.id) setSelected(null);
       load();
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setDeleting(false);
     }
@@ -69,7 +69,7 @@ export function MediaLibraryPage() {
       setItems(items.map((i) => i.id === selected.id ? { ...i, altText } : i));
       setSelected({ ...selected, altText });
     } catch (err) {
-      toast.error("Save failed: " + String(err));
+      toast.error("Save failed: " + getErrorMessage(err));
     }
   };
 

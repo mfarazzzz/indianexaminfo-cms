@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/utils";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, Save, Plus, Trash2, GripVertical, ChevronRight } from "lucide-react";
@@ -57,7 +58,7 @@ export function MenusPage() {
   useEffect(() => {
     getMenus()
       .then((m) => { setMenus(m); if (m.length > 0) setSelected(m[0].id); })
-      .catch((err) => toast.error("Failed to load menus: " + String(err)))
+      .catch((err) => toast.error("Failed to load menus: " + getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -65,7 +66,7 @@ export function MenusPage() {
     if (!selected) return;
     getMenuWithItems(selected)
       .then((m) => setItems(m.items || []))
-      .catch((err) => toast.error("Failed to load menu items: " + String(err)));
+      .catch((err) => toast.error("Failed to load menu items: " + getErrorMessage(err)));
   }, [selected]);
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -122,7 +123,7 @@ export function MenusPage() {
       if (token) await revalidateMenus(url, token);
       toast.success("Frontend updated.");
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setSaving(false);
     }

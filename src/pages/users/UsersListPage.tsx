@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { UserPlus, Loader2, KeyRound, UserX } from "lucide-react";
 import { getUserProfiles, getRoles, inviteUser, updateUserProfile, sendPasswordReset } from "@/services/userService";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { formatDate } from "@/lib/utils";
+import { formatDate , getErrorMessage } from "@/lib/utils";
 import type { UserProfile, Role } from "@/types/user";
 
 export function UsersListPage() {
@@ -23,7 +23,7 @@ export function UsersListPage() {
       setRoles(r);
       if (r.length > 0 && !inviteRole) setInviteRole(r[0].id);
     } catch (err) {
-      toast.error("Failed to load users: " + String(err));
+      toast.error("Failed to load users: " + getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -53,7 +53,7 @@ export function UsersListPage() {
       toast.success(`User ${user.isActive ? "deactivated" : "reactivated"}.`);
       load();
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     }
   };
 
@@ -69,7 +69,7 @@ export function UsersListPage() {
       toast.success("Role updated.");
       load();
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     }
   };
 

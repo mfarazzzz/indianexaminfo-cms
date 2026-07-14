@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/utils";
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -66,7 +67,7 @@ export function CampaignEditPage() {
   useEffect(() => {
     getAdvertisers()
       .then(setAdvertisers)
-      .catch((err) => toast.error("Failed to load advertisers: " + String(err)));
+      .catch((err) => toast.error("Failed to load advertisers: " + getErrorMessage(err)));
 
     if (!isNew && id) {
       setLoading(true);
@@ -83,7 +84,7 @@ export function CampaignEditPage() {
             notes: c.notes ?? undefined,
           });
         })
-        .catch((err) => { toast.error("Failed to load campaign: " + String(err)); navigate("/ads/campaigns"); })
+        .catch((err) => { toast.error("Failed to load campaign: " + getErrorMessage(err)); navigate("/ads/campaigns"); })
         .finally(() => setLoading(false));
     }
   }, [id, isNew, navigate, reset]);
@@ -92,7 +93,7 @@ export function CampaignEditPage() {
     if (!isNew && id && activeTab === "creatives") {
       getCreatives(id)
         .then(setCreatives)
-        .catch((err) => toast.error("Failed to load creatives: " + String(err)));
+        .catch((err) => toast.error("Failed to load creatives: " + getErrorMessage(err)));
     }
   }, [activeTab, id, isNew]);
 
@@ -108,7 +109,7 @@ export function CampaignEditPage() {
         toast.success("Campaign saved.");
       }
     } catch (err) {
-      toast.error("Save failed: " + String(err));
+      toast.error("Save failed: " + getErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -124,7 +125,7 @@ export function CampaignEditPage() {
       setShowCreativeForm(false);
       toast.success("Creative added.");
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setSavingCreative(false);
     }
@@ -137,7 +138,7 @@ export function CampaignEditPage() {
       setCreatives((prev) => prev.filter((c) => c.id !== creativeId));
       toast.success("Creative deleted.");
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setDeletingCreative(null);
     }

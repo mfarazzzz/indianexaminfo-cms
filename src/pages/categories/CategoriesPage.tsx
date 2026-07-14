@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/utils";
 import React, { useEffect, useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -45,7 +46,7 @@ export function CategoriesPage() {
     try {
       setCategories(await getCategories());
     } catch (err) {
-      toast.error("Failed to load categories: " + String(err));
+      toast.error("Failed to load categories: " + getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -101,7 +102,7 @@ export function CategoriesPage() {
       const token = getSetting("revalidate_token", "") as string;
       if (token) revalidateAll(url, token).catch(() => {/* non-critical */});
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -121,7 +122,7 @@ export function CategoriesPage() {
       setDeleteTarget(null);
       load();
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setDeleting(false);
     }

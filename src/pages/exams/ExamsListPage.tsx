@@ -10,7 +10,7 @@ import { getExams, deleteExam, type ExamListOpts } from "@/services/examService"
 import { getCategories, type Category } from "@/services/categoryService";
 import { EXAM_STATUSES } from "@/config/site";
 import { usePillars } from "@/hooks/usePillars";
-import { formatDate } from "@/lib/utils";
+import { formatDate , getErrorMessage } from "@/lib/utils";
 import type { ExamEntity, Pillar } from "@/types/exam";
 
 export function ExamsListPage() {
@@ -51,7 +51,7 @@ export function ExamsListPage() {
       setData(rows);
       setTotal(count);
     } catch (err) {
-      toast.error("Failed to load exams: " + String(err));
+      toast.error("Failed to load exams: " + getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -71,7 +71,7 @@ export function ExamsListPage() {
       setDeleteTarget(null);
       load();
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setDeleting(false);
     }

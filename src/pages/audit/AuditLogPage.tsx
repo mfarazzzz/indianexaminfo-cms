@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { Search, ChevronDown, ChevronUp } from "lucide-react";
 import { getAuditLogs } from "@/services/auditService";
-import { formatDate } from "@/lib/utils";
+import { formatDate , getErrorMessage } from "@/lib/utils";
 import type { AuditLog } from "@/types/audit";
 
 const ACTION_COLORS: Record<string, string> = {
@@ -28,7 +28,7 @@ export function AuditLogPage() {
       setLogs(data);
       setTotal(count);
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setLoading(false);
     }

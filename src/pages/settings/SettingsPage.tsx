@@ -9,7 +9,7 @@ import {
   revalidatePath, revalidateAll,
 } from "@/lib/api/frontend";
 import { SITE } from "@/config/site";
-import { cn } from "@/lib/utils";
+import { cn , getErrorMessage } from "@/lib/utils";
 import type { Setting, SettingGroup } from "@/types/settings";
 
 type Tab = { id: SettingGroup | "integrations"; label: string; icon: string };
@@ -77,7 +77,7 @@ export function SettingsPage() {
         s.forEach((item) => { map[item.key] = item.value; });
         setLocal(map);
       })
-      .catch((err) => toast.error("Failed to load settings: " + String(err)));
+      .catch((err) => toast.error("Failed to load settings: " + getErrorMessage(err)));
   }, []);
 
   const get = (key: string, def: unknown = "") => {
@@ -92,7 +92,7 @@ export function SettingsPage() {
       await refreshSettings();
       toast.success("Settings saved.");
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setSaving(false);
     }

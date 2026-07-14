@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { getPages, deletePage } from "@/services/pageService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { formatDate } from "@/lib/utils";
+import { formatDate , getErrorMessage } from "@/lib/utils";
 import type { Page } from "@/types/page";
 
 export function PagesListPage() {
@@ -18,7 +18,7 @@ export function PagesListPage() {
   const load = async () => {
     setLoading(true);
     try { setPages(await getPages()); }
-    catch (err) { toast.error(String(err)); }
+    catch (err) { toast.error(getErrorMessage(err)); }
     finally { setLoading(false); }
   };
 
@@ -33,7 +33,7 @@ export function PagesListPage() {
       setDeleteTarget(null);
       load();
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setDeleting(false);
     }

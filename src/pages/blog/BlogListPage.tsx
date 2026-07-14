@@ -9,7 +9,7 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { getBlogPosts, deleteBlogPost } from "@/services/blogService";
 import type { BlogPost } from "@/types/blog";
 import { BLOG_SECTIONS, POST_TYPES } from "@/config/site";
-import { formatDate } from "@/lib/utils";
+import { formatDate , getErrorMessage } from "@/lib/utils";
 
 export function BlogListPage() {
   const navigate = useNavigate();
@@ -33,7 +33,7 @@ export function BlogListPage() {
       setData(rows);
       setTotal(count);
     } catch (err) {
-      toast.error("Failed to load: " + String(err));
+      toast.error("Failed to load: " + getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -53,7 +53,7 @@ export function BlogListPage() {
       setDeleteTarget(null);
       load();
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setDeleting(false);
     }

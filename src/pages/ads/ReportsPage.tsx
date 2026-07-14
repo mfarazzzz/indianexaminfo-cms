@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/utils";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { getAdReports, getCampaigns } from "@/services/adService";
@@ -25,7 +26,7 @@ export function ReportsPage() {
       const data = await getAdReports({ campaignId: campaignId || undefined, dateFrom, dateTo });
       setReports(data);
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setLoading(false);
     }

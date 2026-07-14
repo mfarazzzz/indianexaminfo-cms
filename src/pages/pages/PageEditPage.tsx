@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/utils";
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -45,7 +46,7 @@ export function PageEditPage() {
         setContent(page.content ?? "");
         reset({ title: page.title, slug: page.slug, metaTitle: page.metaTitle ?? "", metaDescription: page.metaDescription ?? "", status: page.status, content: page.content ?? "" });
       })
-      .catch((err) => { toast.error("Failed to load page: " + String(err)); navigate("/pages"); })
+      .catch((err) => { toast.error("Failed to load page: " + getErrorMessage(err)); navigate("/pages"); })
       .finally(() => setLoading(false));
   }, [id, isNew, navigate, reset]);
 
@@ -66,7 +67,7 @@ export function PageEditPage() {
         if (token) await revalidatePath(`/${data.slug}`, url, token);
       }
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setSaving(false);
     }

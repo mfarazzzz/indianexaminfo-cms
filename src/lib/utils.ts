@@ -101,3 +101,30 @@ export function validateImageFile(file: File): string | null {
   }
   return null;
 }
+
+
+/**
+ * Extract a human-readable error message from any error shape.
+ * Handles: Error instances, Supabase PostgrestError, plain strings, unknown objects.
+ * Never returns "[object Object]".
+ */
+export function getErrorMessage(err: unknown): string {
+  if (!err) return "Unknown error";
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  // Supabase PostgrestError shape: { message: string, details?: string, hint?: string, code?: string }
+  if (typeof err === "object" && err !== null) {
+    const obj = err as Record<string, unknown>;
+    if (typeof obj.message === "string") return obj.message;
+    if (typeof obj.error === "string") return obj.error;
+    if (typeof obj.details === "string") return obj.details;
+    // Last resort: try JSON, but truncate
+    try {
+      const json = JSON.stringify(obj);
+      return json.length > 120 ? json.slice(0, 120) + "…" : json;
+    } catch {
+      return "An unexpected error occurred";
+    }
+  }
+  return String(err);
+}

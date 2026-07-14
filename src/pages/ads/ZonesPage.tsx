@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/lib/utils";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { getAdZones, updateAdZone } from "@/services/adService";
@@ -12,7 +13,7 @@ export function ZonesPage() {
   useEffect(() => {
     getAdZones()
       .then(setZones)
-      .catch((err) => toast.error("Failed to load zones: " + String(err)))
+      .catch((err) => toast.error("Failed to load zones: " + getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -23,7 +24,7 @@ export function ZonesPage() {
       setZones(zones.map((z) => z.id === zone.id ? { ...z, isActive: !z.isActive } : z));
       toast.success(`Zone ${zone.isActive ? "disabled" : "enabled"}.`);
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setSaving(null);
     }
@@ -34,7 +35,7 @@ export function ZonesPage() {
       await updateAdZone(id, { fallbackHtml: html });
       toast.success("Fallback HTML saved.");
     } catch (err) {
-      toast.error("Save failed: " + String(err));
+      toast.error("Save failed: " + getErrorMessage(err));
     }
   };
 

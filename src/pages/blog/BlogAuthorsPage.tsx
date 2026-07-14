@@ -6,7 +6,7 @@ import { getAuthors, createAuthor, updateAuthor, deleteAuthor } from "@/services
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ImageUploader } from "@/components/shared/ImageUploader";
 import type { BlogAuthor } from "@/types/blog";
-import { slugify } from "@/lib/utils";
+import { slugify , getErrorMessage } from "@/lib/utils";
 
 type FormData = {
   name: string;
@@ -37,7 +37,7 @@ export function BlogAuthorsPage() {
   const load = async () => {
     setLoading(true);
     try { setAuthors(await getAuthors()); }
-    catch (err) { toast.error(String(err)); }
+    catch (err) { toast.error(getErrorMessage(err)); }
     finally { setLoading(false); }
   };
 
@@ -93,7 +93,7 @@ export function BlogAuthorsPage() {
       setShowForm(false);
       load();
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -108,7 +108,7 @@ export function BlogAuthorsPage() {
       setDeleteTarget(null);
       load();
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setDeleting(false);
     }

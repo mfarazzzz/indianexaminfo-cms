@@ -18,7 +18,7 @@ import { BLOG_SECTIONS, POST_TYPES } from "@/config/site";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermission } from "@/hooks/usePermission";
 import { P } from "@/config/permissions";
-import { cn } from "@/lib/utils";
+import { cn , getErrorMessage } from "@/lib/utils";
 import type { BlogAuthor } from "@/types/blog";
 
 const schema = z.object({
@@ -91,7 +91,7 @@ export function BlogEditPage() {
           canonicalUrl: post.canonicalUrl, faqs: post.faqs ?? [],
         });
       })
-      .catch((err) => { toast.error("Failed to load post: " + String(err)); navigate("/blog"); })
+      .catch((err) => { toast.error("Failed to load post: " + getErrorMessage(err)); navigate("/blog"); })
       .finally(() => setLoading(false));
   }, [id, isNew, navigate, form]);
 
@@ -119,7 +119,7 @@ export function BlogEditPage() {
         toast.success("Post saved!");
       }
     } catch (err) {
-      toast.error("Save failed: " + String(err));
+      toast.error("Save failed: " + getErrorMessage(err));
     } finally {
       setSaving(false);
     }

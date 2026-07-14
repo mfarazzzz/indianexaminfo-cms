@@ -9,7 +9,7 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { getContentPosts, deleteContentPost, type ContentPost } from "@/services/contentService";
 import { CONTENT_TYPES } from "@/config/site";
 import { usePillars } from "@/hooks/usePillars";
-import { formatDate } from "@/lib/utils";
+import { formatDate , getErrorMessage } from "@/lib/utils";
 import type { ContentType } from "@/types/exam";
 
 export function ContentListPage() {
@@ -38,7 +38,7 @@ export function ContentListPage() {
       setData(rows);
       setTotal(count);
     } catch (err) {
-      toast.error("Failed to load: " + String(err));
+      toast.error("Failed to load: " + getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -58,7 +58,7 @@ export function ContentListPage() {
       setDeleteTarget(null);
       load();
     } catch (err) {
-      toast.error(String(err));
+      toast.error(getErrorMessage(err));
     } finally {
       setDeleting(false);
     }

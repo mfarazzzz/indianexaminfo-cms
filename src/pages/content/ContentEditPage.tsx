@@ -20,7 +20,7 @@ import { CONTENT_TYPE_CONFIGS } from "@/config/contentTypeFields";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermission } from "@/hooks/usePermission";
 import { P } from "@/config/permissions";
-import { cn, slugify } from "@/lib/utils";
+import { cn, slugify , getErrorMessage } from "@/lib/utils";
 import type { ContentType } from "@/types/exam";
 
 const schema = z.object({
@@ -326,7 +326,7 @@ function ContentEditPageInner() {
         toast.success("Post saved!");
       }
     } catch (err) {
-      toast.error("Save failed: " + String(err));
+      toast.error("Save failed: " + getErrorMessage(err));
     } finally {
       setSaving(false);
     }
