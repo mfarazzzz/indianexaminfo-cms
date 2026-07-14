@@ -27,8 +27,6 @@ import {
   getContentPosts, createContentPost, updateContentPost,
 } from "@/services/contentService";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { FrontendSync } from "@/components/shared/FrontendSync";
-import { revalidateExamPaths } from "@/lib/api/frontend";
 import { EXAM_STATUSES } from "@/config/site";
 import {
   getEntityProfile, getModulesForEntityType,
@@ -38,6 +36,9 @@ import {
 } from "@/config/moduleRegistry";
 import { usePillars } from "@/hooks/usePillars";
 import { useAuth } from "@/hooks/useAuth";
+import {
+  revalidateAfterExamSave, revalidateAfterModuleSave,
+} from "@/lib/revalidation/revalidationService";
 import { cn, slugify } from "@/lib/utils";
 import type { ExamEntity, Pillar, ContentType } from "@/types/exam";
 
@@ -216,6 +217,8 @@ export function ExamEditorPage() {
         if (data.slug !== exam?.slug) { const available = await checkSlugAvailable(data.slug, id); if (!available) { form.setError("slug", { message: "Slug already taken" }); setSaving(false); return; } }
         await updateExam(id!, { ...payload, slug: data.slug, name: data.name, shortName: data.shortName, pillar: data.pillar as Pillar, categoryId: data.categoryId, subcategoryId: data.subcategoryId, entityType: data.entityType, conductingBody: data.conductingBody, officialWebsite: data.officialWebsite, status: data.status, isFeatured: data.isFeatured });
         toast.success("Exam saved!");
+        // Background batched revalidation — debounced, non-blocking
+        revalidateAfterExamSave({ id: id!, slug: data.slug, pillar: data.pillar, categorySlug: exam?.category ?? "" });
       }
     } catch (err) { toast.error("Save failed: " + String(err)); }
     finally { setSaving(false); }
@@ -237,7 +240,6 @@ export function ExamEditorPage() {
           {entityProfile && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium">{entityProfile.icon} {entityProfile.label}</span>}
         </div>
         <div className="flex items-center gap-2">
-          {!isNew && <FrontendSync onSync={async (url, token) => revalidateExamPaths({ pillar: exam?.pillar ?? "", categorySlug: exam?.category ?? "", examSlug: exam?.slug ?? "", enabledContentTypes: [] }, url, token)} />}
           <button type="submit" disabled={saving} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             {isNew ? "Create" : "Save"}
@@ -493,6 +495,8 @@ function ModulesTab({ form, examId, examName, pillar, entityType, moduleData, se
         setModuleData({ ...moduleData, [moduleId]: created });
       }
       toast.success(`${mod?.label ?? moduleId} saved`);
+      // Background batched revalidation — debounced with exam save if both happen
+      revalidateAfterModuleSave({ examSlug: form.getValues("slug"), pillar, categorySlug: "", contentType: moduleId });
     } catch (err) { toast.error(`Save failed: ${String(err)}`); }
     finally { setModuleSaving(null); }
   };
