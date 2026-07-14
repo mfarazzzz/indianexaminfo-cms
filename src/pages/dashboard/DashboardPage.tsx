@@ -166,7 +166,10 @@ export function DashboardPage() {
               <div
                 key={`${item.type}-${item.id}`}
                 className="flex items-center justify-between px-5 py-3 hover:bg-slate-50 cursor-pointer transition-colors"
-                onClick={() => navigate(`/${item.type === "content" ? "content" : item.type}/${item.id}`)}
+                onClick={() => {
+                  const basePath = item.type === "exam" ? "exams" : item.type === "blog" ? "blog" : "content";
+                  navigate(`/${basePath}/${item.id}`);
+                }}
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="flex-shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-slate-500">

@@ -13,6 +13,39 @@ function Loading() {
   );
 }
 
+/**
+ * Error boundary for lazy-loaded page chunks.
+ * Handles network errors during code-splitting and offers a retry button.
+ */
+class LazyErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
+          <p className="text-sm text-slate-600">Failed to load this page.</p>
+          <button
+            onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
+            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function lazyPage(
   factory: () => Promise<Record<string, unknown>>,
   exportName: string
@@ -22,9 +55,11 @@ function lazyPage(
   );
   return function LazyWrapper() {
     return (
-      <Suspense fallback={<Loading />}>
-        <Component />
-      </Suspense>
+      <LazyErrorBoundary>
+        <Suspense fallback={<Loading />}>
+          <Component />
+        </Suspense>
+      </LazyErrorBoundary>
     );
   };
 }
