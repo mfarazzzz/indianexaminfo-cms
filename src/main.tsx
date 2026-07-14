@@ -8,10 +8,16 @@ import { SettingsProvider } from "@/contexts/SettingsContext";
 import { router } from "@/router";
 import { queryClient } from "@/lib/queryClient";
 import { registerCoreBlocks } from "@/lib/blocks/coreBlocks";
+import { initializeModuleRegistry } from "@/components/workspace/registerModules";
+import { initializeInspectorRegistry } from "@/components/workspace/inspectors/registerInspectors";
 import "./index.css";
 
 // Register all built-in block types before any component renders
 registerCoreBlocks()
+
+// Initialize workspace module and inspector registries (M4)
+initializeModuleRegistry()
+initializeInspectorRegistry()
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
