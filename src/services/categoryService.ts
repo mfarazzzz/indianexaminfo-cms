@@ -1,12 +1,11 @@
 import { db } from "@/lib/supabase/client";
-import type { Pillar } from "@/types/exam";
 
 export type Category = {
   id: string;
   slug: string;
   name: string;
   shortName: string | null;
-  pillar: Pillar;
+  pillar: string;
   parentId: string | null;
   description: string | null;
   icon: string | null;
@@ -25,7 +24,7 @@ function mapRow(row: Record<string, unknown>): Category {
     slug: row.slug as string,
     name: row.name as string,
     shortName: row.short_name as string | null,
-    pillar: row.pillar as Pillar,
+    pillar: row.pillar as string,
     parentId: row.parent_id as string | null,
     description: row.description as string | null,
     icon: row.icon as string | null,
@@ -38,7 +37,7 @@ function mapRow(row: Record<string, unknown>): Category {
   };
 }
 
-export async function getCategories(pillar?: Pillar): Promise<Category[]> {
+export async function getCategories(pillar?: string): Promise<Category[]> {
   let q = db.from("categories").select("*").order("order_index");
   if (pillar) q = q.eq("pillar", pillar);
   const { data, error } = await q;

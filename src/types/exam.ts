@@ -90,7 +90,7 @@ export type ContentPost = {
   content: string;
   examEntityId: string;
   examEntityName: string;
-  pillar: Pillar;
+  pillar: string;
   contentType: ContentType;
 
   quickLinks: { label: string; url: string; isPDF: boolean; isOfficial: boolean }[];

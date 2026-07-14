@@ -1,5 +1,5 @@
 import { db } from "@/lib/supabase/client";
-import type { ContentPost, Pillar, ContentType } from "@/types/exam";
+import type { ContentPost, ContentType } from "@/types/exam";
 import { sanitizeHtml } from "@/lib/utils";
 
 export type { ContentPost };
@@ -13,7 +13,7 @@ function mapRow(row: Record<string, unknown>): ContentPost {
     content: (row.content as string) ?? "",
     examEntityId: (row.exam_id as string) ?? "",
     examEntityName: (row.exam_entity_name as string) ?? "",
-    pillar: row.pillar as Pillar,
+    pillar: row.pillar as ContentPost['pillar'],
     contentType: row.content_type as ContentType,
     quickLinks: (row.quick_links as ContentPost["quickLinks"]) ?? [],
     importantDates: (row.important_dates as ContentPost["importantDates"]) ?? [],
@@ -36,7 +36,7 @@ function mapRow(row: Record<string, unknown>): ContentPost {
 }
 
 export async function getContentPosts(opts?: {
-  examId?: string; contentType?: ContentType; pillar?: Pillar; status?: string;
+  examId?: string; contentType?: ContentType; pillar?: string; status?: string;
   search?: string; isFeatured?: boolean; limit?: number; offset?: number;
 }): Promise<{ data: ContentPost[]; count: number }> {
   let q = db.from("content_posts").select("*", { count: "exact" }).order("updated_at", { ascending: false });

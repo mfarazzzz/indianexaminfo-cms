@@ -28,7 +28,7 @@ const schema = z.object({
   slug:            z.string().min(1, "Slug required"),
   examId:          z.string().min(1, "Exam required"),
   examEntityName:  z.string(),
-  pillar:          z.enum(["sarkari-naukri", "entrance-exam", "board-university"]),
+  pillar:          z.string().min(1, "Pillar required"),
   contentType:     z.enum(["notification","application","admit-card","date-sheet","syllabus","answer-key","result","cutoff","previous-papers","mock-test","study-material","books"]),
   excerpt:         z.string().max(200).optional(),
   content:         z.string().optional(),

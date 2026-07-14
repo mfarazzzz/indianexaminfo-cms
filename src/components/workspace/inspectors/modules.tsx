@@ -6,7 +6,7 @@
  */
 import React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { entityKeys, healthKeys } from '@/lib/queryKeys'
+import { entityKeys, healthKeys, relationshipKeys } from '@/lib/queryKeys'
 import { computeEntityHealth } from '@/services/entity/healthService'
 import { listTimeline } from '@/services/entity/timelineService'
 import { getSeo } from '@/services/entity/seoService'
@@ -126,7 +126,7 @@ export function LinksInspector({ entityId }: Props) {
 
 export function RelationshipsInspector({ entityId }: Props) {
   const { data: rels = [] } = useQuery({
-    queryKey: entityKeys.relationships?.(entityId) ?? ['relationships', entityId],
+    queryKey: relationshipKeys.list(entityId),
     queryFn: () => listRelationships(entityId),
     staleTime: 5 * 60_000,
   })
