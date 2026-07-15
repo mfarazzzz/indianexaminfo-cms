@@ -5,11 +5,12 @@
  * and extracts structured data to fill all form fields automatically.
  */
 
-const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
+const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 const API_KEY = "AQ.Ab8RN6I9bRCWOFc3I4QD8dchWElKH__mctesC02kt0FDzifi8Q";
 
 interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
+  error?: { message?: string; code?: number };
 }
 
 async function callGemini(prompt: string): Promise<string> {
@@ -20,30 +21,53 @@ async function callGemini(prompt: string): Promise<string> {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 8192,
+        responseMimeType: "application/json",
       },
     }),
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Gemini API error: ${res.status} — ${errText}`);
+    console.error("[AI AutoFill] API error:", res.status, errText);
+    throw new Error(`Gemini API error: ${res.status} — ${errText.slice(0, 200)}`);
   }
 
   const data: GeminiResponse = await res.json();
+  
+  if (data.error) {
+    console.error("[AI AutoFill] Gemini error:", data.error);
+    throw new Error(data.error.message ?? "Gemini returned an error");
+  }
+
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  if (!text) {
+    console.error("[AI AutoFill] Empty response from Gemini:", JSON.stringify(data).slice(0, 500));
+    throw new Error("AI returned empty response. Try with more detailed input.");
+  }
+  
   return text;
 }
 
 function extractJSON(text: string): Record<string, unknown> {
-  // Try to find JSON in the response (might be wrapped in ```json blocks)
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return {};
-  const jsonStr = jsonMatch[1] || jsonMatch[0];
+  // With responseMimeType: "application/json", Gemini returns raw JSON
+  // But fallback to parsing from markdown blocks just in case
   try {
-    return JSON.parse(jsonStr);
+    return JSON.parse(text);
   } catch {
-    return {};
+    // Try to find JSON in markdown code blocks
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error("[AI AutoFill] Could not extract JSON from:", text.slice(0, 300));
+      return {};
+    }
+    const jsonStr = jsonMatch[1] || jsonMatch[0];
+    try {
+      return JSON.parse(jsonStr);
+    } catch (e) {
+      console.error("[AI AutoFill] JSON parse failed:", e, jsonStr.slice(0, 300));
+      return {};
+    }
   }
 }
 

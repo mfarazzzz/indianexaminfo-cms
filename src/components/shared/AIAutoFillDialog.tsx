@@ -35,11 +35,18 @@ export function AIAutoFillDialog({
     setError(null);
     try {
       const result = await extractFn(text);
-      onResult(result as Record<string, unknown>);
+      const parsed = result as Record<string, unknown>;
+      if (!parsed || Object.keys(parsed).length === 0) {
+        setError("AI returned empty data. Check browser console for details. Try pasting more detailed content.");
+        return;
+      }
+      onResult(parsed);
       onClose();
       setText("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "AI extraction failed. Try again.");
+      const msg = err instanceof Error ? err.message : "AI extraction failed. Try again.";
+      setError(msg);
+      console.error("[AI AutoFill] Error:", err);
     } finally {
       setLoading(false);
     }
