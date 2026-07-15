@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { getReviewCount } from "@/services/contentService";
 import { getPendingCampaignCount } from "@/services/adService";
 import { cn } from "@/lib/utils";
-import { useMobileNav } from "./AppShell";
+import { useMobileNav } from "@/contexts/MobileNavContext";
 
 interface TopBarProps {
   title?: string;
