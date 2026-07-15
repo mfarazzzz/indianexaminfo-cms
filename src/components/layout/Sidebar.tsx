@@ -4,13 +4,14 @@ import {
   LayoutDashboard, FileText, BookOpen, Users, Tag, Link2,
   FileCode, Image, BarChart2, Megaphone, Palette, MapPin,
   TrendingUp, Settings, ClipboardList, LogOut, ExternalLink,
-  ChevronRight,
+  ChevronRight, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useAnyPermission } from "@/hooks/usePermission";
 import { P } from "@/config/permissions";
 import { SITE } from "@/config/site";
+import { useMobileNav } from "./AppShell";
 
 interface NavItem {
   label: string;
@@ -92,6 +93,7 @@ const ROLE_BADGE_COLORS: Record<string, string> = {
 export function Sidebar() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const { sidebarOpen, setSidebarOpen } = useMobileNav();
 
   const handleSignOut = async () => {
     await signOut();
@@ -113,16 +115,31 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-20 flex w-60 flex-col bg-[#0F172A]">
-      {/* Logo */}
-      <div className="flex h-14 items-center gap-3 border-b border-white/10 px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded bg-blue-600 text-sm font-bold text-white">
-          IE
+    <aside className={cn(
+      "fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-[#0F172A] transition-transform duration-200",
+      // Mobile: hidden by default, slides in when open
+      sidebarOpen ? "translate-x-0" : "-translate-x-full",
+      // Desktop: always visible
+      "lg:translate-x-0 lg:z-20"
+    )}>
+      {/* Logo + mobile close */}
+      <div className="flex h-14 items-center justify-between border-b border-white/10 px-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded bg-blue-600 text-sm font-bold text-white">
+            IE
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-white">IndianExamInfo</p>
+            <p className="text-xs text-slate-400">CMS</p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white">IndianExamInfo</p>
-          <p className="text-xs text-slate-400">CMS</p>
-        </div>
+        <button
+          onClick={() => setSidebarOpen(false)}
+          className="lg:hidden rounded p-1 text-slate-400 hover:text-white hover:bg-white/10"
+          aria-label="Close menu"
+        >
+          <X size={18} />
+        </button>
       </div>
 
       {/* Nav */}

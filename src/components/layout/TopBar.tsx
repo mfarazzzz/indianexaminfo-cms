@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, Settings, LogOut, User } from "lucide-react";
+import { Bell, Settings, LogOut, User, Menu } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { useAuth } from "@/hooks/useAuth";
 import { getReviewCount } from "@/services/contentService";
 import { getPendingCampaignCount } from "@/services/adService";
 import { cn } from "@/lib/utils";
+import { useMobileNav } from "./AppShell";
 
 interface TopBarProps {
   title?: string;
@@ -16,6 +17,7 @@ interface TopBarProps {
 export function TopBar({ title, breadcrumb }: TopBarProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const { setSidebarOpen } = useMobileNav();
   const [reviewCount, setReviewCount] = useState(0);
   const [pendingAds, setPendingAds] = useState(0);
 
@@ -34,9 +36,16 @@ export function TopBar({ title, breadcrumb }: TopBarProps) {
   };
 
   return (
-    <header className="fixed left-60 right-0 top-0 z-10 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-6">
-      {/* Left: breadcrumb */}
-      <div className="flex items-center gap-1 text-sm">
+    <header className="fixed left-0 lg:left-60 right-0 top-0 z-10 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
+      {/* Left: hamburger (mobile) + breadcrumb */}
+      <div className="flex items-center gap-3 text-sm">
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="lg:hidden rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+          aria-label="Open menu"
+        >
+          <Menu size={20} />
+        </button>
         {breadcrumb ? (
           breadcrumb.map((crumb, i) => (
             <React.Fragment key={i}>
