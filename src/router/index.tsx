@@ -15,15 +15,16 @@ function Loading() {
 
 /**
  * Error boundary for lazy-loaded page chunks.
- * Handles network errors during code-splitting and offers a retry button.
+ * Handles network errors during code-splitting.
+ * First retry: re-attempt the chunk load. Second: full page reload.
  */
 class LazyErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { hasError: boolean; error: Error | null }
+  { hasError: boolean; error: Error | null; retryCount: number }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, retryCount: 0 };
   }
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error };
@@ -34,7 +35,15 @@ class LazyErrorBoundary extends React.Component<
         <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
           <p className="text-sm text-slate-600">Failed to load this page.</p>
           <button
-            onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
+            onClick={() => {
+              if (this.state.retryCount < 1) {
+                // First retry: just reset the error boundary (React will re-attempt the lazy import)
+                this.setState({ hasError: false, error: null, retryCount: this.state.retryCount + 1 });
+              } else {
+                // Second retry: force reload from server
+                window.location.reload();
+              }
+            }}
             className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
             Reload
