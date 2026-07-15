@@ -5,49 +5,75 @@
  * Optimization: minimal prompts, JSON mode, no redundant instructions.
  */
 
-const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 const API_KEY = "AQ.Ab8RN6I9bRCWOFc3I4QD8dchWElKH__mctesC02kt0FDzifi8Q";
 
 async function callGemini(prompt: string): Promise<Record<string, unknown>> {
-  // Retry once after 3s on rate limit (429)
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await fetch(`${API_URL}?key=${API_KEY}`, {
+  // Try gemini-2.0-flash first, fallback to gemini-1.5-flash-latest
+  const models = [
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-latest",
+    "gemini-2.0-flash-lite",
+  ];
+
+  for (const model of models) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
+    
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.05, maxOutputTokens: 4096, responseMimeType: "application/json" },
+        generationConfig: { temperature: 0.05, maxOutputTokens: 4096 },
       }),
     });
 
-    if (res.status === 429 && attempt === 0) {
-      // Rate limited — wait 3 seconds and retry once
+    // If model not found, try next one
+    if (res.status === 404) continue;
+    
+    // Rate limited — wait and retry same model once
+    if (res.status === 429) {
       await new Promise(r => setTimeout(r, 3000));
-      continue;
+      const retry = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.05, maxOutputTokens: 4096 },
+        }),
+      });
+      if (retry.status === 429) throw new Error("Rate limited. Wait 60 seconds and try again.");
+      if (!retry.ok) { const e = await retry.text(); throw new Error(`API error: ${e.slice(0, 150)}`); }
+      const rd = await retry.json();
+      const rt = rd.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      if (!rt) throw new Error("Empty response");
+      return parseJSON(rt);
     }
 
     if (!res.ok) {
       const err = await res.text();
-      console.error("[AI] API error:", res.status, err.slice(0, 300));
-      if (res.status === 429) throw new Error("Rate limited. Please wait 30 seconds and try again.");
-      throw new Error(`API error ${res.status}: ${err.slice(0, 150)}`);
+      console.error("[AI]", res.status, err.slice(0, 200));
+      throw new Error(`API error ${res.status}: ${err.slice(0, 100)}`);
     }
 
     const data = await res.json();
-    if (data.error) throw new Error(data.error.message ?? "Gemini error");
-
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     if (!text) throw new Error("Empty AI response");
-
-    try { return JSON.parse(text); }
-    catch {
-      const m = text.match(/\{[\s\S]*\}/);
-      if (m) try { return JSON.parse(m[0]); } catch {}
-      console.error("[AI] Parse failed:", text.slice(0, 300));
-      throw new Error("AI response was not valid JSON");
-    }
+    return parseJSON(text);
   }
-  throw new Error("Rate limited after retry. Wait 30 seconds.");
+  
+  throw new Error("No working AI model found. Check your API key at aistudio.google.com/apikey");
+}
+
+function parseJSON(text: string): Record<string, unknown> {
+  // Try direct parse first
+  try { return JSON.parse(text); } catch {}
+  // Try extracting from markdown code blocks
+  const m = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || text.match(/(\{[\s\S]*\})/);
+  if (m) {
+    try { return JSON.parse(m[1] || m[0]); } catch {}
+  }
+  console.error("[AI] Cannot parse:", text.slice(0, 200));
+  throw new Error("AI returned invalid JSON. Try again with simpler text.");
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
