@@ -54,11 +54,11 @@ const examSchema = z.object({
   categoryId: z.string().optional().nullable(),
   subcategoryId: z.string().optional().nullable(),
   entityType: z.enum(["exam", "board", "university", "recruitment"]).default("exam"),
-  conductingBody: z.string().min(1, "Conducting body is required"),
+  conductingBody: z.string().default(""),
   officialWebsite: z.string().optional().default(""),
   status: z.enum(["upcoming", "active", "registration-open", "registration-closed", "result-declared", "completed", "ongoing"]).default("upcoming"),
   isFeatured: z.boolean().default(false),
-  // Content flags (synced from enabled modules)
+  // Content flags
   hasAdmitCard: z.boolean().default(false),
   hasResult: z.boolean().default(false),
   hasAnswerKey: z.boolean().default(false),
@@ -85,7 +85,6 @@ const examSchema = z.object({
   seoTitle: z.string().optional().nullable(),
   seoDescription: z.string().optional().nullable(),
   faqs: z.array(z.object({ question: z.string(), answer: z.string() })).default([]),
-  // Dynamic type-specific fields
   typeFields: z.record(z.unknown()).default({}),
 });
 
@@ -279,25 +278,34 @@ export function ExamEditorPage() {
         placeholder="Paste the raw notification text, exam details, or official PDF content here. AI will extract all fields and fill the form automatically."
         onResult={(data) => {
           const d = data as any;
-          if (d.name) form.setValue("name", d.name);
-          if (d.shortName) form.setValue("shortName", d.shortName);
-          if (d.slug) form.setValue("slug", d.slug);
-          if (d.pillar) form.setValue("pillar", d.pillar);
-          if (d.entityType) form.setValue("entityType", d.entityType);
-          if (d.conductingBody) form.setValue("conductingBody", d.conductingBody);
-          if (d.officialWebsite) form.setValue("officialWebsite", d.officialWebsite);
-          if (d.status) form.setValue("status", d.status);
-          if (d.vacancy) form.setValue("vacancy", d.vacancy);
-          if (d.eligibility) form.setValue("eligibility", d.eligibility);
-          if (d.applicationFee) form.setValue("applicationFee", d.applicationFee);
-          if (d.selectionProcess) form.setValue("selectionProcess", d.selectionProcess);
-          if (d.syllabusHighlights) form.setValue("syllabusHighlights", d.syllabusHighlights);
-          if (Array.isArray(d.dates)) form.setValue("dates", d.dates);
-          if (d.tags) form.setValue("tags", d.tags);
-          if (d.searchKeywords) form.setValue("searchKeywords", d.searchKeywords);
-          if (d.seoTitle) form.setValue("seoTitle", d.seoTitle);
-          if (d.seoDescription) form.setValue("seoDescription", d.seoDescription);
-          if (Array.isArray(d.faqs)) form.setValue("faqs", d.faqs);
+          const opts = { shouldDirty: true, shouldValidate: false };
+          if (d.name) form.setValue("name", d.name, opts);
+          if (d.shortName) form.setValue("shortName", d.shortName, opts);
+          if (d.slug) form.setValue("slug", d.slug, opts);
+          if (d.pillar && ["sarkari-naukri","entrance-exam","board-university"].includes(d.pillar)) form.setValue("pillar", d.pillar, opts);
+          if (d.entityType && ["exam","board","university","recruitment"].includes(d.entityType)) form.setValue("entityType", d.entityType, opts);
+          if (d.conductingBody) form.setValue("conductingBody", d.conductingBody, opts);
+          if (d.officialWebsite) form.setValue("officialWebsite", d.officialWebsite, opts);
+          if (d.status) form.setValue("status", d.status, opts);
+          if (typeof d.vacancy === "number") form.setValue("vacancy", d.vacancy, opts);
+          if (d.eligibility) form.setValue("eligibility", d.eligibility, opts);
+          if (d.applicationFee) form.setValue("applicationFee", d.applicationFee, opts);
+          if (Array.isArray(d.selectionProcess)) form.setValue("selectionProcess", d.selectionProcess, opts);
+          if (Array.isArray(d.syllabusHighlights)) form.setValue("syllabusHighlights", d.syllabusHighlights, opts);
+          if (Array.isArray(d.dates)) form.setValue("dates", d.dates, opts);
+          if (Array.isArray(d.tags)) form.setValue("tags", d.tags, opts);
+          if (Array.isArray(d.searchKeywords)) form.setValue("searchKeywords", d.searchKeywords, opts);
+          if (d.seoTitle) form.setValue("seoTitle", d.seoTitle, opts);
+          if (d.seoDescription) form.setValue("seoDescription", d.seoDescription, opts);
+          if (Array.isArray(d.faqs)) form.setValue("faqs", d.faqs, opts);
+          // Auto-enable content module flags based on what AI detected
+          if (d.hasNotification) form.setValue("hasNotification", true, opts);
+          if (d.hasApplication) form.setValue("hasApplication", true, opts);
+          if (d.hasAdmitCard) form.setValue("hasAdmitCard", true, opts);
+          if (d.hasResult) form.setValue("hasResult", true, opts);
+          if (d.hasAnswerKey) form.setValue("hasAnswerKey", true, opts);
+          if (d.hasSyllabus) form.setValue("hasSyllabus", true, opts);
+          if (d.hasCutoff) form.setValue("hasCutoff", true, opts);
           toast.success("AI filled all fields! Review and save.");
         }}
       />

@@ -25,24 +25,21 @@ import { cn, slugify , getErrorMessage } from "@/lib/utils";
 import type { ContentType } from "@/types/exam";
 
 const schema = z.object({
-  title:           z.string().min(1, "Title required"),
-  slug:            z.string().min(1, "Slug required"),
-  examId:          z.string().min(1, "Exam required"),
-  examEntityName:  z.string(),
-  pillar:          z.string().min(1, "Pillar required"),
-  contentType:     z.enum(["notification","application","admit-card","date-sheet","syllabus","answer-key","result","cutoff","previous-papers","mock-test","study-material","books"]),
-  excerpt:         z.string().max(200).optional(),
+  title:           z.string().default(""),
+  slug:            z.string().default(""),
+  examId:          z.string().default(""),
+  examEntityName:  z.string().default(""),
+  pillar:          z.string().default("sarkari-naukri"),
+  contentType:     z.enum(["notification","application","admit-card","date-sheet","syllabus","answer-key","result","cutoff","previous-papers","mock-test","study-material","books"]).default("notification"),
+  excerpt:         z.string().optional(),
   content:         z.string().optional(),
   tags:            z.array(z.string()).default([]),
   status:          z.enum(["draft","review","published","unpublished"]).default("draft"),
   isFeatured:      z.boolean().default(false),
   seoTitle:        z.string().optional(),
   seoDescription:  z.string().optional(),
-  // Structured per-content-type fields stored as a flat key-value map
   contentTypeData: z.record(z.unknown()).default({}),
-  // Generic quick links (CTAs + official links shown on frontend)
   quickLinks:      z.array(z.object({ label: z.string(), url: z.string(), isPDF: z.boolean(), isOfficial: z.boolean() })).default([]),
-  // Attachments: PDF / image / external URL
   attachmentUrls:  z.array(z.object({ label: z.string(), url: z.string(), type: z.enum(["pdf","image","external"]), isOfficial: z.boolean() })).default([]),
   importantDates:  z.array(z.object({ label: z.string(), date: z.string(), isUrgent: z.boolean() })).default([]),
   faqs:            z.array(z.object({ question: z.string(), answer: z.string() })).default([]),

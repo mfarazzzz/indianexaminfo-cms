@@ -103,7 +103,14 @@ Return ONLY valid JSON, no explanation:
   "searchKeywords": ["keyword1", "keyword2"],
   "seoTitle": "SEO optimized title under 60 chars",
   "seoDescription": "Meta description under 160 chars",
-  "faqs": [{ "question": "Q?", "answer": "A." }]
+  "faqs": [{ "question": "Q?", "answer": "A." }],
+  "hasNotification": true/false,
+  "hasApplication": true/false,
+  "hasAdmitCard": true/false,
+  "hasResult": true/false,
+  "hasAnswerKey": true/false,
+  "hasSyllabus": true/false,
+  "hasCutoff": true/false
 }
 
 RAW TEXT:
