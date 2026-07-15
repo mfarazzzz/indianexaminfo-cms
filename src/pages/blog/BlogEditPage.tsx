@@ -13,6 +13,8 @@ import { AISuggestion } from "@/components/shared/AISuggestion";
 import { FrontendSync } from "@/components/shared/FrontendSync";
 import { ImageUploader } from "@/components/shared/ImageUploader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { AIAutoFillDialog, AIAutoFillButton } from "@/components/shared/AIAutoFillDialog";
+import { autoFillBlogPost } from "@/lib/ai/autofill";
 import { revalidateBlogPost } from "@/lib/api/frontend";
 import { BLOG_SECTIONS, POST_TYPES } from "@/config/site";
 import { useAuth } from "@/hooks/useAuth";
@@ -53,6 +55,7 @@ export function BlogEditPage() {
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [authors, setAuthors] = useState<BlogAuthor[]>([]);
   const [examSearch, setExamSearch] = useState("");
   const [examResults, setExamResults] = useState<{ slug: string; name: string }[]>([]);
@@ -139,6 +142,7 @@ export function BlogEditPage() {
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={watch("status")} />
+          <AIAutoFillButton onClick={() => setAiDialogOpen(true)} />
           <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {isNew ? "Create Post" : "Save"}
@@ -333,6 +337,29 @@ export function BlogEditPage() {
           )}
         </div>
       </div>
+
+      {/* AI Auto-Fill Dialog */}
+      <AIAutoFillDialog
+        open={aiDialogOpen}
+        onClose={() => setAiDialogOpen(false)}
+        extractFn={autoFillBlogPost}
+        title="AI Auto-Fill Blog Post"
+        placeholder="Paste raw news, article draft, or topic details. AI will generate a complete blog post with SEO."
+        onResult={(data) => {
+          const d = data as any;
+          if (d.title) form.setValue("title", d.title);
+          if (d.slug) form.setValue("slug", d.slug);
+          if (d.excerpt) form.setValue("excerpt", d.excerpt);
+          if (d.content) form.setValue("content", d.content);
+          if (d.section) form.setValue("section", d.section);
+          if (d.postType) form.setValue("postType", d.postType);
+          if (d.tags) form.setValue("tags", d.tags);
+          if (d.seoTitle) form.setValue("seoTitle", d.seoTitle);
+          if (d.seoDescription) form.setValue("seoDescription", d.seoDescription);
+          if (Array.isArray(d.faqs)) form.setValue("faqs", d.faqs);
+          toast.success("AI filled all fields! Review and save.");
+        }}
+      />
     </form>
   );
 }

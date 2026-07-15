@@ -10,6 +10,8 @@ import { searchExams } from "@/services/examService";
 import { revalidateAfterModuleSave } from "@/lib/revalidation/revalidationService";
 import { RichEditor } from "@/components/shared/RichEditor";
 import { PageErrorBoundary } from "@/components/shared/ErrorBoundary";
+import { AIAutoFillDialog, AIAutoFillButton } from "@/components/shared/AIAutoFillDialog";
+import { autoFillContentPost } from "@/lib/ai/autofill";
 import { SlugInput } from "@/components/shared/SlugInput";
 import { AISuggestion } from "@/components/shared/AISuggestion";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -249,6 +251,7 @@ function ContentEditPageInner() {
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [examSearch, setExamSearch] = useState("");
   const [examResults, setExamResults] = useState<{ id: string; name: string; slug: string; pillar: string; status: string }[]>([]);
   const [examSlug, setExamSlug] = useState("");
@@ -355,6 +358,7 @@ function ContentEditPageInner() {
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={watch("status")} />
+          <AIAutoFillButton onClick={() => setAiDialogOpen(true)} />
           <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {isNew ? "Create Post" : "Save Changes"}
@@ -623,6 +627,31 @@ function ContentEditPageInner() {
           </div>
         </div>
       </div>
+
+      {/* AI Auto-Fill Dialog */}
+      <AIAutoFillDialog
+        open={aiDialogOpen}
+        onClose={() => setAiDialogOpen(false)}
+        extractFn={autoFillContentPost}
+        title="AI Auto-Fill Content Post"
+        placeholder="Paste raw content about an admit card, result, notification, answer key, etc. AI will extract all fields."
+        onResult={(data) => {
+          const d = data as any;
+          if (d.title) setValue("title", d.title);
+          if (d.slug) setValue("slug", d.slug);
+          if (d.excerpt) setValue("excerpt", d.excerpt);
+          if (d.content) setValue("content", d.content);
+          if (d.contentType) setValue("contentType", d.contentType);
+          if (Array.isArray(d.importantDates)) setValue("importantDates", d.importantDates);
+          if (Array.isArray(d.quickLinks)) setValue("quickLinks", d.quickLinks);
+          if (d.tags) setValue("tags", d.tags);
+          if (d.seoTitle) setValue("seoTitle", d.seoTitle);
+          if (d.seoDescription) setValue("seoDescription", d.seoDescription);
+          if (Array.isArray(d.faqs)) setValue("faqs", d.faqs);
+          if (d.contentTypeData) setValue("contentTypeData", d.contentTypeData);
+          toast.success("AI filled all fields! Review and save.");
+        }}
+      />
     </form>
   );
 }

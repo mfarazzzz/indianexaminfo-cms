@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, Save, Plus, Trash2, Star, Calendar,
   FileText, GraduationCap, BookOpen, Search as SearchIcon,
-  ChevronDown, ChevronUp, Check,
+  ChevronDown, ChevronUp, Check, Sparkles,
 } from "lucide-react";
 import {
   getExamById, createExam, updateExam, checkSlugAvailable,
@@ -40,6 +40,8 @@ import {
   revalidateAfterExamSave, revalidateAfterModuleSave,
 } from "@/lib/revalidation/revalidationService";
 import { cn, slugify , getErrorMessage } from "@/lib/utils";
+import { AIAutoFillDialog, AIAutoFillButton } from "@/components/shared/AIAutoFillDialog";
+import { autoFillExam } from "@/lib/ai/autofill";
 import type { ExamEntity, Pillar, ContentType } from "@/types/exam";
 
 // ── Schema ──────────────────────────────────────────────────────────────────
@@ -128,6 +130,7 @@ export function ExamEditorPage() {
   const pillars = Array.isArray(pillarsRaw) ? pillarsRaw : [];
   const [moduleData, setModuleData] = useState<Record<string, any>>({});
   const [moduleSaving, setModuleSaving] = useState<string | null>(null);
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
 
   const form = useForm<ExamFormData>({
     resolver: zodResolver(examSchema),
@@ -241,6 +244,7 @@ export function ExamEditorPage() {
           {entityProfile && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium">{entityProfile.icon} {entityProfile.label}</span>}
         </div>
         <div className="flex items-center gap-2">
+          <AIAutoFillButton onClick={() => setAiDialogOpen(true)} />
           <button type="submit" disabled={saving} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             {isNew ? "Create" : "Save"}
@@ -265,6 +269,38 @@ export function ExamEditorPage() {
         {activeTab === "modules" && <ModulesTab form={form} examId={id ?? ""} examName={form.watch("name")} pillar={watchedPillar} entityType={watchedEntityType} moduleData={moduleData} setModuleData={setModuleData} moduleSaving={moduleSaving} setModuleSaving={setModuleSaving} isNew={isNew} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
       </div>
+
+      {/* AI Auto-Fill Dialog */}
+      <AIAutoFillDialog
+        open={aiDialogOpen}
+        onClose={() => setAiDialogOpen(false)}
+        extractFn={autoFillExam}
+        title="AI Auto-Fill Exam"
+        placeholder="Paste the raw notification text, exam details, or official PDF content here. AI will extract all fields and fill the form automatically."
+        onResult={(data) => {
+          const d = data as any;
+          if (d.name) form.setValue("name", d.name);
+          if (d.shortName) form.setValue("shortName", d.shortName);
+          if (d.slug) form.setValue("slug", d.slug);
+          if (d.pillar) form.setValue("pillar", d.pillar);
+          if (d.entityType) form.setValue("entityType", d.entityType);
+          if (d.conductingBody) form.setValue("conductingBody", d.conductingBody);
+          if (d.officialWebsite) form.setValue("officialWebsite", d.officialWebsite);
+          if (d.status) form.setValue("status", d.status);
+          if (d.vacancy) form.setValue("vacancy", d.vacancy);
+          if (d.eligibility) form.setValue("eligibility", d.eligibility);
+          if (d.applicationFee) form.setValue("applicationFee", d.applicationFee);
+          if (d.selectionProcess) form.setValue("selectionProcess", d.selectionProcess);
+          if (d.syllabusHighlights) form.setValue("syllabusHighlights", d.syllabusHighlights);
+          if (Array.isArray(d.dates)) form.setValue("dates", d.dates);
+          if (d.tags) form.setValue("tags", d.tags);
+          if (d.searchKeywords) form.setValue("searchKeywords", d.searchKeywords);
+          if (d.seoTitle) form.setValue("seoTitle", d.seoTitle);
+          if (d.seoDescription) form.setValue("seoDescription", d.seoDescription);
+          if (Array.isArray(d.faqs)) form.setValue("faqs", d.faqs);
+          toast.success("AI filled all fields! Review and save.");
+        }}
+      />
     </form>
   );
 }
