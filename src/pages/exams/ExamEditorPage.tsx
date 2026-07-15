@@ -594,13 +594,13 @@ function ModuleEditor({ moduleId, entityType, existingData, onSave, isSaving, di
       case "select":
         return <div key={field.key}><label className="block text-sm font-medium text-slate-700 mb-1">{field.label}</label><select value={value as string} onChange={(e) => updateField(field.key, e.target.value)} className={cls} disabled={disabled}><option value="">— Select —</option>{(field.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>;
       case "fee-table":
-        return <div key={field.key} className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">{field.label}</label><FeeTable value={(value as Record<string, number>) ?? {}} onChange={(v) => updateField(field.key, v)} disabled={disabled} />{field.hint && <p className="text-xs text-slate-400 mt-1">{field.hint}</p>}</div>;
+        return <div key={field.key} className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">{field.label}</label><FeeTable value={typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, number> : {}} onChange={(v) => updateField(field.key, v)} disabled={disabled} />{field.hint && <p className="text-xs text-slate-400 mt-1">{field.hint}</p>}</div>;
       case "repeatable":
-        return <div key={field.key} className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">{field.label}</label><RepeatableRows columns={field.columns ?? []} value={(value as any[]) ?? []} onChange={(v) => updateField(field.key, v)} disabled={disabled} />{field.hint && <p className="text-xs text-slate-400 mt-1">{field.hint}</p>}</div>;
+        return <div key={field.key} className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">{field.label}</label><RepeatableRows columns={field.columns ?? []} value={Array.isArray(value) ? value : []} onChange={(v) => updateField(field.key, v)} disabled={disabled} />{field.hint && <p className="text-xs text-slate-400 mt-1">{field.hint}</p>}</div>;
       case "cutoff-table":
-        return <div key={field.key} className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">{field.label}</label><RepeatableRows columns={[{ key: "category", label: "Category", type: "text", placeholder: "General/OBC/SC…" }, { key: "marks", label: "Cutoff Marks", type: "number" }]} value={(value as any[]) ?? []} onChange={(v) => updateField(field.key, v)} disabled={disabled} />{field.hint && <p className="text-xs text-slate-400 mt-1">{field.hint}</p>}</div>;
+        return <div key={field.key} className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">{field.label}</label><RepeatableRows columns={[{ key: "category", label: "Category", type: "text", placeholder: "General/OBC/SC…" }, { key: "marks", label: "Cutoff Marks", type: "number" }]} value={Array.isArray(value) ? value : []} onChange={(v) => updateField(field.key, v)} disabled={disabled} />{field.hint && <p className="text-xs text-slate-400 mt-1">{field.hint}</p>}</div>;
       case "schedule-table":
-        return <div key={field.key} className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">{field.label}</label><RepeatableRows columns={[{ key: "date", label: "Date", type: "date" }, { key: "subject", label: "Subject/Paper", type: "text", placeholder: "Mathematics" }]} value={(value as any[]) ?? []} onChange={(v) => updateField(field.key, v)} disabled={disabled} />{field.hint && <p className="text-xs text-slate-400 mt-1">{field.hint}</p>}</div>;
+        return <div key={field.key} className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">{field.label}</label><RepeatableRows columns={[{ key: "date", label: "Date", type: "date" }, { key: "subject", label: "Subject/Paper", type: "text", placeholder: "Mathematics" }]} value={Array.isArray(value) ? value : []} onChange={(v) => updateField(field.key, v)} disabled={disabled} />{field.hint && <p className="text-xs text-slate-400 mt-1">{field.hint}</p>}</div>;
       default: return null;
     }
   };
@@ -635,20 +635,23 @@ function FeeTable({ value, onChange, disabled }: { value: Record<string, number>
 }
 
 function RepeatableRows({ columns, value, onChange, disabled }: { columns: { key: string; label: string; type: string; placeholder?: string }[]; value: Record<string, any>[]; onChange: (v: Record<string, any>[]) => void; disabled?: boolean }) {
-  const add = () => { const row: Record<string, any> = {}; for (const c of columns) row[c.key] = ""; onChange([...value, row]); };
-  const remove = (i: number) => onChange(value.filter((_, idx) => idx !== i));
-  const update = (i: number, key: string, val: any) => onChange(value.map((r, idx) => idx === i ? { ...r, [key]: val } : r));
+  // Defensive: ensure value is always an array regardless of what's passed
+  const rows = Array.isArray(value) ? value : [];
+  const cols = Array.isArray(columns) ? columns : [];
+  const add = () => { const row: Record<string, any> = {}; for (const c of cols) row[c.key] = ""; onChange([...rows, row]); };
+  const remove = (i: number) => onChange(rows.filter((_, idx) => idx !== i));
+  const update = (i: number, key: string, val: any) => onChange(rows.map((r, idx) => idx === i ? { ...r, [key]: val } : r));
 
   return (
     <div className="space-y-2">
-      {value.length > 0 && (
-        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr) 32px` }}>
-          {columns.map((c) => <span key={c.key} className="text-[10px] font-medium text-slate-400 uppercase">{c.label}</span>)}<span />
+      {rows.length > 0 && (
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols.length}, 1fr) 32px` }}>
+          {cols.map((c) => <span key={c.key} className="text-[10px] font-medium text-slate-400 uppercase">{c.label}</span>)}<span />
         </div>
       )}
-      {value.map((row, i) => (
-        <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr) 32px` }}>
-          {columns.map((c) => (
+      {rows.map((row, i) => (
+        <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: `repeat(${cols.length}, 1fr) 32px` }}>
+          {cols.map((c) => (
             <input key={c.key} type={c.type === "number" ? "number" : c.type === "date" ? "date" : "text"} value={row[c.key] ?? ""} onChange={(e) => update(i, c.key, c.type === "number" ? Number(e.target.value) : e.target.value)} placeholder={c.placeholder} className="rounded border border-slate-200 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500" disabled={disabled} />
           ))}
           <button type="button" onClick={() => remove(i)} className="p-1 text-slate-400 hover:text-red-500" disabled={disabled}><Trash2 size={14} /></button>
