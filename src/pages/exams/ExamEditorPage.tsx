@@ -158,7 +158,7 @@ export function ExamEditorPage() {
       getCategories(watchedPillar).then((cats) => {
         setCategories(cats.filter((c) => !c.parentId));
         setSubcategories(cats.filter((c) => c.parentId));
-      });
+      }).catch(() => { setCategories([]); setSubcategories([]); });
     }
   }, [watchedPillar]);
 
@@ -442,7 +442,7 @@ function EligibilityTab({ form, entityProfile }: { form: any; entityProfile: Ent
         <h3 className="text-sm font-semibold text-slate-800 mb-1">Selection Process</h3>
         <p className="text-xs text-slate-400 mb-2">Comma-separated stages</p>
         <input value={selectionStr} onChange={(e) => form.setValue("selectionProcess", e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))} placeholder="Prelims, Mains, Interview" className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-        {(form.watch("selectionProcess") ?? []).length > 0 && <div className="flex flex-wrap gap-1.5 mt-2">{form.watch("selectionProcess").map((s: string, i: number) => <span key={i} className="px-2 py-0.5 text-xs rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">{i + 1}. {s}</span>)}</div>}
+        {(form.watch("selectionProcess") ?? []).length > 0 && <div className="flex flex-wrap gap-1.5 mt-2">{(form.watch("selectionProcess") ?? []).map((s: string, i: number) => <span key={i} className="px-2 py-0.5 text-xs rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">{i + 1}. {s}</span>)}</div>}
       </section>
       <section>
         <h3 className="text-sm font-semibold text-slate-800 mb-1">Syllabus Highlights</h3>

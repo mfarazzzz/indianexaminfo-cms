@@ -25,17 +25,25 @@ function mapRow(row: Record<string, unknown>): Pillar {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export async function listPillars(includeInactive = false): Promise<Pillar[]> {
-  let q = db
-    .from('pillar')
-    .select('*')
-    .is('deleted_at', null)
-    .order('display_order', { ascending: true })
+  try {
+    let q = db
+      .from('pillar')
+      .select('*')
+      .is('deleted_at', null)
+      .order('display_order', { ascending: true })
 
-  if (!includeInactive) q = q.eq('is_active', true)
+    if (!includeInactive) q = q.eq('is_active', true)
 
-  const { data, error } = await q
-  if (error) throw error
-  return (data ?? []).map(mapRow)
+    const { data, error } = await q
+    if (error) {
+      // Table doesn't exist (404) or other DB error — return empty, don't crash
+      console.warn('[pillarService] listPillars failed:', error.message)
+      return []
+    }
+    return (data ?? []).map(mapRow)
+  } catch {
+    return []
+  }
 }
 
 export async function getPillarBySlug(slug: string): Promise<Pillar | null> {
