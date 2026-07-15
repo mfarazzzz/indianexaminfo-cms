@@ -11,7 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAnyPermission } from "@/hooks/usePermission";
 import { P } from "@/config/permissions";
 import { SITE } from "@/config/site";
-import { useMobileNav } from "./AppShell";
+import { useMobileNav } from "@/contexts/MobileNavContext";
 
 interface NavItem {
   label: string;
