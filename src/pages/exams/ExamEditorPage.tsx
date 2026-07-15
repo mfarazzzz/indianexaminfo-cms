@@ -124,7 +124,8 @@ export function ExamEditorPage() {
   const [activeTab, setActiveTab] = useState<TabId>("general");
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Category[]>([]);
-  const { data: pillars = [] } = usePillars();
+  const { data: pillarsRaw } = usePillars();
+  const pillars = Array.isArray(pillarsRaw) ? pillarsRaw : [];
   const [moduleData, setModuleData] = useState<Record<string, any>>({});
   const [moduleSaving, setModuleSaving] = useState<string | null>(null);
 

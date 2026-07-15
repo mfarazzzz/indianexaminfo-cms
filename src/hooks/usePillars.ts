@@ -11,8 +11,9 @@ import type { Pillar } from '@/types/pillar'
 export function usePillars(): UseQueryResult<Pillar[]> {
   return useQuery({
     queryKey: pillarKeys.list(),
-    queryFn:  () => listPillars(false), // active only
-    staleTime: 5 * 60_000,             // 5 minutes
+    queryFn:  () => listPillars(false),
+    staleTime: 5 * 60_000,
+    retry: false,  // Don't retry if table doesn't exist
   })
 }
 
