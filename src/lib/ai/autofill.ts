@@ -5,7 +5,7 @@
  * Optimization: minimal prompts, JSON mode, no redundant instructions.
  */
 
-const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 const API_KEY = "AQ.Ab8RN6I9bRCWOFc3I4QD8dchWElKH__mctesC02kt0FDzifi8Q";
 
 async function callGemini(prompt: string): Promise<Record<string, unknown>> {
