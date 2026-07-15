@@ -81,6 +81,7 @@ Dates must be in YYYY-MM-DD format.
 For pillar: use "sarkari-naukri" for govt jobs, "entrance-exam" for entrance exams, "board-university" for board/university.
 For entityType: use "recruitment" for govt jobs, "exam" for entrance exams, "board" for board exams, "university" for university.
 For status: use "upcoming", "active", "registration-open", "registration-closed", "result-declared", "completed", or "ongoing".
+For examMode: use "online", "offline", or "hybrid".
 
 Return ONLY valid JSON, no explanation:
 
@@ -104,14 +105,57 @@ Return ONLY valid JSON, no explanation:
   "seoTitle": "SEO optimized title under 60 chars",
   "seoDescription": "Meta description under 160 chars",
   "faqs": [{ "question": "Q?", "answer": "A." }],
-  "hasNotification": true/false,
-  "hasApplication": true/false,
-  "hasAdmitCard": true/false,
-  "hasResult": true/false,
-  "hasAnswerKey": true/false,
-  "hasSyllabus": true/false,
-  "hasCutoff": true/false
+  "hasNotification": true,
+  "hasApplication": true,
+  "hasAdmitCard": true,
+  "hasResult": true,
+  "hasAnswerKey": true,
+  "hasSyllabus": true,
+  "hasCutoff": true,
+
+  "typeFields": {
+    "examDuration": "e.g. 3 hours 20 minutes",
+    "totalMarks": 720,
+    "totalQuestions": 200,
+    "negativeMarking": "e.g. -1 for each wrong answer",
+    "examMode": "online or offline or hybrid",
+    "examMedium": "English, Hindi",
+    "numberOfAttempts": "e.g. No limit",
+    "examFrequency": "annual or biannual or monthly or irregular",
+    "registrationOpen": "YYYY-MM-DD",
+    "registrationClose": "YYYY-MM-DD",
+    "examWindowStart": "YYYY-MM-DD",
+    "examWindowEnd": "YYYY-MM-DD",
+    "resultExpected": "YYYY-MM-DD",
+    "acceptedBy": "e.g. IITs, NITs, IIITs, GFTIs",
+    "department": "Ministry/Department (for recruitment)",
+    "postName": "Post name(s) (for recruitment)",
+    "totalPosts": 4500,
+    "jobLocation": "All India / State",
+    "payScale": "Pay scale (for recruitment)",
+    "groupLevel": "group-a or group-b or group-c or group-d",
+    "lastDateApply": "YYYY-MM-DD",
+    "feeLastDate": "YYYY-MM-DD",
+    "correctionWindow": "YYYY-MM-DD",
+    "examDate": "YYYY-MM-DD",
+    "notificationDate": "YYYY-MM-DD",
+    "reservationPolicy": "OBC 27%, SC 15%, ST 7.5%, EWS 10%",
+    "boardName": "e.g. CBSE (for board)",
+    "className": "e.g. Class 12 (for board)",
+    "stream": "science or commerce or arts or all",
+    "examSession": "e.g. March 2026",
+    "universityName": "University name (for university)",
+    "programName": "e.g. B.Tech (for university)",
+    "degreeType": "ug or pg or diploma or phd",
+    "courseDuration": "e.g. 4 years",
+    "admissionBasis": "e.g. CUET Score",
+    "totalSeats": 500,
+    "admissionOpen": "YYYY-MM-DD",
+    "admissionClose": "YYYY-MM-DD"
+  }
 }
+
+Include ONLY typeFields relevant to the detected entityType. Leave irrelevant ones as empty string.
 
 RAW TEXT:
 `;

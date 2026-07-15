@@ -298,7 +298,7 @@ export function ExamEditorPage() {
           if (d.seoTitle) form.setValue("seoTitle", d.seoTitle, opts);
           if (d.seoDescription) form.setValue("seoDescription", d.seoDescription, opts);
           if (Array.isArray(d.faqs)) form.setValue("faqs", d.faqs, opts);
-          // Auto-enable content module flags based on what AI detected
+          // Content module flags
           if (d.hasNotification) form.setValue("hasNotification", true, opts);
           if (d.hasApplication) form.setValue("hasApplication", true, opts);
           if (d.hasAdmitCard) form.setValue("hasAdmitCard", true, opts);
@@ -306,6 +306,21 @@ export function ExamEditorPage() {
           if (d.hasAnswerKey) form.setValue("hasAnswerKey", true, opts);
           if (d.hasSyllabus) form.setValue("hasSyllabus", true, opts);
           if (d.hasCutoff) form.setValue("hasCutoff", true, opts);
+          if (d.hasDateSheet) form.setValue("hasDateSheet", true, opts);
+          if (d.hasMockTest) form.setValue("hasMockTest", true, opts);
+          if (d.hasPreviousPapers) form.setValue("hasPreviousPapers", true, opts);
+          if (d.hasStudyMaterial) form.setValue("hasStudyMaterial", true, opts);
+          // Type-specific fields (Exam Duration, Total Marks, Key Dates, etc.)
+          if (d.typeFields && typeof d.typeFields === "object") {
+            const current = form.getValues("typeFields") ?? {};
+            const merged = { ...current };
+            for (const [key, val] of Object.entries(d.typeFields)) {
+              if (val !== "" && val !== null && val !== undefined) {
+                merged[key] = val;
+              }
+            }
+            form.setValue("typeFields", merged, opts);
+          }
           toast.success("AI filled all fields! Review and save.");
         }}
       />
