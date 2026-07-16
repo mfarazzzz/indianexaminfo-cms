@@ -279,48 +279,123 @@ export function ExamEditorPage() {
         onResult={(data) => {
           const d = data as any;
           const opts = { shouldDirty: true, shouldValidate: false };
-          if (d.name) form.setValue("name", d.name, opts);
-          if (d.shortName) form.setValue("shortName", d.shortName, opts);
-          if (d.slug) form.setValue("slug", d.slug, opts);
-          if (d.pillar && ["sarkari-naukri","entrance-exam","board-university"].includes(d.pillar)) form.setValue("pillar", d.pillar, opts);
-          if (d.entityType && ["exam","board","university","recruitment"].includes(d.entityType)) form.setValue("entityType", d.entityType, opts);
-          if (d.conductingBody) form.setValue("conductingBody", d.conductingBody, opts);
-          if (d.officialWebsite) form.setValue("officialWebsite", d.officialWebsite, opts);
-          if (d.status) form.setValue("status", d.status, opts);
-          if (typeof d.vacancy === "number") form.setValue("vacancy", d.vacancy, opts);
-          if (d.eligibility) form.setValue("eligibility", d.eligibility, opts);
-          if (d.applicationFee) form.setValue("applicationFee", d.applicationFee, opts);
+
+          // ── Flatten nested master prompt structure ──
+          // Supports both flat format AND nested format (general.name, recruitmentSpecific.department, etc.)
+          const g = d.general ?? d;  // general fields
+          const rs = d.recruitmentSpecific ?? {};
+          const es = d.entranceExamSpecific ?? {};
+          const bs = d.boardExamSpecific ?? {};
+          const us = d.universitySpecific ?? {};
+          const seo = d.seo ?? {};
+          const vac = d.vacancy ?? {};
+          const cm = d.contentModules ?? {};
+
+          // General tab
+          if (g.name) form.setValue("name", g.name, opts);
+          if (g.shortName) form.setValue("shortName", g.shortName, opts);
+          if (g.slug) form.setValue("slug", g.slug, opts);
+          const pillar = g.pillar ?? d.pillar;
+          if (pillar && ["sarkari-naukri","entrance-exam","board-university"].includes(pillar)) form.setValue("pillar", pillar, opts);
+          const entityType = g.entityType ?? d.examType ?? d.entityType;
+          if (entityType && ["exam","board","university","recruitment"].includes(entityType)) form.setValue("entityType", entityType, opts);
+          if (g.conductingBody) form.setValue("conductingBody", g.conductingBody, opts);
+          if (g.officialWebsite) form.setValue("officialWebsite", g.officialWebsite, opts);
+          const status = g.status ?? d.status;
+          if (status) form.setValue("status", status, opts);
+
+          // Vacancy
+          const vacTotal = typeof vac === "number" ? vac : (vac.total ?? d.vacancy);
+          if (typeof vacTotal === "number") form.setValue("vacancy", vacTotal, opts);
+
+          // Eligibility
+          const elig = d.eligibility ?? {};
+          if (elig.age || elig.qualification || elig.nationality) form.setValue("eligibility", { age: elig.age ?? "", qualification: elig.qualification ?? "", nationality: elig.nationality ?? "" }, opts);
+
+          // Application Fee
+          const fee = d.applicationFee ?? {};
+          if (fee.general !== undefined) form.setValue("applicationFee", fee, opts);
+
+          // Selection Process
           if (Array.isArray(d.selectionProcess)) form.setValue("selectionProcess", d.selectionProcess, opts);
           if (Array.isArray(d.syllabusHighlights)) form.setValue("syllabusHighlights", d.syllabusHighlights, opts);
+
+          // Dates (array for timeline)
           if (Array.isArray(d.dates)) form.setValue("dates", d.dates, opts);
+
+          // Tags & Keywords
           if (Array.isArray(d.tags)) form.setValue("tags", d.tags, opts);
           if (Array.isArray(d.searchKeywords)) form.setValue("searchKeywords", d.searchKeywords, opts);
-          if (d.seoTitle) form.setValue("seoTitle", d.seoTitle, opts);
-          if (d.seoDescription) form.setValue("seoDescription", d.seoDescription, opts);
+          if (Array.isArray(seo.keywords)) form.setValue("searchKeywords", seo.keywords, opts);
+
+          // SEO
+          const seoTitle = d.seoTitle ?? seo.title ?? "";
+          const seoDesc = d.seoDescription ?? seo.description ?? "";
+          if (seoTitle) form.setValue("seoTitle", seoTitle, opts);
+          if (seoDesc) form.setValue("seoDescription", seoDesc, opts);
+
+          // FAQs
           if (Array.isArray(d.faqs)) form.setValue("faqs", d.faqs, opts);
-          // Content module flags
-          if (d.hasNotification) form.setValue("hasNotification", true, opts);
-          if (d.hasApplication) form.setValue("hasApplication", true, opts);
-          if (d.hasAdmitCard) form.setValue("hasAdmitCard", true, opts);
-          if (d.hasResult) form.setValue("hasResult", true, opts);
-          if (d.hasAnswerKey) form.setValue("hasAnswerKey", true, opts);
-          if (d.hasSyllabus) form.setValue("hasSyllabus", true, opts);
-          if (d.hasCutoff) form.setValue("hasCutoff", true, opts);
-          if (d.hasDateSheet) form.setValue("hasDateSheet", true, opts);
-          if (d.hasMockTest) form.setValue("hasMockTest", true, opts);
-          if (d.hasPreviousPapers) form.setValue("hasPreviousPapers", true, opts);
-          if (d.hasStudyMaterial) form.setValue("hasStudyMaterial", true, opts);
-          // Type-specific fields (Exam Duration, Total Marks, Key Dates, etc.)
-          if (d.typeFields && typeof d.typeFields === "object") {
-            const current = form.getValues("typeFields") ?? {};
-            const merged = { ...current };
-            for (const [key, val] of Object.entries(d.typeFields)) {
-              if (val !== "" && val !== null && val !== undefined) {
-                merged[key] = val;
-              }
-            }
-            form.setValue("typeFields", merged, opts);
+
+          // Content module flags (from flat or nested contentModules)
+          const flags: Record<string, string> = {
+            notification: "hasNotification", application: "hasApplication",
+            admitCard: "hasAdmitCard", "admit-card": "hasAdmitCard",
+            result: "hasResult", answerKey: "hasAnswerKey", "answer-key": "hasAnswerKey",
+            syllabus: "hasSyllabus", cutoff: "hasCutoff",
+            dateSheet: "hasDateSheet", "date-sheet": "hasDateSheet",
+            mockTest: "hasMockTest", "mock-test": "hasMockTest",
+            previousPapers: "hasPreviousPapers", "previous-papers": "hasPreviousPapers",
+            studyMaterial: "hasStudyMaterial", "study-material": "hasStudyMaterial",
+          };
+          // From flat flags
+          for (const [, flag] of Object.entries(flags)) {
+            if (d[flag]) form.setValue(flag as any, true, opts);
           }
+          // From nested contentModules
+          for (const [key, flag] of Object.entries(flags)) {
+            if (cm[key]?.available) form.setValue(flag as any, true, opts);
+          }
+
+          // Type-specific fields → typeFields
+          const tf: Record<string, unknown> = { ...(form.getValues("typeFields") ?? {}) };
+          // From flat typeFields
+          if (d.typeFields && typeof d.typeFields === "object") {
+            for (const [k, v] of Object.entries(d.typeFields)) { if (v !== "" && v != null) tf[k] = v; }
+          }
+          // From recruitmentSpecific
+          if (rs.department) tf.department = rs.department;
+          if (rs.postName) tf.postName = rs.postName;
+          if (rs.jobLocation) tf.jobLocation = rs.jobLocation;
+          if (rs.payScale) tf.payScale = rs.payScale;
+          if (rs.groupLevel) tf.groupLevel = rs.groupLevel;
+          if (rs.probationPeriod) tf.probationPeriod = rs.probationPeriod;
+          // From entranceExamSpecific
+          if (es.examDuration) tf.examDuration = es.examDuration;
+          if (es.totalMarks) tf.totalMarks = es.totalMarks;
+          if (es.totalQuestions) tf.totalQuestions = es.totalQuestions;
+          if (es.negativeMarking) tf.negativeMarking = es.negativeMarking;
+          if (es.numberOfAttempts) tf.numberOfAttempts = es.numberOfAttempts;
+          if (es.scoreAcceptedBy) tf.acceptedBy = es.scoreAcceptedBy;
+          if (es.counsellingBody) tf.acceptedBy = (tf.acceptedBy ?? "") + " | Counselling: " + es.counsellingBody;
+          // From boardExamSpecific
+          if (bs.boardName) tf.boardName = bs.boardName;
+          if (bs.className) tf.className = bs.className;
+          if (bs.stream) tf.stream = bs.stream;
+          if (bs.examSession) tf.examSession = bs.examSession;
+          // From universitySpecific
+          if (us.universityName) tf.universityName = us.universityName;
+          if (us.programName) tf.programName = us.programName;
+          if (us.degreeType) tf.degreeType = us.degreeType;
+          if (us.courseDuration) tf.courseDuration = us.courseDuration;
+          if (us.admissionBasis) tf.admissionBasis = us.admissionBasis;
+          if (us.totalSeats) tf.totalSeats = us.totalSeats;
+          // From examPattern
+          if (d.examPattern?.examMode) tf.examMode = d.examPattern.examMode;
+          if (d.examPattern?.medium) tf.examMedium = d.examPattern.medium;
+
+          if (Object.keys(tf).length > 0) form.setValue("typeFields", tf, opts);
+
           toast.success("AI filled all fields! Review and save.");
         }}
       />
