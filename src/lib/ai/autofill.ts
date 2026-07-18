@@ -5,9 +5,34 @@
  * it skips the API call entirely and fills forms instantly. No tokens used.
  * 
  * Only calls Gemini when you paste raw text (not JSON).
+ * 
+ * SECURITY: API key is read from the CMS settings table at runtime via
+ * the SettingsContext. It is NEVER hardcoded in source code.
  */
 
-const API_KEY = "AQ.Ab8RN6I9bRCWOFc3I4QD8dchWElKH__mctesC02kt0FDzifi8Q";
+import { db } from '@/lib/supabase/client'
+
+/** Fetches the Gemini API key from settings table (cached in-memory for session) */
+let _cachedKey: string | null = null
+async function getApiKey(): Promise<string> {
+  if (_cachedKey) return _cachedKey
+  const { data } = await db
+    .from('settings')
+    .select('value')
+    .eq('key', 'gemini_api_key')
+    .single()
+  const key = data?.value ? String(data.value).replace(/^"|"$/g, '') : ''
+  if (!key) {
+    throw new Error('Gemini API key not configured. Go to Settings → AI and enter your key.')
+  }
+  _cachedKey = key
+  return key
+}
+
+/** Clear cached key (call when settings are updated) */
+export function clearApiKeyCache(): void {
+  _cachedKey = null
+}
 
 // ── Try to parse input as JSON directly (no API call needed) ─────────────────
 
@@ -33,7 +58,8 @@ function tryDirectParse(text: string): Record<string, unknown> | null {
 // ── Gemini API call (only for raw text, not JSON) ────────────────────────────
 
 async function callGemini(prompt: string): Promise<Record<string, unknown>> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+  const apiKey = await getApiKey()
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
   
   const res = await fetch(url, {
     method: "POST",

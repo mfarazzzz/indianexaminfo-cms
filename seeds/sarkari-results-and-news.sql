@@ -1,5 +1,7 @@
 -- ============================================================================
 -- Sarkari Results Pages & Related News/Blogs Seed Data
+-- ⚠️  DEVELOPMENT/REFERENCE ONLY — NOT FOR PRODUCTION USE
+-- ⚠️  Production content MUST be created through CMS service layer
 -- Total: 100 pages (60 Result pages + 40 Education News/Blog articles)
 -- Based on: National Public Sector Recruitment Report of India 2026
 -- ============================================================================

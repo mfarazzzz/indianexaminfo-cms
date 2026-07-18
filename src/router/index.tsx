@@ -102,6 +102,11 @@ const ReportsPage       = lazyPage(() => import("@/pages/ads/ReportsPage"),     
 const UsersListPage     = lazyPage(() => import("@/pages/users/UsersListPage"),         "UsersListPage");
 const SettingsPage      = lazyPage(() => import("@/pages/settings/SettingsPage"),       "SettingsPage");
 const AuditLogPage      = lazyPage(() => import("@/pages/audit/AuditLogPage"),          "AuditLogPage");
+// CMS Results & Education News modules
+const ResultsListPage   = lazyPage(() => import("@/pages/results/ResultsListPage"),     "ResultsListPage");
+const ResultEditPage    = lazyPage(() => import("@/pages/results/ResultEditPage"),       "ResultEditPage");
+const EduNewsListPage   = lazyPage(() => import("@/pages/education-news/EduNewsListPage"), "EduNewsListPage");
+const EduNewsEditPage   = lazyPage(() => import("@/pages/education-news/EduNewsEditPage"), "EduNewsEditPage");
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -145,6 +150,14 @@ export const router = createBrowserRouter([
           { path: "/ads/creatives",     element: <CreativesPage /> },
           { path: "/ads/zones",         element: <ZonesPage /> },
           { path: "/ads/reports",       element: <ReportsPage /> },
+          // CMS Results (Sarkari Result pages)
+          { path: "/results",           element: <ResultsListPage /> },
+          { path: "/results/new",       element: <ResultEditPage /> },
+          { path: "/results/:id",       element: <ResultEditPage /> },
+          // CMS Education News
+          { path: "/education-news",       element: <EduNewsListPage /> },
+          { path: "/education-news/new",   element: <EduNewsEditPage /> },
+          { path: "/education-news/:id",   element: <EduNewsEditPage /> },
           { path: "/users",             element: <UsersListPage /> },
           { path: "/settings",          element: <SettingsPage /> },
           { path: "/audit",             element: <AuditLogPage /> },
