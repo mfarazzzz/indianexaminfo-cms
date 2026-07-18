@@ -11,6 +11,8 @@ interface Stats {
   totalContent: number;
   totalBlogPosts: number;
   totalCategories: number;
+  totalResults: number;
+  totalEduNews: number;
   pendingReview: number;
   publishedToday: number;
 }
@@ -18,7 +20,7 @@ interface Stats {
 interface RecentItem {
   id: string;
   title: string;
-  type: "exam" | "content" | "blog";
+  type: "exam" | "content" | "blog" | "result" | "news";
   status: string;
   updatedAt: string;
 }
@@ -33,12 +35,14 @@ export function DashboardPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [examsRes, contentRes, blogRes, catRes, reviewRes] = await Promise.all([
+        const [examsRes, contentRes, blogRes, catRes, reviewRes, resultsRes, eduNewsRes] = await Promise.all([
           db.from("exams").select("id", { count: "exact", head: true }),
           db.from("content_posts").select("id", { count: "exact", head: true }),
           db.from("blog_posts").select("id", { count: "exact", head: true }),
           db.from("categories").select("id", { count: "exact", head: true }),
           db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "review"),
+          db.from("cms_results").select("id", { count: "exact", head: true }),
+          db.from("cms_education_news").select("id", { count: "exact", head: true }),
         ]);
 
         setStats({
@@ -46,15 +50,19 @@ export function DashboardPage() {
           totalContent: contentRes.count ?? 0,
           totalBlogPosts: blogRes.count ?? 0,
           totalCategories: catRes.count ?? 0,
+          totalResults: resultsRes.count ?? 0,
+          totalEduNews: eduNewsRes.count ?? 0,
           pendingReview: reviewRes.count ?? 0,
           publishedToday: 0,
         });
 
         // Recent activity
-        const [recentExams, recentContent, recentBlog] = await Promise.all([
+        const [recentExams, recentContent, recentBlog, recentResults, recentNews] = await Promise.all([
           db.from("exams").select("id, name, status, updated_at").order("updated_at", { ascending: false }).limit(3),
           db.from("content_posts").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
           db.from("blog_posts").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
+          db.from("cms_results").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
+          db.from("cms_education_news").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
         ]);
 
         const items: RecentItem[] = [
@@ -79,6 +87,20 @@ export function DashboardPage() {
             status: r.status,
             updatedAt: r.updated_at,
           })),
+          ...(recentResults.data ?? []).map((r: { id: string; title: string; status: string; updated_at: string }) => ({
+            id: r.id,
+            title: r.title,
+            type: "result" as const,
+            status: r.status,
+            updatedAt: r.updated_at,
+          })),
+          ...(recentNews.data ?? []).map((r: { id: string; title: string; status: string; updated_at: string }) => ({
+            id: r.id,
+            title: r.title,
+            type: "news" as const,
+            status: r.status,
+            updatedAt: r.updated_at,
+          })),
         ]
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
           .slice(0, 8);
@@ -95,8 +117,10 @@ export function DashboardPage() {
 
   const statCards = [
     { label: "Total Exams", value: stats?.totalExams ?? "—", icon: <FileText size={18} className="text-blue-600" />, href: "/exams" },
-    { label: "Content Posts", value: stats?.totalContent ?? "—", icon: <FileText size={18} className="text-indigo-600" />, href: "/content" },
+    { label: "Sarkari Results", value: stats?.totalResults ?? "—", icon: <Star size={18} className="text-orange-600" />, href: "/results" },
+    { label: "Education News", value: stats?.totalEduNews ?? "—", icon: <TrendingUp size={18} className="text-green-600" />, href: "/education-news" },
     { label: "Blog Posts", value: stats?.totalBlogPosts ?? "—", icon: <BookOpen size={18} className="text-purple-600" />, href: "/blog" },
+    { label: "Content Posts", value: stats?.totalContent ?? "—", icon: <FileText size={18} className="text-indigo-600" />, href: "/content" },
     { label: "Categories", value: stats?.totalCategories ?? "—", icon: <Tag size={18} className="text-teal-600" />, href: "/categories" },
     { label: "Pending Review", value: stats?.pendingReview ?? "—", icon: <Clock size={18} className="text-yellow-600" />, href: "/content?status=review", highlight: (stats?.pendingReview ?? 0) > 0 },
   ];
@@ -113,7 +137,7 @@ export function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
         {statCards.map((card) => (
           <button
             key={card.label}
@@ -167,7 +191,14 @@ export function DashboardPage() {
                 key={`${item.type}-${item.id}`}
                 className="flex items-center justify-between px-5 py-3 hover:bg-slate-50 cursor-pointer transition-colors"
                 onClick={() => {
-                  const basePath = item.type === "exam" ? "exams" : item.type === "blog" ? "blog" : "content";
+                  const pathMap: Record<string, string> = {
+                    exam: "exams",
+                    blog: "blog",
+                    content: "content",
+                    result: "results",
+                    news: "education-news",
+                  };
+                  const basePath = pathMap[item.type] || "content";
                   navigate(`/${basePath}/${item.id}`);
                 }}
               >
@@ -188,9 +219,11 @@ export function DashboardPage() {
       </div>
 
       {/* Quick actions */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[
           { label: "New Exam", href: "/exams/new", color: "text-blue-700 bg-blue-50 hover:bg-blue-100" },
+          { label: "New Result", href: "/results/new", color: "text-orange-700 bg-orange-50 hover:bg-orange-100" },
+          { label: "New Education News", href: "/education-news/new", color: "text-green-700 bg-green-50 hover:bg-green-100" },
           { label: "New Content Post", href: "/content/new", color: "text-indigo-700 bg-indigo-50 hover:bg-indigo-100" },
           { label: "New Blog Post", href: "/blog/new", color: "text-purple-700 bg-purple-50 hover:bg-purple-100" },
           { label: "New Category", href: "/categories", color: "text-teal-700 bg-teal-50 hover:bg-teal-100" },
