@@ -103,3 +103,13 @@ export const taxonomyKeys = {
 export const healthKeys = {
   entity: (entityId: string) => ['health', entityId] as const,
 } as const
+
+export const sarkariNaukriKeys = {
+  all:      ()                                    => ['sarkari-naukri'] as const,
+  lists:    ()                                    => ['sarkari-naukri', 'list'] as const,
+  list:     (opts?: Record<string, unknown>)      => ['sarkari-naukri', 'list', opts] as const,
+  detail:   (id: string)                          => ['sarkari-naukri', 'detail', id] as const,
+  stats:    ()                                    => ['sarkari-naukri', 'stats'] as const,
+  states:   ()                                    => ['sarkari-naukri', 'states'] as const,
+  categories: ()                                  => ['sarkari-naukri', 'categories'] as const,
+} as const

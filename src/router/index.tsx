@@ -107,6 +107,9 @@ const ResultsListPage   = lazyPage(() => import("@/pages/results/ResultsListPage
 const ResultEditPage    = lazyPage(() => import("@/pages/results/ResultEditPage"),       "ResultEditPage");
 const EduNewsListPage   = lazyPage(() => import("@/pages/education-news/EduNewsListPage"), "EduNewsListPage");
 const EduNewsEditPage   = lazyPage(() => import("@/pages/education-news/EduNewsEditPage"), "EduNewsEditPage");
+// Sarkari Naukri (Government Jobs — unified exam + direct)
+const SarkariNaukriListPage = lazyPage(() => import("@/pages/sarkari-naukri/SarkariNaukriListPage"), "SarkariNaukriListPage");
+const SarkariNaukriEditPage = lazyPage(() => import("@/pages/sarkari-naukri/SarkariNaukriEditPage"), "SarkariNaukriEditPage");
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -158,6 +161,10 @@ export const router = createBrowserRouter([
           { path: "/education-news",       element: <EduNewsListPage /> },
           { path: "/education-news/new",   element: <EduNewsEditPage /> },
           { path: "/education-news/:id",   element: <EduNewsEditPage /> },
+          // Sarkari Naukri (Government Jobs)
+          { path: "/sarkari-naukri",       element: <SarkariNaukriListPage /> },
+          { path: "/sarkari-naukri/new",   element: <SarkariNaukriEditPage /> },
+          { path: "/sarkari-naukri/:id",   element: <SarkariNaukriEditPage /> },
           { path: "/users",             element: <UsersListPage /> },
           { path: "/settings",          element: <SettingsPage /> },
           { path: "/audit",             element: <AuditLogPage /> },
