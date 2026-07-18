@@ -267,6 +267,19 @@ export function clearRevalidationConfigCache(): void {
 }
 
 /**
+ * Enqueue revalidation after a Sarkari Naukri save.
+ * Tags: sarkari-naukri (listing), sarkari-naukri:{slug} (detail page)
+ */
+export function revalidateAfterSarkariNaukriSave(entry: {
+  slug: string;
+  state?: string | null;
+}): void {
+  const tags = [`sarkari-naukri`, `sarkari-naukri:${entry.slug}`];
+  if (entry.state) tags.push(`sarkari-naukri:state:${entry.state}`);
+  enqueueTags(tags, `sarkari-naukri-save:${entry.slug}`);
+}
+
+/**
  * Admin diagnostic: how many items are pending retry.
  */
 export function getRetryQueueLength(): number {
