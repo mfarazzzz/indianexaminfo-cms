@@ -11,7 +11,8 @@ interface Stats {
   totalContent: number;
   totalBlogPosts: number;
   totalCategories: number;
-  totalResults: number;
+  sarkariExam: number;
+  sarkariBharti: number;
   totalEduNews: number;
   pendingReview: number;
   publishedToday: number;
@@ -20,7 +21,7 @@ interface Stats {
 interface RecentItem {
   id: string;
   title: string;
-  type: "exam" | "content" | "blog" | "result" | "news";
+  type: "exam" | "content" | "blog" | "sarkari-exam" | "sarkari-bharti" | "news";
   status: string;
   updatedAt: string;
 }
@@ -35,13 +36,14 @@ export function DashboardPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [examsRes, contentRes, blogRes, catRes, reviewRes, resultsRes, eduNewsRes] = await Promise.all([
+        const [examsRes, contentRes, blogRes, catRes, reviewRes, sarkariExamRes, sarkariBhartiRes, eduNewsRes] = await Promise.all([
           db.from("exams").select("id", { count: "exact", head: true }),
           db.from("content_posts").select("id", { count: "exact", head: true }),
           db.from("blog_posts").select("id", { count: "exact", head: true }),
           db.from("categories").select("id", { count: "exact", head: true }),
           db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "review"),
-          db.from("cms_results").select("id", { count: "exact", head: true }),
+          db.from("sarkari_naukri").select("id", { count: "exact", head: true }).eq("recruitment_type", "exam"),
+          db.from("sarkari_naukri").select("id", { count: "exact", head: true }).eq("recruitment_type", "direct"),
           db.from("cms_education_news").select("id", { count: "exact", head: true }),
         ]);
 
@@ -50,18 +52,19 @@ export function DashboardPage() {
           totalContent: contentRes.count ?? 0,
           totalBlogPosts: blogRes.count ?? 0,
           totalCategories: catRes.count ?? 0,
-          totalResults: resultsRes.count ?? 0,
+          sarkariExam: sarkariExamRes.count ?? 0,
+          sarkariBharti: sarkariBhartiRes.count ?? 0,
           totalEduNews: eduNewsRes.count ?? 0,
           pendingReview: reviewRes.count ?? 0,
           publishedToday: 0,
         });
 
         // Recent activity
-        const [recentExams, recentContent, recentBlog, recentResults, recentNews] = await Promise.all([
+        const [recentExams, recentContent, recentBlog, recentSarkari, recentNews] = await Promise.all([
           db.from("exams").select("id, name, status, updated_at").order("updated_at", { ascending: false }).limit(3),
           db.from("content_posts").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
           db.from("blog_posts").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
-          db.from("cms_results").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
+          db.from("sarkari_naukri").select("id, title, recruitment_type, status, updated_at").order("updated_at", { ascending: false }).limit(4),
           db.from("cms_education_news").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
         ]);
 
@@ -87,10 +90,10 @@ export function DashboardPage() {
             status: r.status,
             updatedAt: r.updated_at,
           })),
-          ...(recentResults.data ?? []).map((r: { id: string; title: string; status: string; updated_at: string }) => ({
+          ...(recentSarkari.data ?? []).map((r: { id: string; title: string; recruitment_type: string; status: string; updated_at: string }) => ({
             id: r.id,
             title: r.title,
-            type: "result" as const,
+            type: r.recruitment_type === "exam" ? "sarkari-exam" as const : "sarkari-bharti" as const,
             status: r.status,
             updatedAt: r.updated_at,
           })),
@@ -117,11 +120,11 @@ export function DashboardPage() {
 
   const statCards = [
     { label: "Total Exams", value: stats?.totalExams ?? "—", icon: <FileText size={18} className="text-blue-600" />, href: "/exams" },
-    { label: "Sarkari Results", value: stats?.totalResults ?? "—", icon: <Star size={18} className="text-orange-600" />, href: "/results" },
+    { label: "Sarkari Exam", value: stats?.sarkariExam ?? "—", icon: <Star size={18} className="text-blue-600" />, href: "/sarkari-naukri?type=exam" },
+    { label: "Sarkari Bharti", value: stats?.sarkariBharti ?? "—", icon: <Star size={18} className="text-green-600" />, href: "/sarkari-naukri?type=direct" },
     { label: "Education News", value: stats?.totalEduNews ?? "—", icon: <TrendingUp size={18} className="text-green-600" />, href: "/education-news" },
     { label: "Blog Posts", value: stats?.totalBlogPosts ?? "—", icon: <BookOpen size={18} className="text-purple-600" />, href: "/blog" },
     { label: "Content Posts", value: stats?.totalContent ?? "—", icon: <FileText size={18} className="text-indigo-600" />, href: "/content" },
-    { label: "Categories", value: stats?.totalCategories ?? "—", icon: <Tag size={18} className="text-teal-600" />, href: "/categories" },
     { label: "Pending Review", value: stats?.pendingReview ?? "—", icon: <Clock size={18} className="text-yellow-600" />, href: "/content?status=review", highlight: (stats?.pendingReview ?? 0) > 0 },
   ];
 
@@ -195,7 +198,8 @@ export function DashboardPage() {
                     exam: "exams",
                     blog: "blog",
                     content: "content",
-                    result: "results",
+                    "sarkari-exam": "sarkari-naukri",
+                    "sarkari-bharti": "sarkari-naukri",
                     news: "education-news",
                   };
                   const basePath = pathMap[item.type] || "content";
@@ -222,7 +226,7 @@ export function DashboardPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[
           { label: "New Exam", href: "/exams/new", color: "text-blue-700 bg-blue-50 hover:bg-blue-100" },
-          { label: "New Result", href: "/results/new", color: "text-orange-700 bg-orange-50 hover:bg-orange-100" },
+          { label: "New Sarkari Naukri", href: "/sarkari-naukri/new", color: "text-orange-700 bg-orange-50 hover:bg-orange-100" },
           { label: "New Education News", href: "/education-news/new", color: "text-green-700 bg-green-50 hover:bg-green-100" },
           { label: "New Content Post", href: "/content/new", color: "text-indigo-700 bg-indigo-50 hover:bg-indigo-100" },
           { label: "New Blog Post", href: "/blog/new", color: "text-purple-700 bg-purple-50 hover:bg-purple-100" },

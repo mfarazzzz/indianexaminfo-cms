@@ -102,9 +102,7 @@ const ReportsPage       = lazyPage(() => import("@/pages/ads/ReportsPage"),     
 const UsersListPage     = lazyPage(() => import("@/pages/users/UsersListPage"),         "UsersListPage");
 const SettingsPage      = lazyPage(() => import("@/pages/settings/SettingsPage"),       "SettingsPage");
 const AuditLogPage      = lazyPage(() => import("@/pages/audit/AuditLogPage"),          "AuditLogPage");
-// CMS Results & Education News modules
-const ResultsListPage   = lazyPage(() => import("@/pages/results/ResultsListPage"),     "ResultsListPage");
-const ResultEditPage    = lazyPage(() => import("@/pages/results/ResultEditPage"),       "ResultEditPage");
+// CMS Education News modules
 const EduNewsListPage   = lazyPage(() => import("@/pages/education-news/EduNewsListPage"), "EduNewsListPage");
 const EduNewsEditPage   = lazyPage(() => import("@/pages/education-news/EduNewsEditPage"), "EduNewsEditPage");
 // Sarkari Naukri (Government Jobs — unified exam + direct)
@@ -153,10 +151,10 @@ export const router = createBrowserRouter([
           { path: "/ads/creatives",     element: <CreativesPage /> },
           { path: "/ads/zones",         element: <ZonesPage /> },
           { path: "/ads/reports",       element: <ReportsPage /> },
-          // CMS Results (Sarkari Result pages)
-          { path: "/results",           element: <ResultsListPage /> },
-          { path: "/results/new",       element: <ResultEditPage /> },
-          { path: "/results/:id",       element: <ResultEditPage /> },
+          // CMS Results (LEGACY — redirects to Sarkari Naukri)
+          { path: "/results",           element: <Navigate to="/sarkari-naukri" replace /> },
+          { path: "/results/new",       element: <Navigate to="/sarkari-naukri/new" replace /> },
+          { path: "/results/:id",       element: <Navigate to="/sarkari-naukri" replace /> },
           // CMS Education News
           { path: "/education-news",       element: <EduNewsListPage /> },
           { path: "/education-news/new",   element: <EduNewsEditPage /> },
