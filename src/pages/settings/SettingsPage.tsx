@@ -5,6 +5,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllSettings, updateSettingsBulk, testSupabaseConnection } from "@/services/settingsService";
 import { generateWithGemini } from "@/lib/gemini/client";
+import { clearApiKeyCache } from "@/lib/ai/autofill";
 import {
   revalidatePath, revalidateAll,
 } from "@/lib/api/frontend";
@@ -90,6 +91,10 @@ export function SettingsPage() {
     try {
       await updateSettingsBulk(keys.map((k) => ({ key: k, value: local[k] as never })), user?.id);
       await refreshSettings();
+      // If AI key was saved, clear the autofill cache so it picks up the new key
+      if (keys.includes("gemini_api_key")) {
+        clearApiKeyCache();
+      }
       toast.success("Settings saved.");
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -119,13 +124,16 @@ export function SettingsPage() {
 
   // AI test state
   const [aiStatus, setAiStatus] = useState<"idle"|"testing"|"ok"|"fail">("idle");
+  const [aiError, setAiError] = useState("");
   const testAi = async () => {
     setAiStatus("testing");
+    setAiError("");
     try {
-      await generateWithGemini("Say 'IndianExamInfo CMS connected' in one short sentence.", get("gemini_api_key","") as string, get("gemini_model","gemini-1.5-flash") as string);
+      await generateWithGemini("Say 'IndianExamInfo CMS connected' in one short sentence.", get("gemini_api_key","") as string, get("gemini_model","gemini-2.0-flash") as string);
       setAiStatus("ok");
-    } catch {
+    } catch (err) {
       setAiStatus("fail");
+      setAiError(getErrorMessage(err));
     }
   };
 
@@ -241,14 +249,14 @@ export function SettingsPage() {
                 </button>
               </div>
               {aiStatus === "ok" && <p className="mt-1 text-xs text-green-600">✅ Connected</p>}
-              {aiStatus === "fail" && <p className="mt-1 text-xs text-red-600">❌ Connection failed</p>}
+              {aiStatus === "fail" && <p className="mt-1 text-xs text-red-600">❌ {aiError || "Connection failed"}</p>}
             </Field>
             <Field label="Gemini Model">
-              <select value={(get("gemini_model","gemini-1.5-flash") as string)} onChange={(e) => set("gemini_model", e.target.value)}
+              <select value={(get("gemini_model","gemini-2.0-flash") as string)} onChange={(e) => set("gemini_model", e.target.value)}
                 className="rounded border border-slate-200 px-3 py-2 text-sm focus:outline-none">
-                <option value="gemini-1.5-flash">gemini-1.5-flash (faster, cheaper)</option>
+                <option value="gemini-2.0-flash">gemini-2.0-flash (recommended)</option>
+                <option value="gemini-1.5-flash">gemini-1.5-flash (legacy, faster)</option>
                 <option value="gemini-1.5-pro">gemini-1.5-pro (smarter)</option>
-                <option value="gemini-2.0-flash">gemini-2.0-flash (latest)</option>
               </select>
             </Field>
             {[

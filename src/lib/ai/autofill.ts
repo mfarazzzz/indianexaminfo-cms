@@ -16,12 +16,20 @@ import { db } from '@/lib/supabase/client'
 let _cachedKey: string | null = null
 async function getApiKey(): Promise<string> {
   if (_cachedKey) return _cachedKey
-  const { data } = await db
+  const { data, error } = await db
     .from('settings')
     .select('value')
     .eq('key', 'gemini_api_key')
     .single()
-  const key = data?.value ? String(data.value).replace(/^"|"$/g, '') : ''
+  if (error) {
+    console.warn('[AI] Failed to read gemini_api_key from settings:', error.message)
+  }
+  // Handle jsonb: value might be a bare string, JSON-wrapped string, or null
+  let key = ''
+  if (data?.value != null) {
+    const raw = typeof data.value === 'string' ? data.value : JSON.stringify(data.value)
+    key = raw.replace(/^["']|["']$/g, '').trim()
+  }
   if (!key) {
     throw new Error('Gemini API key not configured. Go to Settings → AI and enter your key.')
   }
@@ -59,7 +67,8 @@ function tryDirectParse(text: string): Record<string, unknown> | null {
 
 async function callGemini(prompt: string): Promise<Record<string, unknown>> {
   const apiKey = await getApiKey()
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  // Use gemini-2.0-flash as it handles AQ. keys better and is the latest model
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
   
   const res = await fetch(url, {
     method: "POST",
@@ -72,6 +81,14 @@ async function callGemini(prompt: string): Promise<Record<string, unknown>> {
 
   if (res.status === 429) {
     throw new Error("Rate limited by Google. Wait 60 seconds and try again. Or paste JSON directly — it works instantly without API.");
+  }
+
+  if (res.status === 400 || res.status === 401 || res.status === 403) {
+    // Clear cached key so next attempt re-reads from DB
+    _cachedKey = null;
+    const err = await res.text().catch(() => "");
+    console.error("[AI] Auth error:", res.status, err.slice(0, 300));
+    throw new Error(`Gemini API key error (${res.status}). Go to Settings → AI and verify your key, then try again.`);
   }
 
   if (!res.ok) {
