@@ -1,8 +1,8 @@
 /**
- * Gemini client — uses the native REST API directly.
+ * AI client — supports multiple providers (Groq, Gemini).
  * 
- * Supports both legacy AIzaSy... keys and new AQ. auth keys.
- * Uses x-goog-api-key header (recommended by Google for AQ. keys).
+ * Groq is the recommended provider: fast, reliable, generous free tier.
+ * Gemini is kept as an option but has known issues with AQ. auth keys.
  */
 
 /** Strip wrapping quotes that Supabase jsonb may add */
@@ -10,80 +10,126 @@ function cleanKey(raw: string): string {
   return raw.replace(/^["']|["']$/g, '').trim();
 }
 
-export async function generateWithGemini(
-  prompt: string,
-  apiKey: string,
-  model: string = "gemini-2.5-flash"
-): Promise<string> {
-  const key = cleanKey(apiKey);
-  if (!key) throw new Error("Gemini API key not configured. Set it in Settings → AI.");
+// ── Groq (OpenAI-compatible) ─────────────────────────────────────────────────
 
-  // Use x-goog-api-key header (works better with AQ. auth keys)
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-
-  const res = await fetch(url, {
+async function generateWithGroq(prompt: string, apiKey: string, model: string): Promise<string> {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-goog-api-key": key,
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+      model,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7,
+      max_tokens: 4096,
     }),
   });
 
   if (res.status === 429) {
-    throw new Error("Rate limited by Google. Wait 60 seconds and try again.");
+    throw new Error("Rate limited by Groq. Wait a moment and try again.");
   }
-
   if (!res.ok) {
     const errBody = await res.text().catch(() => "");
-    console.error("[Gemini] API error:", res.status, errBody.slice(0, 500));
-    
-    // Parse Google's error for a more helpful message
+    console.error("[Groq] API error:", res.status, errBody.slice(0, 300));
     let detail = "";
-    try {
-      const errJson = JSON.parse(errBody);
-      detail = errJson?.error?.message || "";
-    } catch {}
-
-    if (res.status === 400 && (detail.includes("API_KEY") || detail.includes("API key"))) {
-      throw new Error("Invalid API key. Make sure you copied the full key from Google AI Studio.");
-    }
-    if (res.status === 401 || res.status === 403) {
-      throw new Error(`API key rejected (${res.status}). ${detail || "Your AQ. key may need billing enabled. Check Google AI Studio."}`);
-    }
-    if (res.status === 404) {
-      throw new Error(`Model "${model}" not found. ${detail || "Try gemini-2.5-flash or check available models in AI Studio."}`);
-    }
-    throw new Error(`Gemini API error (${res.status}). ${detail || "Check console for details."}`);
+    try { detail = JSON.parse(errBody)?.error?.message || ""; } catch {}
+    if (res.status === 401) throw new Error("Invalid Groq API key. Check Settings → AI.");
+    throw new Error(`Groq API error (${res.status}). ${detail}`);
   }
 
   const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  if (!text) throw new Error("Empty response from Gemini");
-  return text;
+  return data.choices?.[0]?.message?.content ?? "";
 }
 
-/**
- * List available models for the given API key.
- * Useful for debugging which models your key has access to.
- */
+// ── Gemini (native REST) ─────────────────────────────────────────────────────
+
+async function generateWithGeminiDirect(prompt: string, apiKey: string, model: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+    }),
+  });
+
+  if (res.status === 429) throw new Error("Rate limited by Google. Wait 60 seconds.");
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    console.error("[Gemini] API error:", res.status, errBody.slice(0, 300));
+    let detail = "";
+    try { detail = JSON.parse(errBody)?.error?.message || ""; } catch {}
+    if (res.status === 401 || res.status === 403) throw new Error(`Gemini key rejected (${res.status}). ${detail}`);
+    if (res.status === 404) throw new Error(`Model "${model}" not found. ${detail}`);
+    throw new Error(`Gemini error (${res.status}). ${detail}`);
+  }
+
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+}
+
+// ── Public API ───────────────────────────────────────────────────────────────
+
+/** Detect provider from API key format */
+function detectProvider(apiKey: string): "groq" | "gemini" {
+  if (apiKey.startsWith("gsk_")) return "groq";
+  return "gemini";
+}
+
+/** Default model for each provider */
+const DEFAULT_MODELS: Record<string, string> = {
+  groq: "llama-3.3-70b-versatile",
+  gemini: "gemini-2.5-flash",
+};
+
+export async function generateWithGemini(
+  prompt: string,
+  apiKey: string,
+  model?: string
+): Promise<string> {
+  const key = cleanKey(apiKey);
+  if (!key) throw new Error("API key not configured. Set it in Settings → AI.");
+
+  const provider = detectProvider(key);
+  const finalModel = model || DEFAULT_MODELS[provider];
+
+  if (provider === "groq") {
+    return generateWithGroq(prompt, key, finalModel);
+  }
+  return generateWithGeminiDirect(prompt, key, finalModel);
+}
+
+/** List available models (for debugging) */
 export async function listAvailableModels(apiKey: string): Promise<string[]> {
   const key = cleanKey(apiKey);
   if (!key) return [];
-  
+  const provider = detectProvider(key);
+
   try {
-    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
-      headers: { "x-goog-api-key": key },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.models || [])
-      .filter((m: any) => m.supportedGenerationMethods?.includes("generateContent"))
-      .map((m: any) => m.name?.replace("models/", "") || "")
-      .filter(Boolean);
+    if (provider === "groq") {
+      const res = await fetch("https://api.groq.com/openai/v1/models", {
+        headers: { "Authorization": `Bearer ${key}` },
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.data || []).map((m: any) => m.id).filter(Boolean);
+    } else {
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+        headers: { "x-goog-api-key": key },
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.models || [])
+        .filter((m: any) => m.supportedGenerationMethods?.includes("generateContent"))
+        .map((m: any) => m.name?.replace("models/", "") || "")
+        .filter(Boolean);
+    }
   } catch {
     return [];
   }

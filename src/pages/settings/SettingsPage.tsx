@@ -251,11 +251,11 @@ export function SettingsPage() {
         {/* ── AI ────────────────────────────────────── */}
         {activeTab === "ai" && (
           <div>
-            <h2 className="mb-4 text-base font-semibold text-slate-900">AI (Gemini) Settings</h2>
-            <Field label="Gemini API Key" hint="From Google AI Studio">
+            <h2 className="mb-4 text-base font-semibold text-slate-900">AI Settings</h2>
+            <Field label="AI API Key" hint="Groq (gsk_...) or Gemini (AQ./AIza) key">
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <MaskedInput value={(get("gemini_api_key","") as string)} onChange={(v) => set("gemini_api_key", v)} placeholder="AIzaSy..." />
+                  <MaskedInput value={(get("gemini_api_key","") as string)} onChange={(v) => set("gemini_api_key", v)} placeholder="gsk_... or AQ...." />
                 </div>
                 <button onClick={testAi} disabled={aiStatus === "testing"}
                   className="inline-flex items-center gap-1.5 rounded border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
@@ -266,14 +266,19 @@ export function SettingsPage() {
               {aiStatus === "ok" && <p className="mt-1 text-xs text-green-600">✅ Connected</p>}
               {aiStatus === "fail" && <p className="mt-1 text-xs text-red-600">❌ {aiError || "Connection failed"}</p>}
             </Field>
-            <Field label="Gemini Model">
-              <select value={(get("gemini_model","gemini-2.5-flash") as string)} onChange={(e) => set("gemini_model", e.target.value)}
+            <Field label="AI Model" hint="Auto-detected from key type">
+              <select value={(get("gemini_model","llama-3.3-70b-versatile") as string)} onChange={(e) => set("gemini_model", e.target.value)}
                 className="rounded border border-slate-200 px-3 py-2 text-sm focus:outline-none">
-                <option value="gemini-2.5-flash">gemini-2.5-flash (recommended)</option>
-                <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (faster, cheaper)</option>
-                <option value="gemini-2.5-pro">gemini-2.5-pro (smartest)</option>
-                <option value="gemini-3.5-flash">gemini-3.5-flash (latest)</option>
-                <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (newest fast)</option>
+                <optgroup label="Groq (recommended)">
+                  <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (best)</option>
+                  <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (fastest)</option>
+                  <option value="mixtral-8x7b-32768">mixtral-8x7b-32768 (good)</option>
+                </optgroup>
+                <optgroup label="Gemini">
+                  <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                  <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+                  <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+                </optgroup>
               </select>
             </Field>
             {[

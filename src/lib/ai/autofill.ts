@@ -55,6 +55,44 @@ function tryDirectParse(text: string): Record<string, unknown> | null {
 
 async function callGemini(prompt: string): Promise<Record<string, unknown>> {
   const apiKey = getApiKey()
+  const isGroq = apiKey.startsWith("gsk_");
+  
+  if (isGroq) {
+    // Use Groq (OpenAI-compatible)
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.05,
+        max_tokens: 4096,
+        response_format: { type: "json_object" },
+      }),
+    });
+    
+    if (res.status === 429) throw new Error("Rate limited. Wait a moment and try again.");
+    if (!res.ok) {
+      const err = await res.text().catch(() => "");
+      console.error("[AI] Groq error:", res.status, err.slice(0, 200));
+      throw new Error(`AI error (${res.status}). Try pasting JSON directly.`);
+    }
+    
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content ?? "";
+    if (!text) throw new Error("Empty AI response");
+    try { return JSON.parse(text); }
+    catch {
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) try { return JSON.parse(m[0]); } catch {}
+      throw new Error("AI response was not valid JSON. Try pasting JSON directly.");
+    }
+  }
+  
+  // Gemini path
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
   
   const res = await fetch(url, {
