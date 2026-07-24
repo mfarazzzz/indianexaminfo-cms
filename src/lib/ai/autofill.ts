@@ -6,40 +6,28 @@
  * 
  * Only calls Gemini when you paste raw text (not JSON).
  * 
- * SECURITY: API key is read from the CMS settings table at runtime via
- * the SettingsContext. It is NEVER hardcoded in source code.
+ * The API key is passed in from the calling component (via SettingsContext).
+ * This avoids separate DB reads and RLS issues with sensitive settings.
  */
 
-import { db } from '@/lib/supabase/client'
+/** Module-level API key set by the consuming component before calling autofill */
+let _activeKey: string = ''
 
-/** Fetches the Gemini API key from settings table (cached in-memory for session) */
-let _cachedKey: string | null = null
-async function getApiKey(): Promise<string> {
-  if (_cachedKey) return _cachedKey
-  const { data, error } = await db
-    .from('settings')
-    .select('value')
-    .eq('key', 'gemini_api_key')
-    .single()
-  if (error) {
-    console.warn('[AI] Failed to read gemini_api_key from settings:', error.message)
-  }
-  // Handle jsonb: value might be a bare string, JSON-wrapped string, or null
-  let key = ''
-  if (data?.value != null) {
-    const raw = typeof data.value === 'string' ? data.value : JSON.stringify(data.value)
-    key = raw.replace(/^["']|["']$/g, '').trim()
-  }
-  if (!key) {
-    throw new Error('Gemini API key not configured. Go to Settings → AI and enter your key.')
-  }
-  _cachedKey = key
-  return key
+/** Set the Gemini API key for autofill operations. Call this before using autofill. */
+export function setAutofillApiKey(key: string): void {
+  _activeKey = (key ?? '').replace(/^["']|["']$/g, '').trim()
 }
 
-/** Clear cached key (call when settings are updated) */
+/** @deprecated Use setAutofillApiKey instead */
 export function clearApiKeyCache(): void {
-  _cachedKey = null
+  _activeKey = ''
+}
+
+function getApiKey(): string {
+  if (!_activeKey) {
+    throw new Error('Gemini API key not configured. Go to Settings → AI and enter your key.')
+  }
+  return _activeKey
 }
 
 // ── Try to parse input as JSON directly (no API call needed) ─────────────────
@@ -66,7 +54,7 @@ function tryDirectParse(text: string): Record<string, unknown> | null {
 // ── Gemini API call (only for raw text, not JSON) ────────────────────────────
 
 async function callGemini(prompt: string): Promise<Record<string, unknown>> {
-  const apiKey = await getApiKey()
+  const apiKey = getApiKey()
   // Use gemini-2.0-flash as it handles AQ. keys better and is the latest model
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
   

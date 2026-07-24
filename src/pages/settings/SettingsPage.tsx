@@ -5,7 +5,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllSettings, updateSettingsBulk, testSupabaseConnection } from "@/services/settingsService";
 import { generateWithGemini } from "@/lib/gemini/client";
-import { clearApiKeyCache } from "@/lib/ai/autofill";
+import { clearApiKeyCache, setAutofillApiKey } from "@/lib/ai/autofill";
 import {
   revalidatePath, revalidateAll,
 } from "@/lib/api/frontend";
@@ -91,9 +91,9 @@ export function SettingsPage() {
     try {
       await updateSettingsBulk(keys.map((k) => ({ key: k, value: local[k] as never })), user?.id);
       await refreshSettings();
-      // If AI key was saved, clear the autofill cache so it picks up the new key
+      // If AI key was saved, update the autofill module with the new key
       if (keys.includes("gemini_api_key")) {
-        clearApiKeyCache();
+        setAutofillApiKey(local["gemini_api_key"] as string);
       }
       toast.success("Settings saved.");
     } catch (err) {

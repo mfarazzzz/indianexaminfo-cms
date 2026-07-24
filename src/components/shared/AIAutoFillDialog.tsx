@@ -5,6 +5,8 @@
 import React, { useState } from "react";
 import { Sparkles, Loader2, X, Clipboard } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSettings } from "@/hooks/useSettings";
+import { setAutofillApiKey } from "@/lib/ai/autofill";
 
 interface AIAutoFillDialogProps {
   open: boolean;
@@ -23,6 +25,7 @@ export function AIAutoFillDialog({
   title = "AI Auto-Fill",
   placeholder = "Paste the raw exam notification, official PDF text, or any content here...",
 }: AIAutoFillDialogProps) {
+  const { getSetting } = useSettings();
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +34,15 @@ export function AIAutoFillDialog({
 
   const handleExtract = async () => {
     if (!text.trim()) return;
+    
+    // Set the API key from settings context before calling extract
+    const apiKey = getSetting("gemini_api_key", "") as string;
+    if (!apiKey) {
+      setError("Gemini API key not configured. Go to Settings → AI and enter your key.");
+      return;
+    }
+    setAutofillApiKey(apiKey);
+    
     setLoading(true);
     setError(null);
     try {

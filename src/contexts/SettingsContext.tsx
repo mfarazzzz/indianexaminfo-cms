@@ -45,7 +45,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const getSetting = useCallback(
     <K extends keyof SettingsMap>(key: K, fallback?: SettingsMap[K]) => {
       const val = (settings as Record<string, unknown>)[key as string];
-      return (val !== undefined ? val : fallback) as SettingsMap[K] | undefined;
+      // Return fallback if value is undefined OR null (jsonb null from DB)
+      return (val != null ? val : fallback) as SettingsMap[K] | undefined;
     },
     [settings]
   );
