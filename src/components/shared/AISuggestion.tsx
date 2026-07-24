@@ -28,7 +28,7 @@ export function AISuggestion({
 
   const generate = async () => {
     const apiKey = getSetting("gemini_api_key", "");
-    const model = getSetting("gemini_model", "gemini-2.0-flash");
+    const model = getSetting("gemini_model", "gemini-2.5-flash");
     const enabled = getSetting("ai_enabled", true);
 
     if (!enabled) {

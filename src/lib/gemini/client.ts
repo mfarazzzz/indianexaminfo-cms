@@ -16,7 +16,7 @@ function cleanKey(raw: string): string {
 export async function generateWithGemini(
   prompt: string,
   apiKey: string,
-  model: string = "gemini-2.0-flash"
+  model: string = "gemini-2.5-flash"
 ): Promise<string> {
   const key = cleanKey(apiKey);
   if (!key) throw new Error("Gemini API key not configured. Set it in Settings → AI.");
@@ -55,7 +55,7 @@ export async function generateWithGemini(
       throw new Error(`API key rejected (${res.status}). ${detail || "Verify your key is active in Google AI Studio."}`);
     }
     if (res.status === 404) {
-      throw new Error(`Model "${model}" not found. Try switching to gemini-2.0-flash in Settings → AI.`);
+      throw new Error(`Model "${model}" not found or deprecated. Try switching to gemini-2.5-flash in Settings → AI.`);
     }
     throw new Error(`Gemini API error (${res.status}). ${detail || "Check your API key and model."}`);
   }

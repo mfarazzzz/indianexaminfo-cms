@@ -129,7 +129,7 @@ export function SettingsPage() {
     setAiStatus("testing");
     setAiError("");
     try {
-      await generateWithGemini("Say 'IndianExamInfo CMS connected' in one short sentence.", get("gemini_api_key","") as string, get("gemini_model","gemini-2.0-flash") as string);
+      await generateWithGemini("Say 'IndianExamInfo CMS connected' in one short sentence.", get("gemini_api_key","") as string, get("gemini_model","gemini-2.5-flash") as string);
       setAiStatus("ok");
     } catch (err) {
       setAiStatus("fail");
@@ -252,11 +252,11 @@ export function SettingsPage() {
               {aiStatus === "fail" && <p className="mt-1 text-xs text-red-600">❌ {aiError || "Connection failed"}</p>}
             </Field>
             <Field label="Gemini Model">
-              <select value={(get("gemini_model","gemini-2.0-flash") as string)} onChange={(e) => set("gemini_model", e.target.value)}
+              <select value={(get("gemini_model","gemini-2.5-flash") as string)} onChange={(e) => set("gemini_model", e.target.value)}
                 className="rounded border border-slate-200 px-3 py-2 text-sm focus:outline-none">
-                <option value="gemini-2.0-flash">gemini-2.0-flash (recommended)</option>
-                <option value="gemini-1.5-flash">gemini-1.5-flash (legacy, faster)</option>
-                <option value="gemini-1.5-pro">gemini-1.5-pro (smarter)</option>
+                <option value="gemini-2.5-flash">gemini-2.5-flash (recommended)</option>
+                <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (faster, cheaper)</option>
+                <option value="gemini-2.5-pro">gemini-2.5-pro (smartest)</option>
               </select>
             </Field>
             {[

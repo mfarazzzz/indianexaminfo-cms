@@ -55,8 +55,7 @@ function tryDirectParse(text: string): Record<string, unknown> | null {
 
 async function callGemini(prompt: string): Promise<Record<string, unknown>> {
   const apiKey = getApiKey()
-  // Use gemini-2.0-flash as it handles AQ. keys better and is the latest model
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   
   const res = await fetch(url, {
     method: "POST",
@@ -72,8 +71,7 @@ async function callGemini(prompt: string): Promise<Record<string, unknown>> {
   }
 
   if (res.status === 400 || res.status === 401 || res.status === 403) {
-    // Clear cached key so next attempt re-reads from DB
-    _cachedKey = null;
+    _activeKey = '';
     const err = await res.text().catch(() => "");
     console.error("[AI] Auth error:", res.status, err.slice(0, 300));
     throw new Error(`Gemini API key error (${res.status}). Go to Settings → AI and verify your key, then try again.`);
