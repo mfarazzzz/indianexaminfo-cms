@@ -53,8 +53,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const updateSetting = useCallback(async (key: string, value: unknown) => {
     const { error } = await db
       .from("settings")
-      .update({ value: value as never, updated_at: new Date().toISOString() })
-      .eq("key", key);
+      .upsert({
+        key,
+        value: value as never,
+        label: key.replace(/_/g, " "),
+        group: "general",
+        is_sensitive: false,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "key" });
     if (error) return { error: error.message };
     setSettings((prev) => ({ ...prev, [key]: value as never }));
     return { error: null };

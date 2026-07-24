@@ -10,6 +10,33 @@ function mapRow(row: any): Setting {
   };
 }
 
+/** Map of setting keys → their group and label (for upsert when row doesn't exist) */
+const SETTING_META: Record<string, { group: SettingGroup; label: string; is_sensitive?: boolean }> = {
+  gemini_api_key:      { group: "ai", label: "Gemini API Key", is_sensitive: true },
+  gemini_model:        { group: "ai", label: "Gemini Model" },
+  ai_enabled:          { group: "ai", label: "Enable AI Features" },
+  ai_auto_seo:         { group: "ai", label: "Auto-generate SEO" },
+  ai_auto_summary:     { group: "ai", label: "Auto-generate Summary Box" },
+  ai_auto_faq:         { group: "ai", label: "Auto-generate FAQs" },
+  ai_language:         { group: "ai", label: "Content Language" },
+  ai_tone:             { group: "ai", label: "Writing Tone" },
+  site_name:           { group: "general", label: "Site Name" },
+  site_tagline:        { group: "general", label: "Site Tagline" },
+  site_url:            { group: "general", label: "Frontend URL" },
+  contact_email:       { group: "general", label: "Contact Email" },
+  whatsapp_number:     { group: "general", label: "WhatsApp Number" },
+  telegram_channel:    { group: "general", label: "Telegram Channel" },
+  youtube_channel:     { group: "general", label: "YouTube Channel" },
+  posts_per_page:      { group: "general", label: "Posts Per Page" },
+  supabase_url:        { group: "database", label: "Supabase URL" },
+  supabase_anon_key:   { group: "database", label: "Supabase Anon Key", is_sensitive: true },
+  supabase_service_key:{ group: "database", label: "Service Role Key", is_sensitive: true },
+  db_status:           { group: "database", label: "DB Status" },
+  frontend_url:        { group: "integrations", label: "Frontend Base URL" },
+  revalidate_token:    { group: "integrations", label: "Revalidate Token", is_sensitive: true },
+  revalidate_on_publish:{ group: "integrations", label: "Auto-Revalidate on Publish" },
+};
+
 export async function getAllSettings(): Promise<Setting[]> {
   const { data, error } = await db.from("settings").select("*").order("group");
   if (error) throw error;
@@ -23,9 +50,17 @@ export async function getSettingsByGroup(group: SettingGroup): Promise<Setting[]
 }
 
 export async function updateSetting(key: string, value: unknown, userId?: string): Promise<Setting> {
-  const { data, error } = await db.from("settings").update({
-    value, updated_at: new Date().toISOString(), updated_by: userId ?? null,
-  }).eq("key", key).select().single();
+  // Use upsert: if the setting row doesn't exist yet, insert it; otherwise update.
+  const meta = SETTING_META[key] || { group: "general" as SettingGroup, label: key.replace(/_/g, " ") };
+  const { data, error } = await db.from("settings").upsert({
+    key,
+    value,
+    group: meta.group,
+    label: meta.label,
+    is_sensitive: meta.is_sensitive ?? false,
+    updated_at: new Date().toISOString(),
+    updated_by: userId ?? null,
+  }, { onConflict: "key" }).select().single();
   if (error) throw error;
   return mapRow(data);
 }
