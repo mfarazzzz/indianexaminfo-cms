@@ -4,7 +4,7 @@ import { Eye, EyeOff, Loader2, Check, X, RefreshCw, TestTube2 } from "lucide-rea
 import { useSettings } from "@/hooks/useSettings";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllSettings, updateSettingsBulk, testSupabaseConnection } from "@/services/settingsService";
-import { generateWithGemini } from "@/lib/gemini/client";
+import { generateWithGemini, listAvailableModels } from "@/lib/gemini/client";
 import { clearApiKeyCache, setAutofillApiKey } from "@/lib/ai/autofill";
 import {
   revalidatePath, revalidateAll,
@@ -128,12 +128,27 @@ export function SettingsPage() {
   const testAi = async () => {
     setAiStatus("testing");
     setAiError("");
+    const apiKey = get("gemini_api_key","") as string;
+    const model = get("gemini_model","gemini-2.5-flash") as string;
+    
     try {
-      await generateWithGemini("Say 'IndianExamInfo CMS connected' in one short sentence.", get("gemini_api_key","") as string, get("gemini_model","gemini-2.5-flash") as string);
+      await generateWithGemini("Say 'connected' in one word.", apiKey, model);
       setAiStatus("ok");
     } catch (err) {
+      const msg = getErrorMessage(err);
+      // If 404, try listing models to help debug
+      if (msg.includes("not found")) {
+        const models = await listAvailableModels(apiKey);
+        if (models.length > 0) {
+          const flash = models.find(m => m.includes("flash") && !m.includes("lite") && !m.includes("image"));
+          setAiError(`Model "${model}" not available. Your key has access to: ${models.slice(0, 5).join(", ")}${flash ? `. Try: ${flash}` : ""}`);
+        } else {
+          setAiError(msg + " Could not list models — check if your API key is valid.");
+        }
+      } else {
+        setAiError(msg);
+      }
       setAiStatus("fail");
-      setAiError(getErrorMessage(err));
     }
   };
 
@@ -257,6 +272,8 @@ export function SettingsPage() {
                 <option value="gemini-2.5-flash">gemini-2.5-flash (recommended)</option>
                 <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (faster, cheaper)</option>
                 <option value="gemini-2.5-pro">gemini-2.5-pro (smartest)</option>
+                <option value="gemini-3.5-flash">gemini-3.5-flash (latest)</option>
+                <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (newest fast)</option>
               </select>
             </Field>
             {[

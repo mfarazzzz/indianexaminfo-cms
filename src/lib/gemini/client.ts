@@ -1,11 +1,8 @@
 /**
  * Gemini client — uses the native REST API directly.
  * 
- * WHY NOT the @google/generative-ai SDK?
- * Google switched to new "Auth keys" (AQ. prefix) in mid-2026.
- * Older SDK versions don't handle AQ. keys reliably.
- * The native REST endpoint with ?key= works perfectly for both
- * legacy AIzaSy... keys AND new AQ. keys.
+ * Supports both legacy AIzaSy... keys and new AQ. auth keys.
+ * Uses x-goog-api-key header (recommended by Google for AQ. keys).
  */
 
 /** Strip wrapping quotes that Supabase jsonb may add */
@@ -21,12 +18,15 @@ export async function generateWithGemini(
   const key = cleanKey(apiKey);
   if (!key) throw new Error("Gemini API key not configured. Set it in Settings → AI.");
 
-  // AQ. auth keys work on both v1 and v1beta; use v1beta for widest model support
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+  // Use x-goog-api-key header (works better with AQ. auth keys)
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": key,
+    },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
@@ -39,7 +39,7 @@ export async function generateWithGemini(
 
   if (!res.ok) {
     const errBody = await res.text().catch(() => "");
-    console.error("[Gemini] API error:", res.status, errBody.slice(0, 300));
+    console.error("[Gemini] API error:", res.status, errBody.slice(0, 500));
     
     // Parse Google's error for a more helpful message
     let detail = "";
@@ -48,20 +48,43 @@ export async function generateWithGemini(
       detail = errJson?.error?.message || "";
     } catch {}
 
-    if (res.status === 400 && detail.includes("API_KEY")) {
-      throw new Error("Invalid API key format. Make sure you copied the full key from Google AI Studio.");
+    if (res.status === 400 && (detail.includes("API_KEY") || detail.includes("API key"))) {
+      throw new Error("Invalid API key. Make sure you copied the full key from Google AI Studio.");
     }
     if (res.status === 401 || res.status === 403) {
-      throw new Error(`API key rejected (${res.status}). ${detail || "Verify your key is active in Google AI Studio."}`);
+      throw new Error(`API key rejected (${res.status}). ${detail || "Your AQ. key may need billing enabled. Check Google AI Studio."}`);
     }
     if (res.status === 404) {
-      throw new Error(`Model "${model}" not found or deprecated. Try switching to gemini-2.5-flash in Settings → AI.`);
+      throw new Error(`Model "${model}" not found. ${detail || "Try gemini-2.5-flash or check available models in AI Studio."}`);
     }
-    throw new Error(`Gemini API error (${res.status}). ${detail || "Check your API key and model."}`);
+    throw new Error(`Gemini API error (${res.status}). ${detail || "Check console for details."}`);
   }
 
   const data = await res.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   if (!text) throw new Error("Empty response from Gemini");
   return text;
+}
+
+/**
+ * List available models for the given API key.
+ * Useful for debugging which models your key has access to.
+ */
+export async function listAvailableModels(apiKey: string): Promise<string[]> {
+  const key = cleanKey(apiKey);
+  if (!key) return [];
+  
+  try {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+      headers: { "x-goog-api-key": key },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.models || [])
+      .filter((m: any) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m: any) => m.name?.replace("models/", "") || "")
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
 }

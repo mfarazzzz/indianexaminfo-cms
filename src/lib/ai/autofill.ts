@@ -55,11 +55,14 @@ function tryDirectParse(text: string): Record<string, unknown> | null {
 
 async function callGemini(prompt: string): Promise<Record<string, unknown>> {
   const apiKey = getApiKey()
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
   
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.05, maxOutputTokens: 4096, responseMimeType: "application/json" },
