@@ -10,7 +10,7 @@ import { getExams, deleteExam, type ExamListOpts } from "@/services/examService"
 import { getCategories, type Category } from "@/services/categoryService";
 import { EXAM_STATUSES } from "@/config/site";
 import { usePillars } from "@/hooks/usePillars";
-import { formatDate , getErrorMessage } from "@/lib/utils";
+import { formatDate , getErrorMessage, buildUrlPreview } from "@/lib/utils";
 import type { ExamEntity, Pillar } from "@/types/exam";
 
 export function ExamsListPage() {
@@ -87,7 +87,7 @@ export function ExamsListPage() {
             {row.original.isFeatured && <Star size={14} className="text-amber-500 fill-amber-500 shrink-0" />}
             <p className="font-medium text-slate-900 line-clamp-1">{row.original.name}</p>
           </div>
-          <p className="text-xs text-slate-400 line-clamp-1">/{row.original.pillar}/{row.original.category}/{row.original.slug}</p>
+          <p className="text-xs text-slate-400 line-clamp-1">{buildUrlPreview(row.original.pillar, row.original.category, row.original.slug)}</p>
         </div>
       ),
     },

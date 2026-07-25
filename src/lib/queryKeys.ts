@@ -113,3 +113,20 @@ export const sarkariNaukriKeys = {
   states:   ()                                    => ['sarkari-naukri', 'states'] as const,
   categories: ()                                  => ['sarkari-naukri', 'categories'] as const,
 } as const
+
+// ── Exam Data Deduplication keys ──────────────────────────────────────────────
+
+export const conductingBodyKeys = {
+  all:    () => ['conducting-bodies'] as const,
+  list:   () => ['conducting-bodies', 'list'] as const,
+  search: (q: string) => ['conducting-bodies', 'search', q] as const,
+} as const
+
+export const activityFeedKeys = {
+  all:     () => ['activity-feed'] as const,
+  recent:  (limit: number) => ['activity-feed', 'recent', limit] as const,
+} as const
+
+export const duplicateCheckKeys = {
+  check: (name: string, bodyId: string | null) => ['duplicate-check', name, bodyId] as const,
+} as const

@@ -13,11 +13,13 @@ import { Loader2, Clock, AlertCircle, ShieldCheck } from 'lucide-react'
 import { useEntityQuery } from '@/hooks/useEntityQuery'
 import { useEditorUI } from '@/contexts/EditorUIContext'
 import { PillarProvider } from '@/contexts/PillarContext'
+import { TimelineDatesProvider } from '@/contexts/TimelineDatesContext'
 import { usePillars } from '@/hooks/usePillars'
 import { WORKFLOW_STATUS_LABELS } from '@/types/entity'
 import type { WorkflowStatus } from '@/types/entity'
 import type { ModuleVisibilityConfig } from '@/types/lifecycle-template'
 import { cn } from '@/lib/utils'
+import { SaveAllButton } from './SaveAllButton'
 
 // ── TAB_REGISTRY — registered tabs (not rendered until enabled by snapshot) ──
 // Add new tabs here; enabling them in a template's moduleVisibility makes them appear.
@@ -179,7 +181,8 @@ export function EntityEditorShell({ entityId }: EntityEditorShellProps) {
         </div>
       </div>
 
-      {/* Tabs — driven by template snapshot */}
+      {/* Tabs — driven by template snapshot, wrapped in TimelineDatesProvider for cross-tab sync */}
+      <TimelineDatesProvider entityId={entityId ?? ''}>
       <Tabs.Root
         value={state.activeTab}
         onValueChange={handleTabChange}
@@ -233,6 +236,18 @@ export function EntityEditorShell({ entityId }: EntityEditorShellProps) {
           ))}
         </div>
       </Tabs.Root>
+      </TimelineDatesProvider>
+
+      {/* Save All Changes button — sticky, visible when any tab is dirty */}
+      {entityId && (
+        <SaveAllButton
+          entityId={entityId}
+          onSaveTab={async (_tabKey: string) => {
+            // Individual tab save logic will be wired per-tab in a follow-up
+            // For now, this is a no-op placeholder
+          }}
+        />
+      )}
 
       {/* Unsaved-changes modal */}
       <AlertDialog.Root open={!!pendingTab} onOpenChange={o => { if (!o) setPendingTab(null) }}>

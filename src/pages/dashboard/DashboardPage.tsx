@@ -4,6 +4,7 @@ import { FileText, BookOpen, Tag, Users, TrendingUp, Clock, Star } from "lucide-
 import { db } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { formatDate, timeAgo } from "@/lib/utils";
 
 interface Stats {
@@ -221,6 +222,9 @@ export function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Module Activity Feed (Req 8) */}
+      <ActivityFeed limit={25} />
 
       {/* Quick actions */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

@@ -15,6 +15,10 @@ import { useEntityQuery } from '@/hooks/useEntityQuery'
 import { useEditorUI } from '@/contexts/EditorUIContext'
 import { useAutosave } from '@/hooks/useAutosave'
 import { usePillarContext } from '@/contexts/PillarContext'
+import { buildUrlPreview } from '@/lib/utils'
+import { ConductingBodySelect } from '@/components/shared/ConductingBodySelect'
+import { TaxonomyTooltip } from '@/components/shared/TaxonomyTooltip'
+import { DuplicateWarningBanner } from '@/components/entity-editor/DuplicateWarningBanner'
 import {
   FormField as Field, FieldGroup, SectionHeader, inputCls,
 } from '@/components/shared/form/FormField'
@@ -184,6 +188,16 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
       {/* ── Identity ── */}
       <section className="space-y-4">
         <SectionHeader title="Identity" />
+
+        {/* Duplicate detection banner — only during creation */}
+        {isNew && (
+          <DuplicateWarningBanner
+            name={name ?? ''}
+            conductingBodyId={watch('conductingBodyId') ?? null}
+            enabled={isNew}
+          />
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
           <div className="md:col-span-2">
@@ -224,9 +238,12 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
           </Field>
 
           <Field label="Conducting Body" error={errors.conductingBodyId?.message}>
-            <input maxLength={200} placeholder="e.g. Institute of Banking Personnel Selection"
-              className={inputCls} {...register('conductingBodyId')}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => { register('conductingBodyId').onChange(e); scheduleAutosave() }} />
+            <Controller name="conductingBodyId" control={control} render={({ field }) => (
+              <ConductingBodySelect
+                value={field.value ?? null}
+                onChange={(id) => { field.onChange(id); scheduleAutosave() }}
+              />
+            )} />
           </Field>
 
           <Field label="Official Website" error={errors.officialWebsite?.message}>
@@ -241,7 +258,7 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
         <SectionHeader title="Classification" />
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 
-          <Field label="Pillar">
+          <Field label={<>Pillar<TaxonomyTooltip fieldKey="pillar" /></>}>
             <Controller name="pillar" control={control} render={({ field }) => (
               <SimpleSelect value={field.value} placeholder="Select pillar"
                 options={pillars.map(p => ({ value: p.slug, label: p.label }))}
@@ -249,7 +266,7 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
             )} />
           </Field>
 
-          <Field label="Category">
+          <Field label={<>Category<TaxonomyTooltip fieldKey="category" /></>}>
             <Controller name="categoryId" control={control} render={({ field }) => (
               <SimpleSelect value={field.value} placeholder={pillar ? 'Select category' : 'Select pillar first'}
                 disabled={!pillar}
@@ -258,7 +275,7 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
             )} />
           </Field>
 
-          <Field label="Entity Type">
+          <Field label={<>Entity Type<TaxonomyTooltip fieldKey="entity_type" /></>}>
             <SimpleSelect
               value={watch('metadata')?.entitySubType as string ?? 'exam'}
               options={SUB_TYPES.map(t => ({ value: t, label: t }))}

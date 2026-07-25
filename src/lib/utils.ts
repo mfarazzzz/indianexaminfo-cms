@@ -128,3 +128,20 @@ export function getErrorMessage(err: unknown): string {
   }
   return String(err);
 }
+
+// ── Exam Data Deduplication: URL preview (Req 9) ──────────────────────────────
+
+/**
+ * Builds a clean URL preview from path segments, eliminating double-slash bugs.
+ * Strips trailing slashes from each segment, leading slashes from the slug,
+ * and joins with exactly one separator. Preserves protocol prefix.
+ */
+export function buildUrlPreview(
+  pillar: string | null | undefined,
+  category: string | null | undefined,
+  slug: string
+): string {
+  const parts = [pillar, category, slug].filter(Boolean) as string[]
+  if (parts.length === 0) return ''
+  return '/' + parts.map(p => p.replace(/^\/+|\/+$/g, '')).join('/')
+}

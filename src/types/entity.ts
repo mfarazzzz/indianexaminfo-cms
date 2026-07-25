@@ -447,3 +447,74 @@ export interface ActivityLogEntry {
   changes?: Record<string, unknown> | null
   createdAt: string
 }
+
+// ── Exam Data Deduplication types (Reqs 1, 3, 8, 15) ─────────────────────────
+
+/** Standard date types stored in entity_timeline_event.event_type */
+export const STANDARD_DATE_TYPES = [
+  'notification_date',
+  'application_start',
+  'application_end',
+  'fee_payment_last_date',
+  'exam_date',
+  'admit_card_release',
+  'answer_key_release',
+  'result_date',
+] as const
+
+export type StandardDateType = typeof STANDARD_DATE_TYPES[number]
+
+/** Human-readable labels for standard date types */
+export const STANDARD_DATE_LABELS: Record<StandardDateType, string> = {
+  notification_date: 'Notification Date',
+  application_start: 'Application Start Date',
+  application_end: 'Application End Date',
+  fee_payment_last_date: 'Fee Payment Last Date',
+  exam_date: 'Exam Date',
+  admit_card_release: 'Admit Card Release Date',
+  answer_key_release: 'Answer Key Release Date',
+  result_date: 'Result Date',
+}
+
+/** Date entry as consumed by TimelineDatesContext */
+export interface DateEntry {
+  eventType: string
+  date: string | null
+  isHighlighted: boolean
+  title: string
+}
+
+/** Conducting body lookup table record */
+export interface ConductingBody {
+  id: string
+  name: string
+  shortName: string | null
+  slug: string
+  officialWebsite: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** Dashboard activity feed entry (resolved with entity name and actor name) */
+export interface DashboardActivityEntry {
+  id: string
+  entityId: string
+  entityName: string
+  moduleId: string | null
+  moduleType: string
+  actorId: string
+  actorName: string
+  action: 'module_filled' | 'module_updated'
+  createdAt: string
+}
+
+/** Mapping of module_block.content JSON keys to standard date types (for Migration 2b) */
+export const MODULE_DATE_KEY_MAP: Record<string, StandardDateType> = {
+  admitCardReleaseDate: 'admit_card_release',
+  examDate: 'exam_date',
+  resultDeclaredDate: 'result_date',
+  releaseDate: 'answer_key_release',
+  applicationStartDate: 'application_start',
+  applicationEndDate: 'application_end',
+  notificationDate: 'notification_date',
+}

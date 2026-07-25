@@ -70,6 +70,52 @@ function resolvePublishState(
   return { status: input.status ?? 'upcoming', publish_at: null }
 }
 
+// ── Ensure standard date rows exist (Req 1.2, 1.8) ───────────────────────────
+
+import { STANDARD_DATE_TYPES, STANDARD_DATE_LABELS } from '@/types/entity'
+import type { StandardDateType } from '@/types/entity'
+
+/**
+ * Ensures all standard Date_Type_Enum rows exist for an entity.
+ * Creates placeholder rows (null event_date) for any missing standard types.
+ * Idempotent: checks (entity_id, event_type) before inserting.
+ */
+export async function ensureStandardDates(entityId: string): Promise<void> {
+  // Fetch existing event_types for this entity
+  const { data: existing, error: fetchErr } = await db
+    .from('entity_timeline_event')
+    .select('event_type')
+    .eq('entity_id', entityId)
+    .is('deleted_at', null)
+    .in('event_type', [...STANDARD_DATE_TYPES])
+  if (fetchErr) throw fetchErr
+
+  const existingTypes = new Set((existing ?? []).map((r: { event_type: string }) => r.event_type))
+
+  // Determine which standard types are missing
+  const missing = STANDARD_DATE_TYPES.filter(t => !existingTypes.has(t))
+  if (missing.length === 0) return
+
+  // Insert placeholder rows
+  const rows = missing.map((eventType, idx) => ({
+    entity_id: entityId,
+    title: STANDARD_DATE_LABELS[eventType as StandardDateType],
+    event_type: eventType,
+    event_date: null,
+    status: 'upcoming',
+    badge_color: 'blue',
+    is_highlighted: false,
+    is_featured: false,
+    visibility: 'public',
+    display_order: idx,
+  }))
+
+  const { error: insertErr } = await db
+    .from('entity_timeline_event')
+    .insert(rows)
+  if (insertErr) throw insertErr
+}
+
 // ── List ──────────────────────────────────────────────────────────────────────
 
 export async function listTimeline(entityId: string): Promise<TimelineEvent[]> {

@@ -5,9 +5,11 @@
  * appropriate UI state, and passes callbacks down to cards.
  * No business logic, no direct Supabase access.
  */
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Plus, RefreshCw } from 'lucide-react'
 import { useTimelineTab } from '@/hooks/useTimelineTab'
+import { ensureStandardDates } from '@/services/entity/timelineService'
+import { STANDARD_DATE_TYPES } from '@/types/entity'
 import { DraggableList } from '@/components/shared/DraggableList'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { TimelineEventCard } from '@/components/entity-editor/timeline/TimelineEventCard'
@@ -36,6 +38,18 @@ export function TimelineTab({ entityId }: { entityId: string }) {
     updateEvent, deleteEvent, duplicateEvent, reorder,
     pendingDeleteId, confirmDelete, cancelDelete,
   } = useTimelineTab(entityId)
+
+  // Ensure standard date rows exist on mount (Req 1.2)
+  useEffect(() => {
+    if (entityId) {
+      ensureStandardDates(entityId).catch(() => {
+        // Non-fatal: if ensure fails, the tab still works with existing rows
+      })
+    }
+  }, [entityId])
+
+  // Determine which events are standard (non-deletable)
+  const standardSet = new Set<string>(STANDARD_DATE_TYPES)
 
   // ── Loading ───────────────────────────────────────────────────────────────
   if (isLoading) return <div className="p-6"><TimelineSkeleton /></div>
