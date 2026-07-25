@@ -22,6 +22,8 @@ vi.mock('@/services/entity/timelineService', () => ({
   updateTimelineEvent:     vi.fn(),
   softDeleteTimelineEvent: vi.fn(),
   reorderTimeline:         vi.fn(),
+  // TimelineTab calls this on mount to seed standard date rows (fire-and-forget).
+  ensureStandardDates:     vi.fn().mockResolvedValue(undefined),
 }))
 
 // ── Mock sonner ──────────────────────────────────────────────────────────────

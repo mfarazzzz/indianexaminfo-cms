@@ -4,11 +4,10 @@ import {
   LayoutDashboard, FileText, BookOpen, Users, Tag, Link2,
   FileCode, Image, BarChart2, Megaphone, Palette, MapPin,
   TrendingUp, Settings, ClipboardList, LogOut, ExternalLink,
-  ChevronRight, X,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
-import { useAnyPermission } from "@/hooks/usePermission";
 import { P } from "@/config/permissions";
 import { SITE } from "@/config/site";
 import { useMobileNav } from "@/contexts/MobileNavContext";

@@ -14,6 +14,7 @@ import userEvent from '@testing-library/user-event'
 import React from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { EditorUIProvider } from '@/contexts/EditorUIContext'
+import { TimelineDatesProvider } from '@/contexts/TimelineDatesContext'
 import { GeneralTab } from './GeneralTab'
 import * as entityService from '@/services/entity/entityService'
 import type { Entity } from '@/types/entity'
@@ -23,6 +24,16 @@ import type { Entity } from '@/types/entity'
 vi.mock('@/services/entity/entityService')
 vi.mock('@/services/categoryService', () => ({
   getCategories: vi.fn().mockResolvedValue([]),
+}))
+
+// GeneralTab renders ReadOnlyDateChips, which read from TimelineDatesProvider.
+// The provider queries timeline + vacancy, so both services are stubbed.
+vi.mock('@/services/entity/timelineService', () => ({
+  listTimeline: vi.fn().mockResolvedValue([]),
+}))
+
+vi.mock('@/services/entity/vacancyService', () => ({
+  listVacancies: vi.fn().mockResolvedValue([]),
 }))
 
 const mockedGetEntityById = vi.mocked(entityService.getEntityById)
@@ -66,7 +77,9 @@ function renderGeneralTab(entityId = 'entity-1') {
     ...render(
       <QueryClientProvider client={qc}>
         <EditorUIProvider defaultTab="general">
-          <GeneralTab entityId={entityId} />
+          <TimelineDatesProvider entityId={entityId}>
+            <GeneralTab entityId={entityId} />
+          </TimelineDatesProvider>
         </EditorUIProvider>
       </QueryClientProvider>
     ),

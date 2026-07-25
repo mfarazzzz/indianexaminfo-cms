@@ -42,6 +42,13 @@ import {
 import { cn, slugify , getErrorMessage } from "@/lib/utils";
 import { AIAutoFillDialog, AIAutoFillButton } from "@/components/shared/AIAutoFillDialog";
 import { autoFillExam } from "@/lib/ai/autofill";
+import { ExamDateChip } from "@/components/exams/ExamDateChip";
+import {
+  EXAM_STANDARD_DATE_TYPES, EXAM_STANDARD_DATE_LABELS,
+  standardTypeForKey, usedStandardTypes, buildSeedDates,
+  prepareDatesForSave, defaultLabelForType, isDefaultStandardLabel,
+  type ExamDateEntry,
+} from "@/lib/exams/standardDates";
 import type { ExamEntity, Pillar, ContentType } from "@/types/exam";
 
 // ── Schema ──────────────────────────────────────────────────────────────────
@@ -71,7 +78,14 @@ const examSchema = z.object({
   hasNotification: z.boolean().default(false),
   hasCutoff: z.boolean().default(false),
   // Structured JSONB
-  dates: z.array(z.object({ label: z.string(), date: z.string(), isUrgent: z.boolean() })).default([]),
+  // CANONICAL date store → exams.important_dates. `type` is additive: the public
+  // frontend reads only label/date, so existing rows stay valid. (Track 2, Option B)
+  dates: z.array(z.object({
+    label: z.string(),
+    date: z.string(),
+    isUrgent: z.boolean(),
+    type: z.string().optional(),
+  })).default([]),
   eligibility: z.object({ age: z.string().default(""), qualification: z.string().default(""), nationality: z.string().default("") }).optional(),
   vacancy: z.number().nullable().optional(),
   applicationFee: z.object({ general: z.number().default(0), obc: z.number().default(0), sc: z.number().default(0), st: z.number().default(0), ews: z.number().optional(), pwd: z.number().optional() }).optional(),
@@ -89,6 +103,13 @@ const examSchema = z.object({
 });
 
 type ExamFormData = z.infer<typeof examSchema>;
+
+/**
+ * Lets a read-only date chip anywhere in the tab tree jump to the one editable
+ * surface (Dates & Fees → Important Dates) without prop-threading through every
+ * tab and field renderer.
+ */
+const DatesNavContext = React.createContext<(() => void) | undefined>(undefined);
 
 // ── Tab config ──────────────────────────────────────────────────────────────
 
@@ -130,6 +151,13 @@ export function ExamEditorPage() {
   const [moduleData, setModuleData] = useState<Record<string, any>>({});
   const [moduleSaving, setModuleSaving] = useState<string | null>(null);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  // Read-only date chips on other tabs link here — the one editable date surface.
+  const goToImportantDates = useCallback(() => {
+    setActiveTab("dates");
+    requestAnimationFrame(() => {
+      document.getElementById("important-dates")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
 
   const form = useForm<ExamFormData>({
     resolver: zodResolver(examSchema),
@@ -140,7 +168,10 @@ export function ExamEditorPage() {
       hasAdmitCard: false, hasResult: false, hasAnswerKey: false, hasSyllabus: false,
       hasDateSheet: false, hasMockTest: false, hasPreviousPapers: false,
       hasStudyMaterial: false, hasApplication: false, hasNotification: false, hasCutoff: false,
-      dates: [], eligibility: { age: "", qualification: "", nationality: "" },
+      // New exams start with the eight standard date rows pre-typed and empty, so all
+      // future data is canonical by construction. Empty rows are stripped on save.
+      // Existing exams are NOT reseeded — their rows load untouched. (Track 2, Option B)
+      dates: buildSeedDates(), eligibility: { age: "", qualification: "", nationality: "" },
       vacancy: null, applicationFee: { general: 0, obc: 0, sc: 0, st: 0 },
       selectionProcess: [], syllabusHighlights: [],
       academicYear: null, semester: null, admissionTo: null,
@@ -261,6 +292,7 @@ export function ExamEditorPage() {
       </div>
 
       {/* Tab content */}
+      <DatesNavContext.Provider value={goToImportantDates}>
       <div className="bg-white rounded-b-lg rounded-tr-lg border border-slate-200 p-6">
         {activeTab === "general" && <GeneralTab form={form} pillars={pillars} categories={categories} subcategories={subcategories} watchedCategoryId={watchedCategoryId} entityProfile={entityProfile} onNameBlur={handleNameBlur} />}
         {activeTab === "dates" && <DatesTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} entityProfile={entityProfile} entityType={watchedEntityType} />}
@@ -268,6 +300,7 @@ export function ExamEditorPage() {
         {activeTab === "modules" && <ModulesTab form={form} examId={id ?? ""} examName={form.watch("name")} pillar={watchedPillar} entityType={watchedEntityType} moduleData={moduleData} setModuleData={setModuleData} moduleSaving={moduleSaving} setModuleSaving={setModuleSaving} isNew={isNew} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
       </div>
+      </DatesNavContext.Provider>
 
       {/* AI Auto-Fill Dialog */}
       <AIAutoFillDialog
@@ -404,7 +437,7 @@ export function ExamEditorPage() {
 }
 
 function buildUpdatePayload(data: ExamFormData) {
-  return { hasAdmitCard: data.hasAdmitCard, hasResult: data.hasResult, hasAnswerKey: data.hasAnswerKey, hasSyllabus: data.hasSyllabus, hasDateSheet: data.hasDateSheet, hasMockTest: data.hasMockTest, hasPreviousPapers: data.hasPreviousPapers, hasStudyMaterial: data.hasStudyMaterial, hasApplication: data.hasApplication, hasNotification: data.hasNotification, hasCutoff: data.hasCutoff, dates: data.dates, eligibility: data.eligibility, vacancy: data.vacancy, applicationFee: data.applicationFee, selectionProcess: data.selectionProcess, syllabusHighlights: data.syllabusHighlights, academicYear: data.academicYear, semester: data.semester, admissionTo: data.admissionTo, tags: data.tags, searchKeywords: data.searchKeywords, seoTitle: data.seoTitle, seoDescription: data.seoDescription, faqs: data.faqs };
+  return { hasAdmitCard: data.hasAdmitCard, hasResult: data.hasResult, hasAnswerKey: data.hasAnswerKey, hasSyllabus: data.hasSyllabus, hasDateSheet: data.hasDateSheet, hasMockTest: data.hasMockTest, hasPreviousPapers: data.hasPreviousPapers, hasStudyMaterial: data.hasStudyMaterial, hasApplication: data.hasApplication, hasNotification: data.hasNotification, hasCutoff: data.hasCutoff, dates: prepareDatesForSave(data.dates as ExamDateEntry[]), eligibility: data.eligibility, vacancy: data.vacancy, applicationFee: data.applicationFee, selectionProcess: data.selectionProcess, syllabusHighlights: data.syllabusHighlights, academicYear: data.academicYear, semester: data.semester, admissionTo: data.admissionTo, tags: data.tags, searchKeywords: data.searchKeywords, seoTitle: data.seoTitle, seoDescription: data.seoDescription, faqs: data.faqs };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -425,6 +458,22 @@ function RegistryFieldInput({ field, form, prefix }: { field: FieldDef; form: an
   const value = form.watch(path) ?? "";
   const set = (v: unknown) => form.setValue(path, v);
   const cls = "w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+
+  // Single source of truth: a standard date is never independently editable.
+  // These inputs also wrote to `typeFields.*`, which buildUpdatePayload drops —
+  // so anything typed here was silently discarded on save. (Track 2, Option B)
+  const goToImportantDates = React.useContext(DatesNavContext);
+  const standardType = standardTypeForKey(field.key);
+  if (standardType) {
+    return (
+      <ExamDateChip
+        type={standardType}
+        label={field.label}
+        dates={form.watch("dates") as ExamDateEntry[] | undefined}
+        onEdit={goToImportantDates}
+      />
+    );
+  }
 
   switch (field.type) {
     case "text": case "url":
@@ -513,22 +562,59 @@ function DatesTab({ form, dateFields, appendDate, removeDate, entityProfile, ent
           {showAdvanced && <div className="mt-3"><RegistryFieldRenderer fields={advancedDates} form={form} /></div>}
         </section>
       )}
-      {/* Important Dates timeline */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-slate-800">Important Dates (Frontend Timeline)</h3>
-          <button type="button" onClick={() => appendDate({ label: "", date: "", isUrgent: false })} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"><Plus size={14} /> Add Date</button>
+      {/* Important Dates — THE canonical, editable date surface (exams.important_dates) */}
+      <section id="important-dates">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-sm font-semibold text-slate-800">Important Dates</h3>
+          <button type="button" onClick={() => appendDate({ label: "", date: "", isUrgent: false, type: "custom" })} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"><Plus size={14} /> Add Date</button>
         </div>
+        <p className="text-xs text-slate-500 mb-3">
+          The single editable source for every date on this exam. Standard dates set here appear
+          read-only on the other tabs and in Content Modules, and drive the frontend timeline.
+        </p>
         {dateFields.length === 0 && <p className="text-sm text-slate-400 italic">No dates added. These appear as a timeline on the frontend exam page.</p>}
         <div className="space-y-2">
-          {dateFields.map((field, i) => (
-            <div key={field.id} className="grid grid-cols-[1fr_150px_auto_auto] gap-2 items-center">
-              <input {...form.register(`dates.${i}.label`)} placeholder="e.g. Application Start" className="rounded-md border border-slate-200 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none" />
-              <input type="date" {...form.register(`dates.${i}.date`)} className="rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none" />
-              <label className="flex items-center gap-1 text-xs text-slate-600 whitespace-nowrap"><input type="checkbox" {...form.register(`dates.${i}.isUrgent`)} className="rounded border-slate-300" />Urgent</label>
-              <button type="button" onClick={() => removeDate(i)} className="p-1 text-slate-400 hover:text-red-500"><Trash2 size={14} /></button>
-            </div>
-          ))}
+          {dateFields.map((field, i) => {
+            const rows = (form.watch("dates") ?? []) as ExamDateEntry[];
+            const currentType = rows[i]?.type ?? "custom";
+            const taken = usedStandardTypes(rows);
+            return (
+              <div key={field.id} className="grid grid-cols-[190px_1fr_150px_auto_auto] gap-2 items-center">
+                <select
+                  {...form.register(`dates.${i}.type`, {
+                    onChange: (e: React.ChangeEvent<HTMLSelectElement>) => {
+                      // Keep the label in step with the type unless the editor wrote
+                      // their own wording. The frontend renders `label` verbatim, so a
+                      // typed row must never publish with a blank event name.
+                      const next = e.target.value;
+                      const current = form.getValues(`dates.${i}.label`) as string | undefined;
+                      if (isDefaultStandardLabel(current)) {
+                        form.setValue(`dates.${i}.label`, defaultLabelForType(next), { shouldDirty: true });
+                      }
+                    },
+                  })}
+                  className="rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                  aria-label="Date type"
+                >
+                  <option value="custom">Custom (free text)</option>
+                  {EXAM_STANDARD_DATE_TYPES.map((t) => (
+                    // A standard type may only be claimed by one row.
+                    <option key={t} value={t} disabled={t !== currentType && taken.has(t)}>
+                      {EXAM_STANDARD_DATE_LABELS[t]}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  {...form.register(`dates.${i}.label`)}
+                  placeholder={currentType === "custom" ? "e.g. Interview Round 2" : EXAM_STANDARD_DATE_LABELS[currentType as keyof typeof EXAM_STANDARD_DATE_LABELS]}
+                  className="rounded-md border border-slate-200 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                />
+                <input type="date" {...form.register(`dates.${i}.date`)} className="rounded-md border border-slate-200 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none" />
+                <label className="flex items-center gap-1 text-xs text-slate-600 whitespace-nowrap"><input type="checkbox" {...form.register(`dates.${i}.isUrgent`)} className="rounded border-slate-300" />Urgent</label>
+                <button type="button" onClick={() => removeDate(i)} className="p-1 text-slate-400 hover:text-red-500" aria-label="Remove date"><Trash2 size={14} /></button>
+              </div>
+            );
+          })}
         </div>
       </section>
       {/* Vacancy & Fee */}
@@ -686,7 +772,7 @@ function ModulesTab({ form, examId, examName, pillar, entityType, moduleData, se
                   </div>
                   {isExpanded && (
                     <div className="border-t border-slate-200 bg-white px-4 py-4">
-                      <ModuleEditor moduleId={mod.id} entityType={entityType} existingData={moduleData[mod.id]?.contentTypeData ?? {}} onSave={(data) => saveModule(mod.id, data)} isSaving={moduleSaving === mod.id} disabled={isNew} />
+                      <ModuleEditor moduleId={mod.id} entityType={entityType} existingData={moduleData[mod.id]?.contentTypeData ?? {}} onSave={(data) => saveModule(mod.id, data)} isSaving={moduleSaving === mod.id} disabled={isNew} examDates={(form.watch("dates") ?? []) as ExamDateEntry[]} />
                     </div>
                   )}
                 </div>
@@ -701,7 +787,8 @@ function ModulesTab({ form, examId, examName, pillar, entityType, moduleData, se
 
 // ── Module Editor — renders from MODULE_REGISTRY with progressive disclosure ─
 
-function ModuleEditor({ moduleId, entityType, existingData, onSave, isSaving, disabled }: { moduleId: string; entityType: string; existingData: Record<string, unknown>; onSave: (data: Record<string, unknown>) => void; isSaving: boolean; disabled: boolean }) {
+function ModuleEditor({ moduleId, entityType, existingData, onSave, isSaving, disabled, examDates }: { moduleId: string; entityType: string; existingData: Record<string, unknown>; onSave: (data: Record<string, unknown>) => void; isSaving: boolean; disabled: boolean; examDates: ExamDateEntry[] }) {
+  const goToImportantDates = React.useContext(DatesNavContext);
   const [formData, setFormData] = useState<Record<string, unknown>>(existingData);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const essentialFields = useMemo(() => getEssentialFields(moduleId, entityType), [moduleId, entityType]);
@@ -714,6 +801,23 @@ function ModuleEditor({ moduleId, entityType, existingData, onSave, isSaving, di
 
   const renderField = (field: FieldDef) => {
     const value = formData[field.key] ?? "";
+
+    // Single source of truth: standard dates are read-only inside modules.
+    // Any pre-existing value already in content_type_data is left untouched as inert
+    // historical data — it is simply no longer editable here. (Track 2, Option B)
+    const standardType = standardTypeForKey(field.key);
+    if (standardType) {
+      return (
+        <ExamDateChip
+          key={field.key}
+          type={standardType}
+          label={field.label}
+          dates={examDates}
+          onEdit={goToImportantDates}
+        />
+      );
+    }
+
     switch (field.type) {
       case "text": case "url":
         return <div key={field.key}><label className="block text-sm font-medium text-slate-700 mb-1">{field.label}{field.required && <span className="text-red-400 ml-0.5">*</span>}</label><input type={field.type === "url" ? "url" : "text"} value={value as string} onChange={(e) => updateField(field.key, e.target.value)} placeholder={field.placeholder} className={cls} disabled={disabled} />{field.hint && <p className="text-xs text-slate-400 mt-0.5">{field.hint}</p>}</div>;

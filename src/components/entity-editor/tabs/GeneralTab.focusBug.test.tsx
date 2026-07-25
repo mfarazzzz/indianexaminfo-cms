@@ -31,6 +31,7 @@ import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { EditorUIProvider } from '@/contexts/EditorUIContext'
+import { TimelineDatesProvider } from '@/contexts/TimelineDatesContext'
 import { entityKeys } from '@/lib/queryKeys'
 
 // ── Service mocks ─────────────────────────────────────────────────────────────
@@ -43,6 +44,16 @@ vi.mock('@/services/entity/entityService', () => ({
 
 vi.mock('@/services/categoryService', () => ({
   getCategories: vi.fn().mockResolvedValue([]),
+}))
+
+// GeneralTab renders ReadOnlyDateChips, which read from TimelineDatesProvider.
+// The provider queries timeline + vacancy, so both services are stubbed.
+vi.mock('@/services/entity/timelineService', () => ({
+  listTimeline: vi.fn().mockResolvedValue([]),
+}))
+
+vi.mock('@/services/entity/vacancyService', () => ({
+  listVacancies: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock('sonner', () => ({
@@ -115,12 +126,18 @@ function createSeededQc(entity = makeEntity()) {
   return qc
 }
 
-/** Renders GeneralTab with all required providers. */
+/**
+ * Renders GeneralTab with all required providers.
+ * TimelineDatesProvider mirrors EntityEditorShell, which wraps every tab —
+ * GeneralTab's ReadOnlyDateChips require it.
+ */
 function renderGeneralTab(entityId: string, qc: QueryClient) {
   return render(
     <QueryClientProvider client={qc}>
       <EditorUIProvider defaultTab="general">
-        <GeneralTab entityId={entityId} />
+        <TimelineDatesProvider entityId={entityId}>
+          <GeneralTab entityId={entityId} />
+        </TimelineDatesProvider>
       </EditorUIProvider>
     </QueryClientProvider>
   )

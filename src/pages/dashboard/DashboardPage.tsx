@@ -37,7 +37,16 @@ export function DashboardPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [examsRes, contentRes, blogRes, catRes, reviewRes, sarkariExamRes, sarkariBhartiRes, eduNewsRes] = await Promise.all([
+        // Start of the current day, used for the "published today" tile.
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const startOfTodayIso = startOfToday.toISOString();
+
+        const [
+          examsRes, contentRes, blogRes, catRes, reviewRes,
+          sarkariExamRes, sarkariBhartiRes, eduNewsRes,
+          publishedContentTodayRes, publishedBlogTodayRes, publishedSarkariTodayRes,
+        ] = await Promise.all([
           db.from("exams").select("id", { count: "exact", head: true }),
           db.from("content_posts").select("id", { count: "exact", head: true }),
           db.from("blog_posts").select("id", { count: "exact", head: true }),
@@ -46,6 +55,9 @@ export function DashboardPage() {
           db.from("sarkari_naukri").select("id", { count: "exact", head: true }).eq("recruitment_type", "exam"),
           db.from("sarkari_naukri").select("id", { count: "exact", head: true }).eq("recruitment_type", "direct"),
           db.from("cms_education_news").select("id", { count: "exact", head: true }),
+          db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "published").gte("published_at", startOfTodayIso),
+          db.from("blog_posts").select("id", { count: "exact", head: true }).eq("status", "published").gte("published_at", startOfTodayIso),
+          db.from("sarkari_naukri").select("id", { count: "exact", head: true }).eq("workflow_status", "published").gte("published_at", startOfTodayIso),
         ]);
 
         setStats({
@@ -57,7 +69,10 @@ export function DashboardPage() {
           sarkariBharti: sarkariBhartiRes.count ?? 0,
           totalEduNews: eduNewsRes.count ?? 0,
           pendingReview: reviewRes.count ?? 0,
-          publishedToday: 0,
+          publishedToday:
+            (publishedContentTodayRes.count ?? 0) +
+            (publishedBlogTodayRes.count ?? 0) +
+            (publishedSarkariTodayRes.count ?? 0),
         });
 
         // Recent activity
@@ -65,7 +80,7 @@ export function DashboardPage() {
           db.from("exams").select("id, name, status, updated_at").order("updated_at", { ascending: false }).limit(3),
           db.from("content_posts").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
           db.from("blog_posts").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
-          db.from("sarkari_naukri").select("id, title, recruitment_type, status, updated_at").order("updated_at", { ascending: false }).limit(4),
+          db.from("sarkari_naukri").select("id, title, recruitment_type, workflow_status, updated_at").order("updated_at", { ascending: false }).limit(4),
           db.from("cms_education_news").select("id, title, status, updated_at").order("updated_at", { ascending: false }).limit(3),
         ]);
 
@@ -91,11 +106,15 @@ export function DashboardPage() {
             status: r.status,
             updatedAt: r.updated_at,
           })),
-          ...(recentSarkari.data ?? []).map((r: { id: string; title: string; recruitment_type: string; status: string; updated_at: string }) => ({
+          // sarkari_naukri has two status columns: `status` is the lifecycle
+          // stage (application-open, result-declared…) and `workflow_status` is
+          // the editorial state. Every other row in this feed shows the
+          // editorial state, so use workflow_status here too.
+          ...(recentSarkari.data ?? []).map((r: { id: string; title: string; recruitment_type: string; workflow_status: string; updated_at: string }) => ({
             id: r.id,
             title: r.title,
             type: r.recruitment_type === "exam" ? "sarkari-exam" as const : "sarkari-bharti" as const,
-            status: r.status,
+            status: r.workflow_status,
             updatedAt: r.updated_at,
           })),
           ...(recentNews.data ?? []).map((r: { id: string; title: string; status: string; updated_at: string }) => ({

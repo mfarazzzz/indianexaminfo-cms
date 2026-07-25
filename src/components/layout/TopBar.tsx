@@ -114,8 +114,11 @@ export function TopBar({ title, breadcrumb }: TopBarProps) {
                 <p className="text-xs text-slate-500">{user?.email}</p>
               </div>
               <DropdownMenu.Separator className="my-1 h-px bg-slate-100" />
+              {/* No /profile route exists; profile fields are edited from
+                  User Management. Linking there instead of bouncing to
+                  /dashboard via the catch-all. */}
               <DropdownMenu.Item
-                onSelect={() => navigate("/profile")}
+                onSelect={() => navigate("/users")}
                 className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 outline-none"
               >
                 <User size={14} /> My Profile

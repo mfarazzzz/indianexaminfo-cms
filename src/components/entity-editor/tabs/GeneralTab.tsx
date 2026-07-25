@@ -18,7 +18,9 @@ import { usePillarContext } from '@/contexts/PillarContext'
 import { buildUrlPreview } from '@/lib/utils'
 import { ConductingBodySelect } from '@/components/shared/ConductingBodySelect'
 import { TaxonomyTooltip } from '@/components/shared/TaxonomyTooltip'
+import { ReadOnlyDateChip } from '@/components/shared/ReadOnlyDateChip'
 import { DuplicateWarningBanner } from '@/components/entity-editor/DuplicateWarningBanner'
+import { STANDARD_DATE_TYPES } from '@/types/entity'
 import {
   FormField as Field, FieldGroup, SectionHeader, inputCls,
 } from '@/components/shared/form/FormField'
@@ -328,6 +330,29 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
           </Field>
         </div>
       </section>
+
+      {/* ── Key Dates (read-only — single source of truth is the Timeline tab) ── */}
+      {/*
+        Task 11.3: standard dates are displayed here as non-editable chips.
+        GeneralTab intentionally contains NO editable input for any value in
+        STANDARD_DATE_TYPES — the Timeline tab is the only editable surface.
+        Chips read from TimelineDatesContext, so a Timeline save updates them
+        on the next cache refetch without a page reload. (Reqs 1.4, 3.4)
+      */}
+      {!isNew && (
+        <section className="space-y-4">
+          <SectionHeader title="Key Dates" />
+          <p className="text-xs text-slate-500">
+            These dates are read-only here. The Timeline tab is the single editable source
+            for every standard date.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {STANDARD_DATE_TYPES.map((eventType) => (
+              <ReadOnlyDateChip key={eventType} eventType={eventType} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── Visibility ── */}
       <section className="space-y-4">
