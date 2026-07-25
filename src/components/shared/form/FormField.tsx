@@ -10,7 +10,7 @@ import React from 'react'
 import { cn } from '@/lib/utils'
 
 interface FormFieldProps {
-  label: string
+  label: React.ReactNode
   /** Marks field as required with a red asterisk */
   required?: boolean
   /** Inline error message shown below the field */
