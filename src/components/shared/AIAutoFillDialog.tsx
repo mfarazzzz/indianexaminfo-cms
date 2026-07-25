@@ -30,18 +30,34 @@ export function AIAutoFillDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Detect if current text looks like JSON for UI hints
+  const textIsJson = (() => {
+    const t = text.trim();
+    return t.startsWith("{") || /```(?:json)?\s*\{/.test(t);
+  })();
+
   if (!open) return null;
 
   const handleExtract = async () => {
     if (!text.trim()) return;
     
-    // Set the API key from settings context before calling extract
-    const apiKey = getSetting("gemini_api_key", "") as string;
-    if (!apiKey) {
-      setError("Gemini API key not configured. Go to Settings → AI and enter your key.");
-      return;
+    // Check if the text is valid JSON — if so, no API key needed
+    const trimmed = text.trim();
+    const looksLikeJson = trimmed.startsWith("{") || /```(?:json)?\s*\{/.test(trimmed);
+    
+    // Only require API key if text is NOT JSON (needs AI processing)
+    if (!looksLikeJson) {
+      const apiKey = getSetting("gemini_api_key", "") as string;
+      if (!apiKey) {
+        setError("Gemini API key required for raw text extraction. Go to Settings → AI to add your key, or paste JSON directly (no key needed).");
+        return;
+      }
+      setAutofillApiKey(apiKey);
+    } else {
+      // Still set key in case tryDirectParse fails and it falls through to AI
+      const apiKey = getSetting("gemini_api_key", "") as string;
+      if (apiKey) setAutofillApiKey(apiKey);
     }
-    setAutofillApiKey(apiKey);
     
     setLoading(true);
     setError(null);
@@ -49,14 +65,14 @@ export function AIAutoFillDialog({
       const result = await extractFn(text);
       const parsed = result as Record<string, unknown>;
       if (!parsed || Object.keys(parsed).length === 0) {
-        setError("AI returned empty data. Check browser console for details. Try pasting more detailed content.");
+        setError("No data could be extracted. If pasting JSON, make sure it starts with { and is valid. For raw text, provide more details.");
         return;
       }
       onResult(parsed);
       onClose();
       setText("");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "AI extraction failed. Try again.";
+      const msg = err instanceof Error ? err.message : "Extraction failed. Try again.";
       setError(msg);
       console.error("[AI AutoFill] Error:", err);
     } finally {
@@ -88,7 +104,7 @@ export function AIAutoFillDialog({
             </div>
             <div>
               <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-              <p className="text-xs text-slate-500">Paste raw content — AI fills all fields automatically</p>
+              <p className="text-xs text-slate-500">Paste JSON or raw text — fills all fields automatically</p>
             </div>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
@@ -116,8 +132,9 @@ export function AIAutoFillDialog({
             disabled={loading}
           />
           <p className="text-xs text-slate-400">
-            Tip: Copy the entire notification text, exam details page, or official PDF content.
-            The more information you provide, the better the auto-fill.
+            <strong>JSON:</strong> Paste structured JSON (from ChatGPT/Claude/Perplexity) — fills instantly, no API key needed.
+            <br />
+            <strong>Raw text:</strong> Paste notification text, PDF content, or exam details — AI extracts fields (requires API key in Settings → AI).
           </p>
           {error && (
             <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
@@ -147,12 +164,12 @@ export function AIAutoFillDialog({
             {loading ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
-                Extracting with AI...
+                {textIsJson ? "Filling from JSON..." : "Extracting with AI..."}
               </>
             ) : (
               <>
                 <Sparkles size={14} />
-                Auto-Fill All Fields
+                {textIsJson ? "Fill from JSON" : "Auto-Fill with AI"}
               </>
             )}
           </button>
