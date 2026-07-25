@@ -108,7 +108,7 @@ export function ConductingBodySelect({ value, onChange, disabled }: ConductingBo
             />
           </div>
 
-          {/* Options */}
+          {/* Options — grouped by hierarchy: parents first, children indented */}
           <div className="max-h-48 overflow-y-auto p-1">
             {/* Clear option */}
             {value && (
@@ -121,7 +121,46 @@ export function ConductingBodySelect({ value, onChange, disabled }: ConductingBo
               </button>
             )}
 
-            {filtered.map(body => (
+            {/* Parents (no parent_id) — fully selectable as conducting bodies */}
+            {filtered.filter(b => !b.parentId).map(parent => (
+              <React.Fragment key={parent.id}>
+                <button
+                  type="button"
+                  onClick={() => { onChange(parent.id); setIsOpen(false); setSearch('') }}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-blue-50',
+                    value === parent.id && 'text-blue-700 bg-blue-50'
+                  )}
+                >
+                  <span className="flex-1 font-medium">
+                    {parent.shortName && <span>{parent.shortName} — </span>}
+                    {parent.name}
+                  </span>
+                  {value === parent.id && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                </button>
+                {/* Children of this parent — indented, equally selectable */}
+                {filtered.filter(c => c.parentId === parent.id).map(child => (
+                  <button
+                    key={child.id}
+                    type="button"
+                    onClick={() => { onChange(child.id); setIsOpen(false); setSearch('') }}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded pl-7 pr-3 py-1.5 text-left text-sm hover:bg-blue-50',
+                      value === child.id && 'text-blue-700 bg-blue-50'
+                    )}
+                  >
+                    <span className="flex-1 text-slate-600">
+                      {child.shortName && <span className="font-medium">{child.shortName} — </span>}
+                      {child.name}
+                    </span>
+                    {value === child.id && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                  </button>
+                ))}
+              </React.Fragment>
+            ))}
+
+            {/* Orphan children (parentId set but parent not in filtered list — show flat) */}
+            {filtered.filter(b => b.parentId && !filtered.some(p => p.id === b.parentId && !p.parentId)).map(body => (
               <button
                 key={body.id}
                 type="button"

@@ -340,7 +340,8 @@ This plan implements the exam-data-deduplication feature in sequential, buildabl
     - **This task blocks live execution — do not proceed to 13.8 until review is complete**
     - _Requirements: 14.5, 14.8_
 
-  - [ ] 13.8 Live migration execution (human-gated)
+  - [ ] 13.8 Live migration execution (human-gated) — DEFERRED
+    - **DEFERRED**: Will run as part of the legacy-exam-migration spec once 127 legacy exams are in the `entity` table and conducting_body alias decisions are made against real data at scale. Running now would only affect 3 entities with no meaningful value.
     - Execute all migration scripts (13.2–13.6) in live mode (p_dry_run = false), in order: 13.2 → 13.3 → 13.4 → 13.5 → 13.6
     - After completion: make `entity.conducting_body_id` NOT NULL (Requirement 15.5)
     - Verify final state by re-running dry-run (should report zero conflicts)

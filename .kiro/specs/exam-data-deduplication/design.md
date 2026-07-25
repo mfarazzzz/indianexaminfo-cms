@@ -498,7 +498,16 @@ Stored in existing `settings` table:
 
 ## Security & RLS
 
-- `conducting_body`: readable by all authenticated users, writable by admin/editor
+- `conducting_body`: readable by all authenticated users, writable by admin/editor. Supports parent/child hierarchy via `parent_id` self-reference. **Both parent rows and child rows are first-class conducting bodies** — fully selectable as `entity.conducting_body_id`. Parent rows are not grouping-only labels; they represent the umbrella institution in its coordinating capacity (e.g., AIIMS running CRE, IIM running CAT).
+
+### Conducting Body Hierarchy Rule (generalized)
+
+The following decision rule applies uniformly to all conducting bodies during migration and future data entry:
+
+> If a conducting body text value names a specific campus, branch, region, or district office of a larger institution, create it as a **child** of that institution's parent row. If the text value names the institution generically (no campus/branch qualifier), it maps to the **parent** row. The parent row is always usable as a `conducting_body_id` on an entity.
+
+This pattern applies to: AIIMS campuses, IIM campuses, SSC regions, state PSC district offices, NTA sub-centers, ICAI chapters, and any future umbrella-shaped organization — no per-org special-casing in code.
+
 - `entity_migration_log`: readable by admin only
 - Postgres functions use `STABLE` volatility (no SECURITY DEFINER needed)
 - All service calls go through Supabase client with user JWT — RLS applies automatically

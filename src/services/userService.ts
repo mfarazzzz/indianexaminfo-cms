@@ -8,14 +8,12 @@ export async function getUserProfiles(): Promise<UserProfile[]> {
     .order("created_at", { ascending: false });
   if (error) throw error;
 
-  // Fetch emails from auth.users for each profile id
+  // Fetch emails via admin-gated function (replaces former auth_user_emails view)
   const ids = (data ?? []).map((r: any) => r.id);
   const emailMap: Record<string, string> = {};
   if (ids.length > 0) {
-    const { data: authData } = await (db as any)
-      .from("auth_user_emails")
-      .select("id, email");
-    // If the view doesn't exist, fall back to empty map — non-fatal
+    const { data: authData } = await (db as any).rpc("get_auth_user_emails");
+    // Returns empty for non-admin users — non-fatal fallback
     if (authData) {
       for (const row of authData as any[]) emailMap[row.id] = row.email ?? "";
     }

@@ -484,13 +484,14 @@ export interface DateEntry {
   title: string
 }
 
-/** Conducting body lookup table record */
+/** Conducting body lookup table record (supports parent/child hierarchy) */
 export interface ConductingBody {
   id: string
   name: string
   shortName: string | null
   slug: string
   officialWebsite: string | null
+  parentId: string | null
   createdAt: string
   updatedAt: string
 }

@@ -12,6 +12,7 @@ function mapRow(row: Record<string, unknown>): ConductingBody {
     shortName: row.short_name as string | null,
     slug: row.slug as string,
     officialWebsite: row.official_website as string | null,
+    parentId: row.parent_id as string | null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }
@@ -22,6 +23,7 @@ export async function listConductingBodies(): Promise<ConductingBody[]> {
   const { data, error } = await db
     .from('conducting_body')
     .select('*')
+    .order('parent_id', { ascending: true, nullsFirst: true })
     .order('name', { ascending: true })
   if (error) throw error
   return (data ?? []).map(mapRow)
