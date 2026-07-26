@@ -53,7 +53,7 @@ function tryDirectParse(text: string): Record<string, unknown> | null {
 
 // ── Gemini API call (only for raw text, not JSON) ────────────────────────────
 
-async function callGemini(prompt: string): Promise<Record<string, unknown>> {
+async function callGemini(prompt: string, maxTokens = 8192): Promise<Record<string, unknown>> {
   const apiKey = getApiKey()
   const isGroq = apiKey.startsWith("gsk_");
   
@@ -69,7 +69,7 @@ async function callGemini(prompt: string): Promise<Record<string, unknown>> {
         model: "llama-3.3-70b-versatile",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.05,
-        max_tokens: 4096,
+        max_tokens: maxTokens,
         response_format: { type: "json_object" },
       }),
     });
@@ -103,7 +103,7 @@ async function callGemini(prompt: string): Promise<Record<string, unknown>> {
     },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.05, maxOutputTokens: 4096, responseMimeType: "application/json" },
+      generationConfig: { temperature: 0.05, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
     }),
   });
 
@@ -147,11 +147,105 @@ export async function autoFillExam(rawText: string): Promise<ExamAutoFillResult>
   const direct = tryDirectParse(rawText);
   if (direct) return direct;
 
-  // Otherwise call Gemini to extract from raw text
-  return callGemini(`Extract Indian exam/recruitment data from this text. Return JSON only.
-Rules: dates=YYYY-MM-DD. pillar:sarkari-naukri|entrance-exam|board-university. entityType:recruitment|exam|board|university. status:upcoming|active|registration-open|registration-closed|result-declared|completed|ongoing.
-Schema:{"name":"","shortName":"","slug":"","pillar":"","entityType":"","conductingBody":"","officialWebsite":"","status":"","vacancy":0,"eligibility":{"age":"","qualification":"","nationality":""},"applicationFee":{"general":0,"obc":0,"sc":0,"st":0,"ews":0,"pwd":0},"selectionProcess":[],"syllabusHighlights":[],"dates":[{"label":"","date":"","isUrgent":false}],"tags":[],"searchKeywords":[],"seoTitle":"","seoDescription":"","faqs":[{"question":"","answer":""}],"hasNotification":false,"hasApplication":false,"hasAdmitCard":false,"hasResult":false,"hasAnswerKey":false,"hasSyllabus":false,"hasCutoff":false,"hasDateSheet":false,"hasMockTest":false,"hasPreviousPapers":false,"hasStudyMaterial":false,"typeFields":{"examDuration":"","totalMarks":0,"totalQuestions":0,"negativeMarking":"","examMode":"","examMedium":"","numberOfAttempts":"","registrationOpen":"","registrationClose":"","examWindowStart":"","examWindowEnd":"","acceptedBy":"","department":"","postName":"","jobLocation":"","payScale":"","groupLevel":"","lastDateApply":"","feeLastDate":"","notificationDate":"","examDate":"","reservationPolicy":"","boardName":"","className":"","stream":"","examSession":"","universityName":"","programName":"","degreeType":"","courseDuration":"","admissionBasis":"","totalSeats":0}}
-Text: ${rawText}`);
+  // Otherwise call AI to extract from raw text with comprehensive prompt
+  return callGemini(`You are an expert at extracting structured data from Indian exam/recruitment notifications. Extract ALL possible information from the given text and return comprehensive JSON.
+
+CRITICAL RULES:
+1. Dates must be in YYYY-MM-DD format
+2. pillar MUST be one of: "sarkari-naukri" | "entrance-exam" | "board-university"
+3. entityType MUST be one of: "recruitment" | "exam" | "board" | "university"
+4. status MUST be one of: "upcoming" | "active" | "registration-open" | "registration-closed" | "result-declared" | "completed" | "ongoing"
+5. Generate EXACTLY 15 FAQs minimum — cover eligibility, dates, fees, process, documents, preparation tips, exam pattern, result, cutoff, admit card, etc.
+6. Set ALL boolean flags (hasNotification, hasApplication, etc.) to true if the exam logically has those resources
+7. Fill ALL type-specific fields based on the exam type (entrance exam fields for entrance exams, recruitment fields for jobs, etc.)
+8. officialWebsite MUST be a valid URL — infer from conducting body if not directly stated
+9. Fill selectionProcess with all stages (e.g. ["Written Exam", "Interview", "Document Verification"])
+10. Fill syllabusHighlights with key subjects/topics
+11. Fill tags with 8-12 relevant tags
+12. Fill searchKeywords with 10-15 keywords students would search for
+13. seoTitle must be under 60 chars, seoDescription under 160 chars — both must include exam name and year
+14. For entrance exams: fill examDuration, totalMarks, totalQuestions, negativeMarking, examMode, examMedium, numberOfAttempts, acceptedBy
+15. For recruitment: fill department, postName, jobLocation, payScale, groupLevel, lastDateApply, notificationDate, examDate
+16. dates array must include ALL key dates: notification, application start/end, admit card, exam date, result date — mark upcoming ones isUrgent:true
+
+COMPLETE JSON SCHEMA (fill every field possible):
+{
+  "name": "Full Exam Name with Year",
+  "shortName": "ABBREVIATION YEAR",
+  "slug": "exam-name-year",
+  "pillar": "entrance-exam|sarkari-naukri|board-university",
+  "categorySlug": "management|engineering|medical|law|banking|railways|defence|teaching|central-government-jobs|state-government-jobs|cbse|state-boards|university-exams|defence-entrance|design|agriculture|research-fellowships|university-entrance",
+  "entityType": "exam|recruitment|board|university",
+  "conductingBody": "Organization that conducts",
+  "officialWebsite": "https://...",
+  "status": "upcoming|active|registration-open|...",
+  "vacancy": 0,
+  "eligibility": {
+    "age": "Min-Max years as on date",
+    "qualification": "Education requirement",
+    "nationality": "Indian"
+  },
+  "applicationFee": {
+    "general": 0, "obc": 0, "sc": 0, "st": 0, "ews": 0, "pwd": 0
+  },
+  "selectionProcess": ["Stage 1", "Stage 2", "..."],
+  "syllabusHighlights": ["Subject 1", "Topic 2", "..."],
+  "dates": [
+    {"label": "Notification Date", "date": "YYYY-MM-DD", "isUrgent": false},
+    {"label": "Application Start", "date": "YYYY-MM-DD", "isUrgent": true},
+    {"label": "Application End", "date": "YYYY-MM-DD", "isUrgent": true},
+    {"label": "Admit Card Release", "date": "YYYY-MM-DD", "isUrgent": false},
+    {"label": "Exam Date", "date": "YYYY-MM-DD", "isUrgent": true},
+    {"label": "Result Date", "date": "YYYY-MM-DD", "isUrgent": false}
+  ],
+  "tags": ["tag1", "tag2", "...8-12 tags"],
+  "searchKeywords": ["keyword1", "keyword2", "...10-15 keywords"],
+  "seoTitle": "SEO title under 60 chars with exam name and year",
+  "seoDescription": "Meta description under 160 chars covering key info",
+  "faqs": [
+    {"question": "What is [exam]?", "answer": "Detailed answer..."},
+    {"question": "...", "answer": "..."}
+  ],
+  "hasNotification": true,
+  "hasApplication": true,
+  "hasAdmitCard": true,
+  "hasResult": true,
+  "hasAnswerKey": true,
+  "hasSyllabus": true,
+  "hasCutoff": true,
+  "hasDateSheet": false,
+  "hasMockTest": true,
+  "hasPreviousPapers": true,
+  "hasStudyMaterial": true,
+  "typeFields": {
+    "examDuration": "e.g. 3 hours",
+    "totalMarks": 0,
+    "totalQuestions": 0,
+    "negativeMarking": "e.g. -1/3 per wrong answer",
+    "examMode": "online|offline|hybrid",
+    "examMedium": "e.g. English, Hindi",
+    "numberOfAttempts": "e.g. No limit",
+    "registrationOpen": "YYYY-MM-DD",
+    "registrationClose": "YYYY-MM-DD",
+    "examWindowStart": "YYYY-MM-DD",
+    "examWindowEnd": "YYYY-MM-DD",
+    "acceptedBy": "Colleges/organizations that accept score",
+    "department": "For recruitment",
+    "postName": "For recruitment",
+    "jobLocation": "For recruitment",
+    "payScale": "For recruitment",
+    "groupLevel": "For recruitment: Group A/B/C",
+    "lastDateApply": "YYYY-MM-DD",
+    "feeLastDate": "YYYY-MM-DD",
+    "notificationDate": "YYYY-MM-DD",
+    "examDate": "YYYY-MM-DD"
+  }
+}
+
+IMPORTANT: Generate at least 15 detailed FAQs. Each FAQ answer must be 2-3 sentences minimum. Cover: what is the exam, eligibility, age limit, educational qualification, application fee, how to apply, exam pattern, syllabus, admit card, result, cutoff, selection process, important dates, preparation tips, documents required.
+
+Text to extract from:
+${rawText}`, 8192);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -164,10 +258,41 @@ export async function autoFillContentPost(rawText: string): Promise<ContentPostA
   const direct = tryDirectParse(rawText);
   if (direct) return direct;
 
-  return callGemini(`Extract content post data from Indian exam text. Return JSON only.
-Rules: dates=YYYY-MM-DD. contentType:notification|application|admit-card|date-sheet|syllabus|answer-key|result|cutoff|previous-papers|mock-test|study-material|books.
-Schema:{"title":"","slug":"","excerpt":"","content":"<p>HTML</p>","contentType":"","importantDates":[{"label":"","date":"","isUrgent":false}],"quickLinks":[{"label":"","url":"","isPDF":false,"isOfficial":true}],"tags":[],"seoTitle":"","seoDescription":"","faqs":[{"question":"","answer":""}],"contentTypeData":{}}
-Text: ${rawText}`);
+  return callGemini(`You are an expert at extracting content post data from Indian exam notifications. Return comprehensive JSON.
+
+RULES:
+1. dates=YYYY-MM-DD
+2. contentType MUST be one of: notification|application|admit-card|date-sheet|syllabus|answer-key|result|cutoff|previous-papers|mock-test|study-material|books
+3. Generate at least 15 detailed FAQs
+4. Content should be full HTML with paragraphs, headings, lists
+5. quickLinks should include official notification PDF, application link, and other relevant URLs
+6. Each FAQ answer must be 2-3 sentences minimum
+
+SCHEMA:
+{
+  "title": "Descriptive title with exam name and year",
+  "slug": "url-friendly-slug",
+  "excerpt": "2-3 sentence summary",
+  "content": "<h2>Overview</h2><p>...</p><h2>Key Details</h2><ul><li>...</li></ul>...",
+  "contentType": "notification|application|...",
+  "importantDates": [
+    {"label": "Date Name", "date": "YYYY-MM-DD", "isUrgent": true}
+  ],
+  "quickLinks": [
+    {"label": "Official Notification PDF", "url": "https://...", "isPDF": true, "isOfficial": true},
+    {"label": "Apply Online", "url": "https://...", "isPDF": false, "isOfficial": true}
+  ],
+  "tags": ["tag1", "tag2", "...8-12 tags"],
+  "seoTitle": "SEO title under 60 chars",
+  "seoDescription": "Meta description under 160 chars",
+  "faqs": [
+    {"question": "...", "answer": "Detailed 2-3 sentence answer"},
+    ...at least 15 FAQs
+  ],
+  "contentTypeData": {}
+}
+
+Text: ${rawText}`, 8192);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -180,8 +305,31 @@ export async function autoFillBlogPost(rawText: string): Promise<BlogAutoFillRes
   const direct = tryDirectParse(rawText);
   if (direct) return direct;
 
-  return callGemini(`Create blog post from this text for Indian education portal. Write 500+ word HTML. Return JSON only.
-Rules: section:education-news|exam-prep|career-guidance|scholarship|study-abroad|edtech|student-life|opinion. postType:news|article|guide|listicle|opinion.
-Schema:{"title":"","slug":"","excerpt":"","content":"<h2>...</h2><p>500+ words HTML</p>","section":"","postType":"","tags":[],"seoTitle":"","seoDescription":"","faqs":[{"question":"","answer":""}]}
-Text: ${rawText}`);
+  return callGemini(`Create a comprehensive blog post from this text for an Indian education portal. Return JSON only.
+
+RULES:
+1. section MUST be one of: education-news|exam-prep|career-guidance|scholarship|study-abroad|edtech|student-life|opinion
+2. postType MUST be one of: news|article|guide|listicle|opinion
+3. Content must be 600+ words in proper HTML with H2/H3 headings, paragraphs, bullet lists
+4. Generate at least 15 detailed FAQs with 2-3 sentence answers each
+5. Include relevant tags (8-12) and SEO metadata
+
+SCHEMA:
+{
+  "title": "Engaging blog title",
+  "slug": "url-friendly-slug",
+  "excerpt": "2-3 sentence compelling excerpt",
+  "content": "<h2>...</h2><p>600+ words comprehensive HTML article</p>",
+  "section": "education-news|exam-prep|...",
+  "postType": "news|article|guide|...",
+  "tags": ["tag1", "tag2", "...8-12 tags"],
+  "seoTitle": "SEO title under 60 chars",
+  "seoDescription": "Meta description under 160 chars",
+  "faqs": [
+    {"question": "...", "answer": "Detailed 2-3 sentence answer"},
+    ...at least 15 FAQs
+  ]
+}
+
+Text: ${rawText}`, 8192);
 }

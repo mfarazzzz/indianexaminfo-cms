@@ -347,6 +347,27 @@ export function ExamEditorPage() {
           const status = g.status ?? d.status;
           if (status) form.setValue("status", status, opts);
 
+          // Category matching — AI returns categorySlug/categoryName, match to actual ID
+          const catSlug = g.categorySlug ?? d.categorySlug ?? "";
+          const catName = g.categoryName ?? d.categoryName ?? "";
+          if (catSlug || catName) {
+            const match = categories.find((c) =>
+              c.slug === catSlug || c.name.toLowerCase().includes((catName || catSlug).toLowerCase())
+            );
+            if (match) {
+              form.setValue("categoryId", match.id, opts);
+              // Also try subcategory
+              const subSlug = g.subcategorySlug ?? d.subcategorySlug ?? "";
+              const subName = g.subcategoryName ?? d.subcategoryName ?? "";
+              if (subSlug || subName) {
+                const subMatch = subcategories.find((c) =>
+                  c.parentId === match.id && (c.slug === subSlug || c.name.toLowerCase().includes((subName || subSlug).toLowerCase()))
+                );
+                if (subMatch) form.setValue("subcategoryId", subMatch.id, opts);
+              }
+            }
+          }
+
           // Vacancy
           const vacTotal = typeof vac === "number" ? vac : (vac.total ?? d.vacancy);
           if (typeof vacTotal === "number") form.setValue("vacancy", vacTotal, opts);
