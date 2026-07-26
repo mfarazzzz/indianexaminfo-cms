@@ -7,6 +7,7 @@ import { Sparkles, Loader2, X, Clipboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSettings } from "@/hooks/useSettings";
 import { setAutofillApiKey } from "@/lib/ai/autofill";
+import { db } from "@/lib/supabase/client";
 
 interface AIAutoFillDialogProps {
   open: boolean;
@@ -25,7 +26,7 @@ export function AIAutoFillDialog({
   title = "AI Auto-Fill",
   placeholder = "Paste the raw exam notification, official PDF text, or any content here...",
 }: AIAutoFillDialogProps) {
-  const { getSetting } = useSettings();
+  const { getSetting, isLoading: settingsLoading } = useSettings();
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,17 +46,31 @@ export function AIAutoFillDialog({
     const trimmed = text.trim();
     const looksLikeJson = trimmed.startsWith("{") || /```(?:json)?\s*\{/.test(trimmed);
     
+    // Helper: get API key from settings context OR fallback to direct DB read
+    const resolveApiKey = async (): Promise<string> => {
+      const fromCtx = (getSetting("gemini_api_key", "") as string || "").replace(/^["']|["']$/g, "").trim();
+      if (fromCtx) return fromCtx;
+      // Fallback: settings might not have loaded yet — read directly
+      try {
+        const { data } = await db.from("settings").select("value").eq("key", "gemini_api_key").single();
+        const val = typeof data?.value === "string" ? data.value : "";
+        return val.replace(/^["']|["']$/g, "").trim();
+      } catch {
+        return "";
+      }
+    };
+
     // Only require API key if text is NOT JSON (needs AI processing)
     if (!looksLikeJson) {
-      const apiKey = getSetting("gemini_api_key", "") as string;
+      const apiKey = await resolveApiKey();
       if (!apiKey) {
-        setError("Gemini API key required for raw text extraction. Go to Settings → AI to add your key, or paste JSON directly (no key needed).");
+        setError("API key required for raw text extraction. Go to Settings → AI to add your Groq/Gemini key, or paste JSON directly (no key needed).");
         return;
       }
       setAutofillApiKey(apiKey);
     } else {
       // Still set key in case tryDirectParse fails and it falls through to AI
-      const apiKey = getSetting("gemini_api_key", "") as string;
+      const apiKey = await resolveApiKey();
       if (apiKey) setAutofillApiKey(apiKey);
     }
     
