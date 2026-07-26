@@ -215,6 +215,7 @@ export function ExamEditorPage() {
         name: data.name, slug: data.slug, shortName: data.shortName,
         pillar: data.pillar, entityType: data.entityType, conductingBody: data.conductingBody,
         officialWebsite: data.officialWebsite ?? "", status: data.status, isFeatured: data.isFeatured,
+        categoryId: data.categoryId ?? null, subcategoryId: data.subcategoryId ?? null,
         hasAdmitCard: data.hasAdmitCard, hasResult: data.hasResult, hasAnswerKey: data.hasAnswerKey,
         hasSyllabus: data.hasSyllabus, hasDateSheet: data.hasDateSheet, hasMockTest: data.hasMockTest,
         hasPreviousPapers: data.hasPreviousPapers, hasStudyMaterial: data.hasStudyMaterial,
@@ -225,7 +226,7 @@ export function ExamEditorPage() {
         academicYear: data.academicYear ?? null, semester: data.semester ?? null, admissionTo: data.admissionTo ?? null,
         tags: data.tags ?? [], searchKeywords: data.searchKeywords ?? [],
         seoTitle: data.seoTitle ?? null, seoDescription: data.seoDescription ?? null, faqs: data.faqs ?? [],
-        typeFields: {},
+        typeFields: data.typeFields ?? {},
       });
       loadModuleData(data.id);
     }).finally(() => setLoading(false));
@@ -446,7 +447,7 @@ export function ExamEditorPage() {
 }
 
 function buildUpdatePayload(data: ExamFormData) {
-  return { hasAdmitCard: data.hasAdmitCard, hasResult: data.hasResult, hasAnswerKey: data.hasAnswerKey, hasSyllabus: data.hasSyllabus, hasDateSheet: data.hasDateSheet, hasMockTest: data.hasMockTest, hasPreviousPapers: data.hasPreviousPapers, hasStudyMaterial: data.hasStudyMaterial, hasApplication: data.hasApplication, hasNotification: data.hasNotification, hasCutoff: data.hasCutoff, dates: prepareDatesForSave(data.dates as ExamDateEntry[]), eligibility: data.eligibility, vacancy: data.vacancy, applicationFee: data.applicationFee, selectionProcess: data.selectionProcess, syllabusHighlights: data.syllabusHighlights, academicYear: data.academicYear, semester: data.semester, admissionTo: data.admissionTo, tags: data.tags, searchKeywords: data.searchKeywords, seoTitle: data.seoTitle, seoDescription: data.seoDescription, faqs: data.faqs };
+  return { hasAdmitCard: data.hasAdmitCard, hasResult: data.hasResult, hasAnswerKey: data.hasAnswerKey, hasSyllabus: data.hasSyllabus, hasDateSheet: data.hasDateSheet, hasMockTest: data.hasMockTest, hasPreviousPapers: data.hasPreviousPapers, hasStudyMaterial: data.hasStudyMaterial, hasApplication: data.hasApplication, hasNotification: data.hasNotification, hasCutoff: data.hasCutoff, dates: prepareDatesForSave(data.dates as ExamDateEntry[]), eligibility: data.eligibility, vacancy: data.vacancy, applicationFee: data.applicationFee, selectionProcess: data.selectionProcess, syllabusHighlights: data.syllabusHighlights, academicYear: data.academicYear, semester: data.semester, admissionTo: data.admissionTo, tags: data.tags, searchKeywords: data.searchKeywords, seoTitle: data.seoTitle, seoDescription: data.seoDescription, faqs: data.faqs, typeFields: data.typeFields };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -17,6 +17,9 @@ function mapRow(row: Record<string, unknown>): ExamEntity {
     pillar: row.pillar as Pillar,
     category: (row as any).cat?.slug ?? "",
     subcategory: (row as any).subcat?.slug ?? "",
+    // Expose raw FK IDs so the editor can re-populate dropdowns on load
+    categoryId: (row.category_id as string) ?? null,
+    subcategoryId: (row.subcategory_id as string) ?? null,
     entityType: (row.entity_type as ExamEntity["entityType"]) ?? "exam",
     conductingBody: (row.conducting_body as string) ?? "",
     officialWebsite: (row.official_website as string) ?? "",
@@ -52,6 +55,7 @@ function mapRow(row: Record<string, unknown>): ExamEntity {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     createdBy: row.created_by as string | undefined,
+    typeFields: (row.type_fields as Record<string, unknown>) ?? {},
   };
 }
 
@@ -187,6 +191,8 @@ export interface ExamUpdateInput {
   seoTitle?: string | null;
   seoDescription?: string | null;
   faqs?: ExamEntity["faqs"];
+  // Entity-type-specific fields
+  typeFields?: Record<string, unknown>;
 }
 
 export async function updateExam(id: string, input: ExamUpdateInput): Promise<ExamEntity> {
@@ -232,6 +238,7 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
     seoTitle: "seo_title",
     seoDescription: "seo_description",
     faqs: "faqs",
+    typeFields: "type_fields",
   };
 
   // UUID fields that must be null instead of empty string

@@ -38,6 +38,8 @@ export type ExamEntity = {
   pillar: Pillar;
   category: string;       // category slug (from categories table)
   subcategory: string;    // subcategory slug
+  categoryId: string | null;       // raw FK UUID for form population
+  subcategoryId: string | null;    // raw FK UUID for form population
   entityType: "exam" | "board" | "university" | "recruitment";
   conductingBody: string;
   officialWebsite: string;
@@ -74,6 +76,9 @@ export type ExamEntity = {
   seoTitle?: string;
   seoDescription?: string;
   faqs?: { question: string; answer: string }[];
+
+  // Entity-type-specific fields (examDuration, totalMarks, etc.)
+  typeFields: Record<string, unknown>;
 
   // Publish gate — must be true for the frontend to display it
   isPublished: boolean;
