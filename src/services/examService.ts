@@ -48,6 +48,7 @@ function mapRow(row: Record<string, unknown>): ExamEntity {
     seoTitle: (row.seo_title as string) ?? undefined,
     seoDescription: (row.seo_description as string) ?? undefined,
     faqs: (row.faqs as ExamEntity["faqs"]) ?? [],
+    isPublished: (row.is_published as boolean) ?? false,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     createdBy: row.created_by as string | undefined,
@@ -265,6 +266,30 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
 export async function deleteExam(id: string): Promise<void> {
   const { error } = await db.from("exams").delete().eq("id", id);
   if (error) throw error;
+}
+
+// ── Publish / Unpublish ────────────────────────────────────────────────────
+
+export async function publishExam(id: string): Promise<ExamEntity> {
+  const { data, error } = await db
+    .from("exams")
+    .update({ is_published: true, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select(LIST_SELECT)
+    .single();
+  if (error) throw error;
+  return mapRow(data as Record<string, unknown>);
+}
+
+export async function unpublishExam(id: string): Promise<ExamEntity> {
+  const { data, error } = await db
+    .from("exams")
+    .update({ is_published: false, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select(LIST_SELECT)
+    .single();
+  if (error) throw error;
+  return mapRow(data as Record<string, unknown>);
 }
 
 // ── Slug check ─────────────────────────────────────────────────────────────

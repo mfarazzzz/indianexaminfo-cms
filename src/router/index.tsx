@@ -2,6 +2,8 @@ import React, { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { ProtectedRoute } from "./ProtectedRoute";
+import { RequirePermission } from "./RequirePermission";
+import { P } from "@/config/permissions";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { Loader2 } from "lucide-react";
 
@@ -163,9 +165,9 @@ export const router = createBrowserRouter([
           { path: "/sarkari-naukri",       element: <SarkariNaukriListPage /> },
           { path: "/sarkari-naukri/new",   element: <SarkariNaukriEditPage /> },
           { path: "/sarkari-naukri/:id",   element: <SarkariNaukriEditPage /> },
-          { path: "/users",             element: <UsersListPage /> },
-          { path: "/settings",          element: <SettingsPage /> },
-          { path: "/audit",             element: <AuditLogPage /> },
+          { path: "/users",             element: <RequirePermission anyOf={[P.MANAGE_USERS]}><UsersListPage /></RequirePermission> },
+          { path: "/settings",          element: <RequirePermission anyOf={[P.MANAGE_SETTINGS]}><SettingsPage /></RequirePermission> },
+          { path: "/audit",             element: <RequirePermission anyOf={[P.VIEW_AUDIT_LOG]}><AuditLogPage /></RequirePermission> },
         ],
       },
     ],

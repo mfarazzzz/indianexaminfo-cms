@@ -75,6 +75,9 @@ export type ExamEntity = {
   seoDescription?: string;
   faqs?: { question: string; answer: string }[];
 
+  // Publish gate — must be true for the frontend to display it
+  isPublished: boolean;
+
   // CMS-only meta
   createdAt: string;
   updatedAt: string;
