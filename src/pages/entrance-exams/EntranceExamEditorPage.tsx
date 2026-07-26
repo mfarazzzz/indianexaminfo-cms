@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Plus, Trash2, History } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, History, Sparkles, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useForm, useFieldArray } from "react-hook-form";
 import {
@@ -12,6 +12,8 @@ import { getCategories, type Category } from "@/services/categoryService";
 import { deleteExam } from "@/services/examService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { getErrorMessage } from "@/lib/utils";
+import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
+import { useSettings } from "@/hooks/useSettings";
 
 const EDITION_STATUSES: { value: EditionStatus; label: string }[] = [
   { value: "upcoming", label: "Upcoming" },
@@ -91,6 +93,8 @@ export function EntranceExamEditorPage() {
   const [showNewEdition, setShowNewEdition] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const { getSetting } = useSettings();
 
   const form = useForm<FormData>({
     defaultValues: {
@@ -105,8 +109,8 @@ export function EntranceExamEditorPage() {
     },
   });
 
-  const { fields: dateFields, append: appendDate, remove: removeDate } = useFieldArray({ control: form.control, name: "importantDates" });
-  const { fields: faqFields, append: appendFaq, remove: removeFaq } = useFieldArray({ control: form.control, name: "faqs" });
+  const { fields: dateFields, append: appendDate, remove: removeDate, replace: replaceDates } = useFieldArray({ control: form.control, name: "importantDates" });
+  const { fields: faqFields, append: appendFaq, remove: removeFaq, replace: replaceFaqs } = useFieldArray({ control: form.control, name: "faqs" });
 
   const watchFrequency = form.watch("cycleFrequency");
 
@@ -284,6 +288,59 @@ export function EntranceExamEditorPage() {
     }
   };
 
+  const handleAIGenerate = async () => {
+    const examName = form.getValues("name");
+    const year = form.getValues("editionYear") || new Date().getFullYear();
+    if (!examName) {
+      toast.error("Enter the exam name first, then generate.");
+      return;
+    }
+
+    const apiKey = getSetting("gemini_api_key", "");
+    const model = getSetting("gemini_model", "");
+    if (!apiKey) {
+      toast.error("No AI API key configured. Go to Settings → AI.");
+      return;
+    }
+
+    setAiGenerating(true);
+    try {
+      const data = await generateExamDataWithAI(examName, year, apiKey as string, model as string || undefined);
+
+      // Fill identity fields
+      if (data.shortName) form.setValue("shortName", data.shortName);
+      if (data.conductingBody) form.setValue("conductingBody", data.conductingBody);
+      if (data.officialWebsite) form.setValue("officialWebsite", data.officialWebsite);
+
+      // Fill edition fields — use replace() to properly add date/faq rows to the field array
+      if (data.importantDates.length > 0) replaceDates(data.importantDates);
+      if (data.vacancy) form.setValue("vacancy", String(data.vacancy));
+      form.setValue("editionStatus", data.status as EditionStatus);
+
+      // Fill modules
+      form.setValue("hasNotification", data.hasNotification);
+      form.setValue("hasApplication", data.hasApplication);
+      form.setValue("hasAdmitCard", data.hasAdmitCard);
+      form.setValue("hasSyllabus", data.hasSyllabus);
+      form.setValue("hasAnswerKey", data.hasAnswerKey);
+      form.setValue("hasResult", data.hasResult);
+      form.setValue("hasCutoff", data.hasCutoff);
+      form.setValue("hasCounselling", data.hasCounselling);
+
+      // Fill SEO
+      if (data.seoTitle) form.setValue("seoTitle", data.seoTitle);
+      if (data.seoDescription) form.setValue("seoDescription", data.seoDescription);
+      if (data.tags.length > 0) form.setValue("tags", data.tags.join(", "));
+      if (data.faqs.length > 0) replaceFaqs(data.faqs);
+
+      toast.success("AI generated all fields. Review and save.");
+    } catch (err) {
+      toast.error("AI generation failed: " + getErrorMessage(err));
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -327,6 +384,11 @@ export function EntranceExamEditorPage() {
         <div className="flex items-center gap-2">
           {!isNew && (
             <>
+              <button type="button" onClick={handleAIGenerate} disabled={aiGenerating}
+                className="flex items-center gap-1.5 rounded border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50">
+                {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {aiGenerating ? "Generating..." : "🤖 AI Fill All"}
+              </button>
               <button type="button" onClick={() => setShowNewEdition(true)}
                 className="flex items-center gap-1.5 rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
                 <Plus size={14} /> New Edition
@@ -336,6 +398,13 @@ export function EntranceExamEditorPage() {
                 <Trash2 size={14} /> Delete
               </button>
             </>
+          )}
+          {isNew && (
+            <button type="button" onClick={handleAIGenerate} disabled={aiGenerating}
+              className="flex items-center gap-1.5 rounded border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50">
+              {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              {aiGenerating ? "Generating..." : "🤖 AI Fill All"}
+            </button>
           )}
           <button type="submit" disabled={saving}
             className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
