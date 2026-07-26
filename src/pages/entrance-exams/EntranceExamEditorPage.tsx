@@ -297,7 +297,7 @@ export function EntranceExamEditorPage() {
     { id: "edition", label: "Dates & Status" },
     { id: "modules", label: "Modules" },
     { id: "seo", label: "SEO" },
-    ...(editions.length > 1 ? [{ id: "history", label: `History (${editions.length})` }] : []),
+    ...(!isNew ? [{ id: "editions", label: `Editions (${editions.length})` }] : []),
   ];
 
   return (
@@ -362,7 +362,7 @@ export function EntranceExamEditorPage() {
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} watchFrequency={watchFrequency} />}
         {activeTab === "modules" && <ModulesTab form={form} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
-        {activeTab === "history" && <HistoryTab editions={editions}
+        {activeTab === "editions" && <HistoryTab editions={editions}
           onDelete={async (edId, label) => {
             if (!confirm(`Delete edition "${label}"? This cannot be undone.`)) return;
             try {
@@ -553,35 +553,72 @@ function SEOTab({ form, faqFields, appendFaq, removeFaq }: { form: any; faqField
 
 function HistoryTab({ editions, onDelete, onPromote, onEdit }: { editions: ExamEdition[]; onDelete: (id: string, label: string) => void; onPromote: (id: string, label: string) => void; onEdit: (edition: ExamEdition) => void }) {
   return (
-    <div className="space-y-2">
-      <p className="text-xs text-slate-500 mb-3">All editions for this exam. You can edit, delete, or promote any edition.</p>
-      {editions.map((ed) => (
-        <div key={ed.id} className={`flex items-center justify-between p-3 rounded border ${ed.isCurrent ? "border-blue-300 bg-blue-50" : "border-slate-200"}`}>
-          <div>
-            <span className="text-sm font-medium text-slate-800">{ed.editionLabel}</span>
-            {ed.session !== "main" && <span className="text-xs text-slate-500 ml-2">({ed.session})</span>}
-            {ed.isCurrent && <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Current</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 mr-2">{ed.status.replace(/-/g, " ")}</span>
-            {!ed.isCurrent && (
-              <button type="button" onClick={() => onPromote(ed.id, ed.editionLabel)}
-                className="text-xs px-2 py-1 rounded border border-blue-200 text-blue-600 hover:bg-blue-50" title="Make this the current edition">
-                Promote
-              </button>
-            )}
-            <button type="button" onClick={() => onEdit(ed)}
-              className="text-xs px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50" title="Edit this edition">
-              Edit
-            </button>
-            <button type="button" onClick={() => onDelete(ed.id, ed.editionLabel)}
-              className="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50" title="Delete this edition">
-              Delete
-            </button>
-          </div>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-500">Manage all editions. You can edit, delete, or promote any edition to make it the active one.</p>
+      </div>
+
+      {editions.length === 0 && (
+        <div className="text-center py-8">
+          <History size={32} className="mx-auto text-slate-300 mb-2" />
+          <p className="text-sm text-slate-400">No editions yet. Click "New Edition" to create one.</p>
         </div>
-      ))}
-      {editions.length === 0 && <p className="text-sm text-slate-400 italic">No editions yet.</p>}
+      )}
+
+      {editions.map((ed) => {
+        const isDraft = !ed.isCurrent && ed.status === "upcoming" && !ed.completedAt;
+        const isArchived = !ed.isCurrent && !isDraft;
+
+        return (
+          <div key={ed.id} className={`rounded-lg border p-4 ${
+            ed.isCurrent ? "border-blue-300 bg-blue-50/50" :
+            isDraft ? "border-amber-300 bg-amber-50/50" :
+            "border-slate-200 bg-white"
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-semibold text-slate-800">{ed.editionLabel}</h4>
+                {ed.session !== "main" && <span className="text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{ed.session}</span>}
+                {ed.isCurrent && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">● Current</span>}
+                {isDraft && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">◌ Draft</span>}
+                {isArchived && <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">Archived</span>}
+              </div>
+              <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                ed.status === "completed" ? "bg-gray-100 text-gray-600" :
+                ed.status === "result-declared" ? "bg-emerald-100 text-emerald-700" :
+                ed.status === "upcoming" ? "bg-yellow-100 text-yellow-700" :
+                "bg-blue-100 text-blue-700"
+              }`}>
+                {ed.status.replace(/-/g, " ")}
+              </span>
+            </div>
+
+            {/* Edition meta */}
+            <div className="mt-2 text-xs text-slate-500">
+              Year: {ed.year} · Created: {new Date(ed.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              {ed.completedAt && <span> · Completed: {new Date(ed.completedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>}
+            </div>
+
+            {/* Actions */}
+            <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
+              <button type="button" onClick={() => onEdit(ed)}
+                className="text-xs px-3 py-1.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium transition-colors">
+                ✏️ Edit
+              </button>
+              {!ed.isCurrent && (
+                <button type="button" onClick={() => onPromote(ed.id, ed.editionLabel)}
+                  className="text-xs px-3 py-1.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium transition-colors border border-blue-200">
+                  ⬆️ Make Current
+                </button>
+              )}
+              <button type="button" onClick={() => onDelete(ed.id, ed.editionLabel)}
+                className="text-xs px-3 py-1.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium transition-colors border border-red-200 ml-auto">
+                🗑️ Delete
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
