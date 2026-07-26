@@ -316,8 +316,33 @@ export function EntranceExamEditorPage() {
       if (data.conductingBody) form.setValue("conductingBody", data.conductingBody);
       if (data.officialWebsite) form.setValue("officialWebsite", data.officialWebsite);
 
-      // Fill edition fields — use replace() to properly add date/faq rows to the field array
-      if (data.importantDates.length > 0) replaceDates(data.importantDates);
+      // Fill edition fields — merge AI dates into existing standard date rows
+      if (data.importantDates.length > 0) {
+        // Get current form dates (the standard pre-defined rows)
+        const currentDates = form.getValues("importantDates") as { label: string; date: string; isUrgent: boolean }[];
+
+        // Merge: for each AI date, try to match an existing row by similar label, else append
+        const merged = [...currentDates];
+        for (const aiDate of data.importantDates) {
+          if (!aiDate.date || !aiDate.label) continue;
+          // Find matching existing row by loose label matching
+          const matchIdx = merged.findIndex((d) =>
+            d.label.toLowerCase().replace(/[^a-z]/g, "").includes(aiDate.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8)) ||
+            aiDate.label.toLowerCase().replace(/[^a-z]/g, "").includes(d.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8))
+          );
+          if (matchIdx >= 0 && !merged[matchIdx].date) {
+            // Fill the existing blank row
+            merged[matchIdx] = { ...merged[matchIdx], date: aiDate.date, isUrgent: aiDate.isUrgent };
+          } else if (matchIdx >= 0 && merged[matchIdx].date) {
+            // Row already has a date — update it
+            merged[matchIdx] = { ...merged[matchIdx], date: aiDate.date, isUrgent: aiDate.isUrgent };
+          } else {
+            // No match found — append as a new custom date
+            merged.push({ label: aiDate.label, date: aiDate.date, isUrgent: aiDate.isUrgent });
+          }
+        }
+        replaceDates(merged);
+      }
       if (data.vacancy) form.setValue("vacancy", String(data.vacancy));
       form.setValue("editionStatus", data.status as EditionStatus);
 
@@ -366,6 +391,7 @@ export function EntranceExamEditorPage() {
     { id: "edition", label: "Dates & Status" },
     { id: "modules", label: "Modules" },
     { id: "content", label: "Content" },
+    { id: "news", label: "News" },
     { id: "seo", label: "SEO" },
     ...(!isNew ? [{ id: "editions", label: `Editions (${editions.length})` }] : []),
   ];
@@ -444,6 +470,7 @@ export function EntranceExamEditorPage() {
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency} />}
         {activeTab === "modules" && <ModulesTab form={form} />}
         {activeTab === "content" && <ContentModulesTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("Content modules saved."); await loadExam(); } }} />}
+        {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("News saved."); await loadExam(); } }} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
         {activeTab === "editions" && <HistoryTab editions={editions}
           onDelete={async (edId, label) => {
@@ -846,6 +873,125 @@ function ContentModulesTab({ editionId, contentModules, onSave }: { editionId: s
           ))}
           {(!modules.importantLinks || (modules.importantLinks as any[]).length === 0) && <p className="text-xs text-slate-400 italic">No links yet.</p>}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── News Tab ───────────────────────────────────────────────────────────────
+
+function NewsTab({ editionId, contentModules, onSave }: { editionId: string | null; contentModules: Record<string, unknown>; onSave: (modules: Record<string, unknown>) => Promise<void> }) {
+  const [news, setNews] = React.useState<any[]>((contentModules.news as any[]) ?? []);
+  const [saving, setSaving] = React.useState(false);
+  const [editingIdx, setEditingIdx] = React.useState<number | null>(null);
+  const [draft, setDraft] = React.useState({ title: "", content: "", excerpt: "", tags: "", isFeatured: false });
+
+  const handleSave = async () => {
+    setSaving(true);
+    try { await onSave({ ...contentModules, news }); } finally { setSaving(false); }
+  };
+
+  const addNews = () => {
+    if (!draft.title.trim()) return;
+    const item = {
+      id: crypto.randomUUID(),
+      title: draft.title,
+      content: draft.content,
+      excerpt: draft.excerpt || draft.content.slice(0, 150),
+      tags: draft.tags.split(",").map((t) => t.trim()).filter(Boolean),
+      author: "Editorial Team",
+      publishedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isPublished: true,
+      isFeatured: draft.isFeatured,
+    };
+    if (editingIdx !== null) {
+      const updated = [...news];
+      updated[editingIdx] = { ...updated[editingIdx], ...item, id: updated[editingIdx].id };
+      setNews(updated);
+      setEditingIdx(null);
+    } else {
+      setNews([item, ...news]);
+    }
+    setDraft({ title: "", content: "", excerpt: "", tags: "", isFeatured: false });
+  };
+
+  const editNews = (idx: number) => {
+    const item = news[idx];
+    setDraft({ title: item.title, content: item.content ?? "", excerpt: item.excerpt ?? "", tags: (item.tags ?? []).join(", "), isFeatured: item.isFeatured ?? false });
+    setEditingIdx(idx);
+  };
+
+  const deleteNews = (idx: number) => {
+    if (!confirm(`Delete "${news[idx]?.title}"?`)) return;
+    setNews(news.filter((_, i) => i !== idx));
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-500">Exam-specific news and updates. Published news appears on the exam page and global news feed.</p>
+        <button type="button" onClick={handleSave} disabled={saving || !editionId}
+          className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">
+          {saving ? "Saving..." : "Save News"}
+        </button>
+      </div>
+
+      {/* Add/Edit news form */}
+      <div className="border border-slate-200 rounded-lg p-4 space-y-3 bg-slate-50">
+        <h4 className="text-sm font-semibold text-slate-700">{editingIdx !== null ? "✏️ Edit News" : "➕ Add News"}</h4>
+        <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+          className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="News title *" />
+        <textarea value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })}
+          rows={4} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="News content (supports HTML for rich text)" />
+        <input value={draft.excerpt} onChange={(e) => setDraft({ ...draft, excerpt: e.target.value })}
+          className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="Short excerpt (auto-generated if empty)" />
+        <div className="flex items-center gap-4">
+          <input value={draft.tags} onChange={(e) => setDraft({ ...draft, tags: e.target.value })}
+            className="flex-1 rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="Tags (comma-separated)" />
+          <label className="flex items-center gap-1.5 text-xs text-slate-600 whitespace-nowrap">
+            <input type="checkbox" checked={draft.isFeatured} onChange={(e) => setDraft({ ...draft, isFeatured: e.target.checked })} className="rounded" />
+            Featured
+          </label>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={addNews}
+            className="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 font-medium">
+            {editingIdx !== null ? "Update" : "Publish"}
+          </button>
+          {editingIdx !== null && (
+            <button type="button" onClick={() => { setEditingIdx(null); setDraft({ title: "", content: "", excerpt: "", tags: "", isFeatured: false }); }}
+              className="text-xs px-3 py-1.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-100">Cancel</button>
+          )}
+        </div>
+      </div>
+
+      {/* News list */}
+      <div className="space-y-2">
+        {news.length === 0 && <p className="text-sm text-slate-400 italic text-center py-4">No news yet. Add the first update above.</p>}
+        {news.map((item, i) => (
+          <div key={item.id ?? i} className="border border-slate-200 rounded-lg p-3 bg-white">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-medium text-slate-800 line-clamp-1">{item.title}</h4>
+                  {item.isFeatured && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Featured</span>}
+                  {item.isPublished ? (
+                    <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Published</span>
+                  ) : (
+                    <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">Draft</span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 mt-1 line-clamp-2">{item.excerpt || item.content?.slice(0, 100)}</p>
+                <p className="text-xs text-slate-400 mt-1">{new Date(item.publishedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button type="button" onClick={() => editNews(i)} className="text-xs px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50">Edit</button>
+                <button type="button" onClick={() => deleteNews(i)} className="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50">Delete</button>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
