@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useForm, useFieldArray } from "react-hook-form";
 import {
   getEntranceExam, updateExamIdentity, updateEdition, startNewEdition,
-  createEntranceExam, completeEdition,
+  createEntranceExam, completeEdition, activateEdition, deleteEdition, promoteEdition,
   type ExamEdition, type ExamIdentity, type EditionStatus, type CycleFrequency, type CycleSession,
 } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
@@ -84,6 +84,7 @@ export function EntranceExamEditorPage() {
   const [saving, setSaving] = useState(false);
   const [exam, setExam] = useState<ExamIdentity | null>(null);
   const [currentEdition, setCurrentEdition] = useState<ExamEdition | null>(null);
+  const [draftEdition, setDraftEdition] = useState<ExamEdition | null>(null);
   const [editions, setEditions] = useState<ExamEdition[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [activeTab, setActiveTab] = useState<string>("identity");
@@ -217,7 +218,28 @@ export function EntranceExamEditorPage() {
         });
       }
 
-      toast.success("Saved successfully.");
+      // If there's a draft edition pending, save it and activate it (archives old one)
+      if (draftEdition) {
+        await updateEdition(draftEdition.id, {
+          status: data.editionStatus,
+          notificationDate: data.notificationDate || null,
+          vacancy: data.vacancy ? parseInt(data.vacancy) : null,
+          importantDates: data.importantDates,
+          hasNotification: data.hasNotification,
+          hasApplication: data.hasApplication,
+          hasAdmitCard: data.hasAdmitCard,
+          hasSyllabus: data.hasSyllabus,
+          hasAnswerKey: data.hasAnswerKey,
+          hasResult: data.hasResult,
+          hasCutoff: data.hasCutoff,
+          hasCounselling: data.hasCounselling,
+        });
+        await activateEdition(draftEdition.id);
+        setDraftEdition(null);
+        toast.success("New edition activated. Previous edition archived.");
+      } else {
+        toast.success("Saved successfully.");
+      }
       await loadExam();
     } catch (err) {
       toast.error("Save failed: " + getErrorMessage(err));
@@ -228,10 +250,25 @@ export function EntranceExamEditorPage() {
 
   const handleStartNewEdition = async (year: number, session: CycleSession) => {
     try {
-      await startNewEdition(exam!.id, { year, session });
-      toast.success(`New edition ${year} started.`);
+      const draft = await startNewEdition(exam!.id, { year, session });
+      toast.success(`New edition ${year} created as draft. Save to activate it.`);
+      setDraftEdition(draft);
       setShowNewEdition(false);
-      await loadExam();
+      // Switch editor to show the draft edition fields
+      form.setValue("editionYear", draft.year);
+      form.setValue("editionSession", draft.session);
+      form.setValue("editionStatus", draft.status);
+      form.setValue("notificationDate", "");
+      form.setValue("vacancy", "");
+      form.setValue("importantDates", []);
+      form.setValue("hasNotification", false);
+      form.setValue("hasApplication", false);
+      form.setValue("hasAdmitCard", false);
+      form.setValue("hasSyllabus", false);
+      form.setValue("hasAnswerKey", false);
+      form.setValue("hasResult", false);
+      form.setValue("hasCutoff", false);
+      form.setValue("hasCounselling", false);
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
@@ -275,9 +312,14 @@ export function EntranceExamEditorPage() {
             <h1 className="text-lg font-semibold text-slate-900 truncate">
               {isNew ? "New Entrance Exam" : exam?.name ?? ""}
             </h1>
-            {currentEdition && (
+            {currentEdition && !draftEdition && (
               <p className="text-xs text-slate-500">
                 Edition: {currentEdition.editionLabel} ({currentEdition.session !== "main" ? currentEdition.session + " — " : ""}{currentEdition.status.replace(/-/g, " ")})
+              </p>
+            )}
+            {draftEdition && (
+              <p className="text-xs text-amber-600 font-medium">
+                ⚠️ Draft edition: {draftEdition.editionLabel} — Save to activate
               </p>
             )}
           </div>
@@ -320,7 +362,45 @@ export function EntranceExamEditorPage() {
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} watchFrequency={watchFrequency} />}
         {activeTab === "modules" && <ModulesTab form={form} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
-        {activeTab === "history" && <HistoryTab editions={editions} />}
+        {activeTab === "history" && <HistoryTab editions={editions}
+          onDelete={async (edId, label) => {
+            if (!confirm(`Delete edition "${label}"? This cannot be undone.`)) return;
+            try {
+              await deleteEdition(edId);
+              toast.success(`Edition "${label}" deleted.`);
+              await loadExam();
+            } catch (err) { toast.error(getErrorMessage(err)); }
+          }}
+          onPromote={async (edId, label) => {
+            if (!confirm(`Promote "${label}" to current edition? The current edition will be archived.`)) return;
+            try {
+              await promoteEdition(edId);
+              toast.success(`"${label}" is now the current edition.`);
+              await loadExam();
+            } catch (err) { toast.error(getErrorMessage(err)); }
+          }}
+          onEdit={(ed) => {
+            // Load the selected edition into the form for editing
+            form.setValue("editionYear", ed.year);
+            form.setValue("editionSession", ed.session);
+            form.setValue("editionStatus", ed.status);
+            form.setValue("notificationDate", ed.notificationDate ?? "");
+            form.setValue("vacancy", ed.vacancy?.toString() ?? "");
+            form.setValue("importantDates", ed.importantDates ?? []);
+            form.setValue("hasNotification", ed.hasNotification);
+            form.setValue("hasApplication", ed.hasApplication);
+            form.setValue("hasAdmitCard", ed.hasAdmitCard);
+            form.setValue("hasSyllabus", ed.hasSyllabus);
+            form.setValue("hasAnswerKey", ed.hasAnswerKey);
+            form.setValue("hasResult", ed.hasResult);
+            form.setValue("hasCutoff", ed.hasCutoff);
+            form.setValue("hasCounselling", ed.hasCounselling);
+            setCurrentEdition(ed);
+            setDraftEdition(null);
+            setActiveTab("edition");
+            toast.info(`Editing edition "${ed.editionLabel}". Save to apply changes.`);
+          }}
+        />}
       </div>
 
       {/* New Edition Dialog */}
@@ -471,10 +551,10 @@ function SEOTab({ form, faqFields, appendFaq, removeFaq }: { form: any; faqField
   );
 }
 
-function HistoryTab({ editions }: { editions: ExamEdition[] }) {
+function HistoryTab({ editions, onDelete, onPromote, onEdit }: { editions: ExamEdition[]; onDelete: (id: string, label: string) => void; onPromote: (id: string, label: string) => void; onEdit: (edition: ExamEdition) => void }) {
   return (
     <div className="space-y-2">
-      <p className="text-xs text-slate-500 mb-3">All editions for this exam, newest first.</p>
+      <p className="text-xs text-slate-500 mb-3">All editions for this exam. You can edit, delete, or promote any edition.</p>
       {editions.map((ed) => (
         <div key={ed.id} className={`flex items-center justify-between p-3 rounded border ${ed.isCurrent ? "border-blue-300 bg-blue-50" : "border-slate-200"}`}>
           <div>
@@ -482,9 +562,26 @@ function HistoryTab({ editions }: { editions: ExamEdition[] }) {
             {ed.session !== "main" && <span className="text-xs text-slate-500 ml-2">({ed.session})</span>}
             {ed.isCurrent && <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Current</span>}
           </div>
-          <span className="text-xs text-slate-500">{ed.status.replace(/-/g, " ")}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 mr-2">{ed.status.replace(/-/g, " ")}</span>
+            {!ed.isCurrent && (
+              <button type="button" onClick={() => onPromote(ed.id, ed.editionLabel)}
+                className="text-xs px-2 py-1 rounded border border-blue-200 text-blue-600 hover:bg-blue-50" title="Make this the current edition">
+                Promote
+              </button>
+            )}
+            <button type="button" onClick={() => onEdit(ed)}
+              className="text-xs px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50" title="Edit this edition">
+              Edit
+            </button>
+            <button type="button" onClick={() => onDelete(ed.id, ed.editionLabel)}
+              className="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50" title="Delete this edition">
+              Delete
+            </button>
+          </div>
         </div>
       ))}
+      {editions.length === 0 && <p className="text-sm text-slate-400 italic">No editions yet.</p>}
     </div>
   );
 }

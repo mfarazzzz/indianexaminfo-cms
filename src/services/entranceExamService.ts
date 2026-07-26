@@ -507,7 +507,12 @@ export async function startNewEdition(
     }
   }
 
-  // Create new edition (trigger will deactivate the old current one)
+  // Deactivate current edition BEFORE inserting new one
+  // (the partial unique index enforces only one is_current=true per exam)
+  // NOTE: We do NOT deactivate here — the new edition starts as is_current=false (draft).
+  // It only becomes current when the editor saves the main form, which calls activateEdition().
+
+  // Create new edition as draft (NOT current yet)
   const { data, error } = await db
     .from("exam_editions")
     .insert({
@@ -515,11 +520,43 @@ export async function startNewEdition(
       year: input.year,
       session,
       edition_label: editionLabel,
-      is_current: true,
+      is_current: false,  // starts as draft — not current until editor saves
       status: "upcoming",
       eligibility: initialData.eligibility ?? {},
       application_fee: initialData.application_fee ?? {},
     })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return mapEditionRow(data as Record<string, unknown>);
+}
+
+/**
+ * Activate a draft edition — makes it current and archives the old one.
+ * Called when the editor saves the exam after starting a new edition.
+ */
+export async function activateEdition(editionId: string): Promise<ExamEdition> {
+  // Get the edition to find the exam_id
+  const { data: edition, error: fetchErr } = await db
+    .from("exam_editions")
+    .select("exam_id")
+    .eq("id", editionId)
+    .single();
+  if (fetchErr || !edition) throw new Error("Edition not found");
+
+  // Deactivate the current edition for this exam
+  await db
+    .from("exam_editions")
+    .update({ is_current: false })
+    .eq("exam_id", (edition as any).exam_id)
+    .eq("is_current", true);
+
+  // Make this edition current
+  const { data, error } = await db
+    .from("exam_editions")
+    .update({ is_current: true })
+    .eq("id", editionId)
     .select("*")
     .single();
 
@@ -598,6 +635,93 @@ export async function getEditionHistory(examId: string): Promise<ExamEdition[]> 
     .order("session");
   if (error) throw error;
   return (data ?? []).map((r: any) => mapEditionRow(r));
+}
+
+// ── Delete Edition ─────────────────────────────────────────────────────────
+
+/**
+ * Delete an edition. If the deleted edition was current, automatically
+ * promotes the most recent remaining edition to current.
+ */
+export async function deleteEdition(editionId: string): Promise<void> {
+  // Get the edition to check if it's current and get the exam_id
+  const { data: edition, error: fetchErr } = await db
+    .from("exam_editions")
+    .select("id, exam_id, is_current")
+    .eq("id", editionId)
+    .single();
+  if (fetchErr || !edition) throw new Error("Edition not found");
+
+  const examId = (edition as any).exam_id;
+  const wasCurrent = (edition as any).is_current;
+
+  // Delete the edition
+  const { error: delErr } = await db
+    .from("exam_editions")
+    .delete()
+    .eq("id", editionId);
+  if (delErr) throw delErr;
+
+  // If it was the current edition, promote the most recent remaining one
+  if (wasCurrent) {
+    const { data: nextEdition } = await db
+      .from("exam_editions")
+      .select("id")
+      .eq("exam_id", examId)
+      .order("year", { ascending: false })
+      .order("session")
+      .limit(1)
+      .maybeSingle();
+
+    if (nextEdition) {
+      // Promote the most recent remaining edition
+      await db
+        .from("exam_editions")
+        .update({ is_current: true })
+        .eq("id", (nextEdition as any).id);
+      // Trigger will update exams.current_edition_id
+    } else {
+      // No editions left — null out the pointer
+      await db
+        .from("exams")
+        .update({ current_edition_id: null })
+        .eq("id", examId);
+    }
+  }
+}
+
+// ── Promote Edition ────────────────────────────────────────────────────────
+
+/**
+ * Promote any edition (including archived ones) to become the current/latest edition.
+ * The previously current edition gets archived (is_current=false).
+ */
+export async function promoteEdition(editionId: string): Promise<ExamEdition> {
+  // Get the edition to find the exam_id
+  const { data: edition, error: fetchErr } = await db
+    .from("exam_editions")
+    .select("exam_id")
+    .eq("id", editionId)
+    .single();
+  if (fetchErr || !edition) throw new Error("Edition not found");
+
+  // Deactivate the current edition for this exam
+  await db
+    .from("exam_editions")
+    .update({ is_current: false })
+    .eq("exam_id", (edition as any).exam_id)
+    .eq("is_current", true);
+
+  // Promote this edition to current
+  const { data, error } = await db
+    .from("exam_editions")
+    .update({ is_current: true })
+    .eq("id", editionId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return mapEditionRow(data as Record<string, unknown>);
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
