@@ -211,7 +211,7 @@ export function EntranceExamEditorPage() {
           status: data.editionStatus,
           notificationDate: data.notificationDate || null,
           vacancy: data.vacancy ? parseInt(data.vacancy) : null,
-          importantDates: data.importantDates,
+          importantDates: data.importantDates.filter((d: any) => d.date && d.date.trim() !== ""),
           hasNotification: data.hasNotification,
           hasApplication: data.hasApplication,
           hasAdmitCard: data.hasAdmitCard,
@@ -220,6 +220,7 @@ export function EntranceExamEditorPage() {
           hasResult: data.hasResult,
           hasCutoff: data.hasCutoff,
           hasCounselling: data.hasCounselling,
+          faqs: data.faqs.filter((f: any) => f.question && f.question.trim() !== ""),
         });
       }
 
@@ -229,7 +230,7 @@ export function EntranceExamEditorPage() {
           status: data.editionStatus,
           notificationDate: data.notificationDate || null,
           vacancy: data.vacancy ? parseInt(data.vacancy) : null,
-          importantDates: data.importantDates,
+          importantDates: data.importantDates.filter((d: any) => d.date && d.date.trim() !== ""),
           hasNotification: data.hasNotification,
           hasApplication: data.hasApplication,
           hasAdmitCard: data.hasAdmitCard,
@@ -238,6 +239,7 @@ export function EntranceExamEditorPage() {
           hasResult: data.hasResult,
           hasCutoff: data.hasCutoff,
           hasCounselling: data.hasCounselling,
+          faqs: data.faqs.filter((f: any) => f.question && f.question.trim() !== ""),
         });
         await activateEdition(draftEdition.id);
         setDraftEdition(null);
@@ -335,7 +337,15 @@ export function EntranceExamEditorPage() {
       if (data.tags.length > 0) form.setValue("tags", data.tags.join(", "));
       if (data.faqs.length > 0) replaceFaqs(data.faqs);
 
-      toast.success("AI generated all fields. Review and save.");
+      // Save content modules directly to the edition if it exists
+      if (currentEdition && data.contentModules && Object.keys(data.contentModules).length > 0) {
+        try {
+          const { updateEdition: updateEd } = await import("@/services/entranceExamService");
+          await updateEd(currentEdition.id, { contentModules: data.contentModules });
+        } catch {} // non-critical — will be saved on next Save click
+      }
+
+      toast.success("AI generated all fields including content modules. Review and save.");
     } catch (err) {
       toast.error("AI generation failed: " + getErrorMessage(err));
     } finally {
@@ -355,6 +365,7 @@ export function EntranceExamEditorPage() {
     { id: "identity", label: "Identity" },
     { id: "edition", label: "Dates & Status" },
     { id: "modules", label: "Modules" },
+    { id: "content", label: "Content" },
     { id: "seo", label: "SEO" },
     ...(!isNew ? [{ id: "editions", label: `Editions (${editions.length})` }] : []),
   ];
@@ -432,6 +443,7 @@ export function EntranceExamEditorPage() {
         {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} isNew={isNew} />}
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency} />}
         {activeTab === "modules" && <ModulesTab form={form} />}
+        {activeTab === "content" && <ContentModulesTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("Content modules saved."); await loadExam(); } }} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
         {activeTab === "editions" && <HistoryTab editions={editions}
           onDelete={async (edId, label) => {
@@ -620,6 +632,220 @@ function ModulesTab({ form }: { form: any }) {
             <span className="text-sm text-slate-700">{m.label}</span>
           </label>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Content Modules Tab ────────────────────────────────────────────────────
+
+const STEP_GUIDE_MODULES = [
+  { key: "howToApply", title: "How to Apply" },
+  { key: "howToDownloadAdmitCard", title: "How to Download Admit Card" },
+  { key: "howToCheckResult", title: "How to Check Result" },
+  { key: "howToDownloadAnswerKey", title: "How to Download Answer Key" },
+  { key: "howToDownloadNotification", title: "How to Download Notification" },
+  { key: "howToFillApplication", title: "How to Fill Application Form" },
+  { key: "howToPayFee", title: "How to Pay Application Fee" },
+  { key: "howToCorrectApplication", title: "How to Correct Application Form" },
+  { key: "howToRecoverLogin", title: "How to Recover Login Details" },
+];
+
+function ContentModulesTab({ editionId, contentModules, onSave }: { editionId: string | null; contentModules: Record<string, unknown>; onSave: (modules: Record<string, unknown>) => Promise<void> }) {
+  const [modules, setModules] = React.useState<Record<string, any>>(contentModules);
+  const [saving, setSaving] = React.useState(false);
+  const [expandedSection, setExpandedSection] = React.useState<string | null>(null);
+
+  const updateModule = (key: string, value: any) => {
+    setModules((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try { await onSave(modules); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-500">Structured content modules for this edition. AI fills these automatically, or edit manually.</p>
+        <button type="button" onClick={handleSave} disabled={saving || !editionId}
+          className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">
+          {saving ? "Saving..." : "Save Content"}
+        </button>
+      </div>
+
+      {/* Step-by-Step Guides */}
+      <div className="border border-slate-200 rounded-lg">
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+          <h3 className="text-sm font-semibold text-slate-700">📋 Step-by-Step Guides</h3>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {STEP_GUIDE_MODULES.map((guide) => {
+            const data = modules[guide.key] as { title?: string; steps?: any[] } | undefined;
+            const stepCount = data?.steps?.length ?? 0;
+            const isExpanded = expandedSection === guide.key;
+
+            return (
+              <div key={guide.key}>
+                <button type="button" onClick={() => setExpandedSection(isExpanded ? null : guide.key)}
+                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50">
+                  <span className="text-sm text-slate-700">{guide.title}</span>
+                  <span className="text-xs text-slate-400">{stepCount > 0 ? `${stepCount} steps` : "Empty"}</span>
+                </button>
+                {isExpanded && (
+                  <div className="px-4 pb-3 space-y-2">
+                    {(data?.steps ?? []).map((step: any, i: number) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="text-xs font-bold text-slate-400 mt-1.5 w-5">{step.order ?? i + 1}.</span>
+                        <input value={step.text ?? ""} onChange={(e) => {
+                          const newSteps = [...(data?.steps ?? [])];
+                          newSteps[i] = { ...newSteps[i], text: e.target.value };
+                          updateModule(guide.key, { ...data, title: data?.title ?? guide.title, steps: newSteps });
+                        }} className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Step description" />
+                        <button type="button" onClick={() => {
+                          const newSteps = (data?.steps ?? []).filter((_: any, idx: number) => idx !== i);
+                          updateModule(guide.key, { ...data, steps: newSteps });
+                        }} className="text-red-400 hover:text-red-600 mt-1"><Trash2 size={14} /></button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => {
+                      const newSteps = [...(data?.steps ?? []), { order: (data?.steps?.length ?? 0) + 1, text: "" }];
+                      updateModule(guide.key, { title: data?.title ?? guide.title, steps: newSteps });
+                    }} className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add Step</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Exam Pattern */}
+      <div className="border border-slate-200 rounded-lg">
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+          <h3 className="text-sm font-semibold text-slate-700">📝 Exam Pattern</h3>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label className="text-xs text-slate-500">Mode</label>
+              <input value={(modules.examPattern as any)?.mode ?? ""} onChange={(e) => updateModule("examPattern", { ...modules.examPattern, mode: e.target.value })}
+                className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Online CBT" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500">Duration</label>
+              <input value={(modules.examPattern as any)?.duration ?? ""} onChange={(e) => updateModule("examPattern", { ...modules.examPattern, duration: e.target.value })}
+                className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="3 hours" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500">Total Marks</label>
+              <input type="number" value={(modules.examPattern as any)?.totalMarks ?? ""} onChange={(e) => updateModule("examPattern", { ...modules.examPattern, totalMarks: parseInt(e.target.value) || 0 })}
+                className="w-full rounded border border-slate-200 px-2 py-1 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500">Marking Scheme</label>
+              <input value={(modules.examPattern as any)?.markingScheme ?? ""} onChange={(e) => updateModule("examPattern", { ...modules.examPattern, markingScheme: e.target.value })}
+                className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="+4 / -1" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Eligibility */}
+      <div className="border border-slate-200 rounded-lg">
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+          <h3 className="text-sm font-semibold text-slate-700">✅ Eligibility</h3>
+        </div>
+        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-slate-500">Qualification</label>
+            <input value={(modules.eligibility as any)?.qualification ?? ""} onChange={(e) => updateModule("eligibility", { ...modules.eligibility, qualification: e.target.value })}
+              className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Graduate with 50% marks" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500">Age Limit</label>
+            <input value={(modules.eligibility as any)?.ageLimit ?? ""} onChange={(e) => updateModule("eligibility", { ...modules.eligibility, ageLimit: e.target.value })}
+              className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="No age limit" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500">Attempts</label>
+            <input value={(modules.eligibility as any)?.attempts ?? ""} onChange={(e) => updateModule("eligibility", { ...modules.eligibility, attempts: e.target.value })}
+              className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="No limit" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500">Nationality</label>
+            <input value={(modules.eligibility as any)?.nationality ?? ""} onChange={(e) => updateModule("eligibility", { ...modules.eligibility, nationality: e.target.value })}
+              className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Indian / NRI / PIO" />
+          </div>
+        </div>
+      </div>
+
+      {/* Application Fee */}
+      <div className="border border-slate-200 rounded-lg">
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+          <h3 className="text-sm font-semibold text-slate-700">💰 Application Fee</h3>
+        </div>
+        <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+          {["general", "obc", "sc", "st"].map((cat) => (
+            <div key={cat}>
+              <label className="text-xs text-slate-500 capitalize">{cat}</label>
+              <input type="number" value={(modules.applicationFee as any)?.[cat] ?? ""} onChange={(e) => updateModule("applicationFee", { ...modules.applicationFee, [cat]: parseInt(e.target.value) || 0 })}
+                className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="₹" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Highlights */}
+      <div className="border border-slate-200 rounded-lg">
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-700">⭐ Highlights</h3>
+          <button type="button" onClick={() => updateModule("highlights", [...(modules.highlights ?? []), ""])}
+            className="text-xs text-blue-600 font-medium">+ Add</button>
+        </div>
+        <div className="p-4 space-y-2">
+          {((modules.highlights as string[]) ?? []).map((h, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input value={h} onChange={(e) => {
+                const arr = [...(modules.highlights as string[] ?? [])];
+                arr[i] = e.target.value;
+                updateModule("highlights", arr);
+              }} className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Key highlight" />
+              <button type="button" onClick={() => updateModule("highlights", (modules.highlights as string[]).filter((_, idx) => idx !== i))}
+                className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+            </div>
+          ))}
+          {(!modules.highlights || (modules.highlights as string[]).length === 0) && <p className="text-xs text-slate-400 italic">No highlights yet.</p>}
+        </div>
+      </div>
+
+      {/* Important Links */}
+      <div className="border border-slate-200 rounded-lg">
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-700">🔗 Important Links</h3>
+          <button type="button" onClick={() => updateModule("importantLinks", [...(modules.importantLinks ?? []), { label: "", url: "", isOfficial: true, type: "other" }])}
+            className="text-xs text-blue-600 font-medium">+ Add Link</button>
+        </div>
+        <div className="p-4 space-y-2">
+          {((modules.importantLinks as any[]) ?? []).map((link, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input value={link.label ?? ""} onChange={(e) => {
+                const arr = [...(modules.importantLinks as any[])];
+                arr[i] = { ...arr[i], label: e.target.value };
+                updateModule("importantLinks", arr);
+              }} className="w-40 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Label" />
+              <input value={link.url ?? ""} onChange={(e) => {
+                const arr = [...(modules.importantLinks as any[])];
+                arr[i] = { ...arr[i], url: e.target.value };
+                updateModule("importantLinks", arr);
+              }} className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="https://..." />
+              <button type="button" onClick={() => updateModule("importantLinks", (modules.importantLinks as any[]).filter((_, idx) => idx !== i))}
+                className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+            </div>
+          ))}
+          {(!modules.importantLinks || (modules.importantLinks as any[]).length === 0) && <p className="text-xs text-slate-400 italic">No links yet.</p>}
+        </div>
       </div>
     </div>
   );

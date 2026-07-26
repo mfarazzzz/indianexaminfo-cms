@@ -33,6 +33,8 @@ export interface AIExamData {
   seoDescription: string;
   tags: string[];
   faqs: { question: string; answer: string }[];
+  // Content modules
+  contentModules: Record<string, unknown>;
 }
 
 const GENERATE_PROMPT = (examName: string, year: number) => `
@@ -48,9 +50,13 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
     {"label": "Notification Release", "date": "${year}-MM-DD", "isUrgent": false},
     {"label": "Registration Opens", "date": "${year}-MM-DD", "isUrgent": true},
     {"label": "Registration Closes", "date": "${year}-MM-DD", "isUrgent": true},
+    {"label": "Application Correction Window", "date": "${year}-MM-DD", "isUrgent": false},
     {"label": "Admit Card Release", "date": "${year}-MM-DD", "isUrgent": false},
     {"label": "Exam Date", "date": "${year}-MM-DD", "isUrgent": true},
-    {"label": "Result Declaration", "date": "${year + 1}-MM-DD", "isUrgent": false}
+    {"label": "Answer Key Release", "date": "${year}-MM-DD", "isUrgent": false},
+    {"label": "Result Declaration", "date": "${year + 1}-MM-DD", "isUrgent": false},
+    {"label": "Counselling Starts", "date": "", "isUrgent": false},
+    {"label": "Cutoff Release", "date": "", "isUrgent": false}
   ],
   "vacancy": null,
   "status": "upcoming",
@@ -61,30 +67,83 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
   "hasAnswerKey": true,
   "hasResult": true,
   "hasCutoff": true,
-  "hasCounselling": true,
-  "seoTitle": "60 char max title optimized for Google: include exam name, year, key action (Apply/Result/Date)",
-  "seoDescription": "155 char meta description with exam name, year, key dates, and call to action. Optimized for CTR in Google Search and Discover.",
-  "tags": ["tag1", "tag2", "up to 10 relevant tags for discovery"],
+  "hasCounselling": false,
+  "seoTitle": "60 char max, include exam name + year + key action",
+  "seoDescription": "155 char meta description optimized for CTR",
+  "tags": ["10-12 tags"],
   "faqs": [
-    {"question": "What is [exam] ${year}?", "answer": "detailed 2-3 sentence answer"},
-    {"question": "When is [exam] ${year} exam date?", "answer": "specific date with context"},
-    {"question": "How to apply for [exam] ${year}?", "answer": "step by step brief"},
-    {"question": "What is the eligibility for [exam] ${year}?", "answer": "age, qualification, attempts"},
-    {"question": "What is the exam pattern of [exam] ${year}?", "answer": "sections, marks, duration"},
-    {"question": "When will [exam] ${year} result be declared?", "answer": "expected date and how to check"}
-  ]
+    {"question": "What is [exam] ${year}?", "answer": "detailed answer"},
+    {"question": "When is [exam] ${year} exam date?", "answer": "answer"},
+    {"question": "How to apply for [exam] ${year}?", "answer": "answer"},
+    {"question": "What is the eligibility for [exam] ${year}?", "answer": "answer"},
+    {"question": "What is the exam pattern?", "answer": "answer"},
+    {"question": "What is the syllabus?", "answer": "answer"},
+    {"question": "What is the application fee?", "answer": "answer"},
+    {"question": "How to download admit card?", "answer": "answer"},
+    {"question": "When will result be declared?", "answer": "answer"},
+    {"question": "What is the cutoff?", "answer": "answer"},
+    {"question": "How many attempts allowed?", "answer": "answer"},
+    {"question": "What is the selection process?", "answer": "answer"},
+    {"question": "Is there negative marking?", "answer": "answer"},
+    {"question": "What are the best books?", "answer": "answer"},
+    {"question": "What is the counselling process?", "answer": "answer"}
+  ],
+  "contentModules": {
+    "howToApply": {
+      "title": "How to Apply for [exam] ${year}",
+      "steps": [
+        {"order": 1, "text": "Visit official website", "link": "url"},
+        {"order": 2, "text": "Click on New Registration"},
+        {"order": 3, "text": "Fill personal details"},
+        {"order": 4, "text": "Upload photo and signature"},
+        {"order": 5, "text": "Pay application fee"},
+        {"order": 6, "text": "Submit and download confirmation"}
+      ]
+    },
+    "howToDownloadAdmitCard": {
+      "title": "How to Download [exam] ${year} Admit Card",
+      "steps": [{"order": 1, "text": "step"}]
+    },
+    "howToCheckResult": {
+      "title": "How to Check [exam] ${year} Result",
+      "steps": [{"order": 1, "text": "step"}]
+    },
+    "examPattern": {
+      "mode": "Online CBT",
+      "duration": "duration",
+      "totalMarks": 0,
+      "sections": [{"name": "Section", "questions": 0, "marks": 0}],
+      "markingScheme": "+X/-Y"
+    },
+    "selectionProcess": ["step 1", "step 2"],
+    "syllabus": [{"subject": "Subject", "topics": ["topic1", "topic2"]}],
+    "eligibility": {
+      "qualification": "details",
+      "ageLimit": "details",
+      "attempts": "details",
+      "nationality": "Indian"
+    },
+    "applicationFee": {
+      "general": 0, "obc": 0, "sc": 0, "st": 0,
+      "paymentModes": ["Online", "UPI", "Net Banking"]
+    },
+    "importantLinks": [
+      {"label": "Official Website", "url": "", "isOfficial": true, "type": "other"},
+      {"label": "Apply Online", "url": "", "isOfficial": true, "type": "apply"}
+    ],
+    "highlights": ["key highlight 1", "key highlight 2"]
+  }
 }
 
 RULES:
-- Use REAL expected dates based on historical patterns for this exam (approximate month if exact unknown).
-- All dates must be in YYYY-MM-DD format.
-- SEO title MUST be under 60 characters, include year.
+- Use REAL expected dates based on historical patterns. Leave date empty string "" if unknown.
+- All known dates must be YYYY-MM-DD format.
+- SEO title MUST be under 60 characters.
 - SEO description MUST be under 160 characters.
-- FAQs should target "People Also Ask" queries that students actually search.
-- Tags should include: exam abbreviation, full name, conducting body, category (MBA/Engineering/Medical), year, and related terms.
-- Set vacancy to null if not applicable (entrance exams typically don't have vacancies).
-- Set status to "upcoming" if exam hasn't happened yet, "registration-open" if registration is ongoing, "result-declared" if results are out.
-- Set module flags (has*) based on what's typically available for this exam at this stage.
+- Generate exactly 15 FAQs targeting "People Also Ask" queries.
+- Content modules: fill with real information. Leave steps generic if details unknown.
+- Exam pattern: use real data (sections, marks, duration) if known.
+- Syllabus: list actual subjects and key topics.
 
 Return ONLY the JSON object. No markdown code fences, no explanation.
 `;
@@ -123,18 +182,30 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
   "tags": ["8-12 tags for discovery"],
   "faqs": [
     {"question": "...", "answer": "2-3 sentence detailed answer based on the raw data"}
-  ]
+  ],
+  "contentModules": {
+    "howToApply": {"title": "How to Apply", "steps": [{"order": 1, "text": "step details", "link": "url if found"}]},
+    "howToDownloadAdmitCard": {"title": "...", "steps": [...]},
+    "howToCheckResult": {"title": "...", "steps": [...]},
+    "examPattern": {"mode": "...", "duration": "...", "totalMarks": N, "sections": [{"name":"...", "questions": N, "marks": N}], "markingScheme": "..."},
+    "selectionProcess": ["step1", "step2"],
+    "syllabus": [{"subject": "...", "topics": ["...", "..."]}],
+    "eligibility": {"qualification": "...", "ageLimit": "...", "attempts": "...", "nationality": "..."},
+    "applicationFee": {"general": N, "obc": N, "sc": N, "st": N, "paymentModes": ["..."]},
+    "importantLinks": [{"label": "...", "url": "...", "isOfficial": true, "type": "apply|notification|result|other"}],
+    "highlights": ["key point 1", "key point 2"]
+  }
 }
 
 RULES:
 - Extract REAL dates from the raw data. Convert any date format to YYYY-MM-DD.
-- If raw data mentions registration fee, include vacancy count, eligibility — use those exact values.
-- Set module flags (has*) to true for content types mentioned in the raw data.
-- Determine status based on current date (July ${year}) relative to the dates.
-- FAQs should be based on actual information from the raw data, not generic.
-- Mark dates as "isUrgent": true if they are deadlines (registration closes, exam date).
-- Include ALL dates mentioned in raw data, not just 6.
-- SEO title and description should reference specific facts from the raw data.
+- Generate 15 FAQs based on the raw data content.
+- Fill content modules with REAL information from the raw data.
+- If raw data mentions how to apply steps, fill howToApply with actual steps.
+- Extract fee structure, eligibility, exam pattern from raw data if present.
+- Include ALL dates mentioned in raw data.
+- Set module flags based on what content exists in the raw data.
+- Leave fields empty/null if information is not available in the raw data.
 
 Return ONLY the JSON object. No markdown code fences, no explanation.
 `;
@@ -178,6 +249,7 @@ export async function generateExamDataWithAI(
       seoDescription: data.seoDescription ?? "",
       tags: Array.isArray(data.tags) ? data.tags : [],
       faqs: Array.isArray(data.faqs) ? data.faqs : [],
+      contentModules: data.contentModules ?? {},
     };
   } catch (e) {
     throw new Error("AI returned invalid JSON. Try again.");
