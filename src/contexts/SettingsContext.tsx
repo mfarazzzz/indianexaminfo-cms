@@ -6,6 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import { db } from "@/lib/supabase/client";
+import { supabase } from "@/lib/supabase/client";
 import type { SettingsMap } from "@/types/settings";
 
 interface SettingsContextValue {
@@ -39,7 +40,34 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    loadSettings();
+    // Wait for auth session to be available before loading settings.
+    // This ensures RLS policies that depend on auth.uid() work correctly,
+    // allowing sensitive settings (like API keys) to be returned.
+    let cancelled = false;
+
+    async function init() {
+      // getSession() resolves once the session is restored from storage
+      await supabase.auth.getSession();
+      if (!cancelled) await loadSettings();
+    }
+
+    init();
+
+    // Re-load settings when auth state changes (login/logout)
+    // so that sensitive settings become available after sign-in
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event) => {
+        if (cancelled) return;
+        if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
+          await loadSettings();
+        }
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, [loadSettings]);
 
   const getSetting = useCallback(
