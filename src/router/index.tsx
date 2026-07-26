@@ -110,6 +110,9 @@ const EduNewsEditPage   = lazyPage(() => import("@/pages/education-news/EduNewsE
 // Sarkari Naukri (Government Jobs — unified exam + direct)
 const SarkariNaukriListPage = lazyPage(() => import("@/pages/sarkari-naukri/SarkariNaukriListPage"), "SarkariNaukriListPage");
 const SarkariNaukriEditPage = lazyPage(() => import("@/pages/sarkari-naukri/SarkariNaukriEditPage"), "SarkariNaukriEditPage");
+// Entrance Exams (dedicated editorial workflow)
+const EntranceExamListPage  = lazyPage(() => import("@/pages/entrance-exams/EntranceExamListPage"),   "EntranceExamListPage");
+const EntranceExamEditorPage = lazyPage(() => import("@/pages/entrance-exams/EntranceExamEditorPage"), "EntranceExamEditorPage");
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -165,6 +168,10 @@ export const router = createBrowserRouter([
           { path: "/sarkari-naukri",       element: <SarkariNaukriListPage /> },
           { path: "/sarkari-naukri/new",   element: <SarkariNaukriEditPage /> },
           { path: "/sarkari-naukri/:id",   element: <SarkariNaukriEditPage /> },
+          // Entrance Exams (dedicated editorial workflow)
+          { path: "/entrance-exams",       element: <EntranceExamListPage /> },
+          { path: "/entrance-exams/new",   element: <EntranceExamEditorPage /> },
+          { path: "/entrance-exams/:id",   element: <EntranceExamEditorPage /> },
           { path: "/users",             element: <RequirePermission anyOf={[P.MANAGE_USERS]}><UsersListPage /></RequirePermission> },
           { path: "/settings",          element: <RequirePermission anyOf={[P.MANAGE_SETTINGS]}><SettingsPage /></RequirePermission> },
           { path: "/audit",             element: <RequirePermission anyOf={[P.VIEW_AUDIT_LOG]}><AuditLogPage /></RequirePermission> },

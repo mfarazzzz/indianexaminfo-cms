@@ -48,7 +48,9 @@ export function ExamsListPage() {
       if (status) opts.status = status;
       if (search) opts.search = search;
       const { data: rows, count } = await getExams(opts);
-      setData(rows);
+      // Hide entrance exams — they have their own dedicated module now
+      const filtered = rows.filter((e) => e.pillar !== "entrance-exam");
+      setData(filtered);
       setTotal(count);
     } catch (err) {
       toast.error("Failed to load exams: " + getErrorMessage(err));
