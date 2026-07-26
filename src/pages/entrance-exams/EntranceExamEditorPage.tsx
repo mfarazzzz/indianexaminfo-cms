@@ -430,7 +430,7 @@ export function EntranceExamEditorPage() {
       {/* Tab Content */}
       <div className="bg-white rounded-b-lg border border-slate-200 border-t-0 p-5">
         {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} isNew={isNew} />}
-        {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} watchFrequency={watchFrequency} />}
+        {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency} />}
         {activeTab === "modules" && <ModulesTab form={form} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
         {activeTab === "editions" && <HistoryTab editions={editions}
@@ -519,7 +519,28 @@ function IdentityTab({ form, categories, watchFrequency, isNew }: { form: any; c
   );
 }
 
-function EditionTab({ form, dateFields, appendDate, removeDate, watchFrequency }: { form: any; dateFields: any[]; appendDate: (v: any) => void; removeDate: (i: number) => void; watchFrequency: CycleFrequency }) {
+// Standard date fields that every entrance exam typically has
+const STANDARD_DATE_LABELS = [
+  { label: "Notification Release", isUrgent: false },
+  { label: "Registration Opens", isUrgent: true },
+  { label: "Registration Closes", isUrgent: true },
+  { label: "Application Correction Window", isUrgent: false },
+  { label: "Admit Card Release", isUrgent: false },
+  { label: "Exam Date", isUrgent: true },
+  { label: "Answer Key Release", isUrgent: false },
+  { label: "Result Declaration", isUrgent: false },
+  { label: "Counselling Starts", isUrgent: false },
+  { label: "Cutoff Release", isUrgent: false },
+];
+
+function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, watchFrequency }: { form: any; dateFields: any[]; appendDate: (v: any) => void; removeDate: (i: number) => void; replaceDates: (v: any[]) => void; watchFrequency: CycleFrequency }) {
+  // On first render, ensure standard date fields exist
+  React.useEffect(() => {
+    if (dateFields.length === 0) {
+      replaceDates(STANDARD_DATE_LABELS.map((d) => ({ label: d.label, date: "", isUrgent: d.isUrgent })));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="space-y-5">
       {/* Year & Session — conditional on frequency */}
@@ -543,27 +564,35 @@ function EditionTab({ form, dateFields, appendDate, removeDate, watchFrequency }
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Notification Date" name="notificationDate" form={form} type="date" />
-        <Field label="Vacancy" name="vacancy" form={form} type="number" placeholder="Total seats" />
+        <Field label="Vacancy" name="vacancy" form={form} type="number" placeholder="Total seats (leave 0 if N/A)" />
       </div>
 
-      {/* Important Dates */}
+      {/* Important Dates — pre-defined rows + custom */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="text-xs font-medium text-slate-600">Important Dates</label>
-          <button type="button" onClick={() => appendDate({ label: "", date: "", isUrgent: false })}
-            className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add Date</button>
-        </div>
-        {dateFields.length === 0 && <p className="text-xs text-slate-400 italic">No dates added yet.</p>}
-        {dateFields.map((field, i) => (
-          <div key={field.id} className="flex items-center gap-2 mb-2">
-            <input {...form.register(`importantDates.${i}.label`)} placeholder="Label" className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm" />
-            <input {...form.register(`importantDates.${i}.date`)} type="date" className="rounded border border-slate-200 px-2 py-1 text-sm" />
-            <label className="flex items-center gap-1 text-xs text-slate-500">
-              <input type="checkbox" {...form.register(`importantDates.${i}.isUrgent`)} /> Urgent
-            </label>
-            <button type="button" onClick={() => removeDate(i)} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+          <div>
+            <label className="text-xs font-medium text-slate-600">Important Dates</label>
+            <p className="text-xs text-slate-400">Leave date blank if not yet announced — blank dates won't appear on frontend.</p>
           </div>
-        ))}
+          <button type="button" onClick={() => appendDate({ label: "", date: "", isUrgent: false })}
+            className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add Custom Date</button>
+        </div>
+        <div className="space-y-2">
+          {dateFields.map((field, i) => (
+            <div key={field.id} className="flex items-center gap-2 bg-slate-50 rounded px-3 py-2">
+              <input {...form.register(`importantDates.${i}.label`)} placeholder="Date label"
+                className="flex-1 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
+              <input {...form.register(`importantDates.${i}.date`)} type="date"
+                className="w-40 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
+              <label className="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap">
+                <input type="checkbox" {...form.register(`importantDates.${i}.isUrgent`)} className="rounded" /> Urgent
+              </label>
+              <button type="button" onClick={() => removeDate(i)} className="text-red-400 hover:text-red-600 p-1">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
