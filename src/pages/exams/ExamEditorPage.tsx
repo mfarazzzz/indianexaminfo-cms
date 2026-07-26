@@ -8,7 +8,7 @@
  * 4. Context-aware: fields adapt based on entityType
  * 5. Writes to `exams` table + `content_posts` table (what frontend reads)
  */
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm, useFieldArray } from "react-hook-form";
 import { z } from "zod";
@@ -149,6 +149,15 @@ export function ExamEditorPage() {
   const { data: pillarsRaw } = usePillars();
   const pillars = Array.isArray(pillarsRaw) ? pillarsRaw : [];
   const [moduleData, setModuleData] = useState<Record<string, any>>({});
+  // In-progress (unsaved) edits per module — survives tab switches because
+  // this state lives at the page level, not inside the remounting ModuleEditor.
+  const [moduleDrafts, setModuleDrafts] = useState<Record<string, Record<string, unknown>>>({});
+  const updateModuleDraft = useCallback((moduleId: string, data: Record<string, unknown>) => {
+    setModuleDrafts(prev => ({ ...prev, [moduleId]: data }));
+  }, []);
+  const clearModuleDraft = useCallback((moduleId: string) => {
+    setModuleDrafts(prev => { const next = { ...prev }; delete next[moduleId]; return next; });
+  }, []);
   const [moduleSaving, setModuleSaving] = useState<string | null>(null);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   // Read-only date chips on other tabs link here — the one editable date surface.
@@ -297,7 +306,7 @@ export function ExamEditorPage() {
         {activeTab === "general" && <GeneralTab form={form} pillars={pillars} categories={categories} subcategories={subcategories} watchedCategoryId={watchedCategoryId} entityProfile={entityProfile} onNameBlur={handleNameBlur} />}
         {activeTab === "dates" && <DatesTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} entityProfile={entityProfile} entityType={watchedEntityType} />}
         {activeTab === "eligibility" && <EligibilityTab form={form} entityProfile={entityProfile} />}
-        {activeTab === "modules" && <ModulesTab form={form} examId={id ?? ""} examName={form.watch("name")} pillar={watchedPillar} entityType={watchedEntityType} moduleData={moduleData} setModuleData={setModuleData} moduleSaving={moduleSaving} setModuleSaving={setModuleSaving} isNew={isNew} />}
+        {activeTab === "modules" && <ModulesTab form={form} examId={id ?? ""} examName={form.watch("name")} pillar={watchedPillar} entityType={watchedEntityType} moduleData={moduleData} setModuleData={setModuleData} moduleSaving={moduleSaving} setModuleSaving={setModuleSaving} isNew={isNew} moduleDrafts={moduleDrafts} updateModuleDraft={updateModuleDraft} clearModuleDraft={clearModuleDraft} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
       </div>
       </DatesNavContext.Provider>
@@ -677,7 +686,7 @@ function EligibilityTab({ form, entityProfile }: { form: any; entityProfile: Ent
 // TAB: Content Modules — Registry-driven, context-aware, independent save
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ModulesTab({ form, examId, examName, pillar, entityType, moduleData, setModuleData, moduleSaving, setModuleSaving, isNew }: { form: any; examId: string; examName: string; pillar: string; entityType: string; moduleData: Record<string, any>; setModuleData: (v: Record<string, any>) => void; moduleSaving: string | null; setModuleSaving: (v: string | null) => void; isNew: boolean }) {
+function ModulesTab({ form, examId, examName, pillar, entityType, moduleData, setModuleData, moduleSaving, setModuleSaving, isNew, moduleDrafts, updateModuleDraft, clearModuleDraft }: { form: any; examId: string; examName: string; pillar: string; entityType: string; moduleData: Record<string, any>; setModuleData: (v: Record<string, any>) => void; moduleSaving: string | null; setModuleSaving: (v: string | null) => void; isNew: boolean; moduleDrafts: Record<string, Record<string, unknown>>; updateModuleDraft: (moduleId: string, data: Record<string, unknown>) => void; clearModuleDraft: (moduleId: string) => void }) {
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const availableModules = useMemo(() => getModulesForEntityType(entityType), [entityType]);
   const profile = useMemo(() => getEntityProfile(entityType), [entityType]);
@@ -716,6 +725,8 @@ function ModulesTab({ form, examId, examName, pillar, entityType, moduleData, se
         setModuleData({ ...moduleData, [moduleId]: created });
       }
       toast.success(`${mod?.label ?? moduleId} saved`);
+      // Clear the draft — saved data is now in moduleData
+      clearModuleDraft(moduleId);
       // Background batched revalidation — debounced with exam save if both happen
       revalidateAfterModuleSave({ examSlug: form.getValues("slug"), pillar, categorySlug: "", contentType: moduleId });
     } catch (err) { toast.error(`Save failed: ${getErrorMessage(err)}`); }
@@ -772,7 +783,7 @@ function ModulesTab({ form, examId, examName, pillar, entityType, moduleData, se
                   </div>
                   {isExpanded && (
                     <div className="border-t border-slate-200 bg-white px-4 py-4">
-                      <ModuleEditor moduleId={mod.id} entityType={entityType} existingData={moduleData[mod.id]?.contentTypeData ?? {}} onSave={(data) => saveModule(mod.id, data)} isSaving={moduleSaving === mod.id} disabled={isNew} examDates={(form.watch("dates") ?? []) as ExamDateEntry[]} />
+                      <ModuleEditor moduleId={mod.id} entityType={entityType} existingData={moduleDrafts[mod.id] ?? moduleData[mod.id]?.contentTypeData ?? {}} onSave={(data) => saveModule(mod.id, data)} isSaving={moduleSaving === mod.id} disabled={isNew} examDates={(form.watch("dates") ?? []) as ExamDateEntry[]} onDraftChange={(data) => updateModuleDraft(mod.id, data)} />
                     </div>
                   )}
                 </div>
@@ -787,16 +798,31 @@ function ModulesTab({ form, examId, examName, pillar, entityType, moduleData, se
 
 // ── Module Editor — renders from MODULE_REGISTRY with progressive disclosure ─
 
-function ModuleEditor({ moduleId, entityType, existingData, onSave, isSaving, disabled, examDates }: { moduleId: string; entityType: string; existingData: Record<string, unknown>; onSave: (data: Record<string, unknown>) => void; isSaving: boolean; disabled: boolean; examDates: ExamDateEntry[] }) {
+function ModuleEditor({ moduleId, entityType, existingData, onSave, isSaving, disabled, examDates, onDraftChange }: { moduleId: string; entityType: string; existingData: Record<string, unknown>; onSave: (data: Record<string, unknown>) => void; isSaving: boolean; disabled: boolean; examDates: ExamDateEntry[]; onDraftChange?: (data: Record<string, unknown>) => void }) {
   const goToImportantDates = React.useContext(DatesNavContext);
   const [formData, setFormData] = useState<Record<string, unknown>>(existingData);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const essentialFields = useMemo(() => getEssentialFields(moduleId, entityType), [moduleId, entityType]);
   const advancedFields = useMemo(() => getAdvancedFields(moduleId, entityType), [moduleId, entityType]);
 
-  useEffect(() => { setFormData(existingData); }, [existingData]);
+  // Seed guard: only accept server data on initial mount, never on background
+  // refetch. Browser tab switches trigger TanStack Query's refetchOnWindowFocus,
+  // which produces a new existingData object reference and would wipe unsaved edits.
+  // Same pattern as GeneralTab's seedRef guard.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    if (Object.keys(existingData).length > 0) seededRef.current = true;
+    setFormData(existingData);
+  }, [existingData]);
 
-  const updateField = (key: string, value: unknown) => setFormData((prev) => ({ ...prev, [key]: value }));
+  const updateField = (key: string, value: unknown) => {
+    setFormData((prev) => {
+      const next = { ...prev, [key]: value };
+      onDraftChange?.(next);
+      return next;
+    });
+  };
   const cls = "w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 
   const renderField = (field: FieldDef) => {
