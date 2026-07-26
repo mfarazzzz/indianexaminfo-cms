@@ -94,6 +94,7 @@ export function EntranceExamEditorPage() {
   const [showDelete, setShowDelete] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
+  const [showAIDialog, setShowAIDialog] = useState(false);
   const { getSetting } = useSettings();
 
   const form = useForm<FormData>({
@@ -288,7 +289,7 @@ export function EntranceExamEditorPage() {
     }
   };
 
-  const handleAIGenerate = async () => {
+  const handleAIGenerate = async (rawContent?: string) => {
     const examName = form.getValues("name");
     const year = form.getValues("editionYear") || new Date().getFullYear();
     if (!examName) {
@@ -304,8 +305,9 @@ export function EntranceExamEditorPage() {
     }
 
     setAiGenerating(true);
+    setShowAIDialog(false);
     try {
-      const data = await generateExamDataWithAI(examName, year, apiKey as string, model as string || undefined);
+      const data = await generateExamDataWithAI(examName, year, apiKey as string, model as string || undefined, rawContent);
 
       // Fill identity fields
       if (data.shortName) form.setValue("shortName", data.shortName);
@@ -384,7 +386,7 @@ export function EntranceExamEditorPage() {
         <div className="flex items-center gap-2">
           {!isNew && (
             <>
-              <button type="button" onClick={handleAIGenerate} disabled={aiGenerating}
+              <button type="button" onClick={() => setShowAIDialog(true)} disabled={aiGenerating}
                 className="flex items-center gap-1.5 rounded border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50">
                 {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 {aiGenerating ? "Generating..." : "🤖 AI Fill All"}
@@ -400,7 +402,7 @@ export function EntranceExamEditorPage() {
             </>
           )}
           {isNew && (
-            <button type="button" onClick={handleAIGenerate} disabled={aiGenerating}
+            <button type="button" onClick={() => setShowAIDialog(true)} disabled={aiGenerating}
               className="flex items-center gap-1.5 rounded border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50">
               {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               {aiGenerating ? "Generating..." : "🤖 AI Fill All"}
@@ -474,6 +476,9 @@ export function EntranceExamEditorPage() {
 
       {/* New Edition Dialog */}
       {showNewEdition && <NewEditionDialog onConfirm={handleStartNewEdition} onCancel={() => setShowNewEdition(false)} frequency={watchFrequency} />}
+
+      {/* AI Generate Dialog */}
+      {showAIDialog && <AIFillDialog onGenerate={handleAIGenerate} onCancel={() => setShowAIDialog(false)} examName={form.getValues("name")} />}
 
       {/* Delete Dialog */}
       <ConfirmDialog open={showDelete} onOpenChange={setShowDelete} title="Delete Exam"
@@ -723,6 +728,57 @@ function NewEditionDialog({ onConfirm, onCancel, frequency }: { onConfirm: (year
           <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 rounded">Cancel</button>
           <button type="button" onClick={() => onConfirm(year, frequency === "biannual" ? session : "main")}
             className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded">Create Edition</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── AI Fill Dialog ─────────────────────────────────────────────────────────
+
+function AIFillDialog({ onGenerate, onCancel, examName }: { onGenerate: (rawContent?: string) => void; onCancel: () => void; examName: string }) {
+  const [rawContent, setRawContent] = useState("");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+        <div className="flex items-center gap-2">
+          <Sparkles size={18} className="text-purple-600" />
+          <h3 className="font-semibold text-slate-900">AI Generate All Fields</h3>
+        </div>
+
+        <p className="text-sm text-slate-600">
+          Paste any raw data below — official notification text, website content, PDF text, dates, or any unstructured information about <strong>{examName || "this exam"}</strong>. The AI will extract and fill all fields automatically.
+        </p>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">
+            Raw Data / Content <span className="text-slate-400">(optional — leave empty to auto-generate from exam name)</span>
+          </label>
+          <textarea
+            value={rawContent}
+            onChange={(e) => setRawContent(e.target.value)}
+            rows={10}
+            placeholder={`Paste notification text, official dates, eligibility details, or any raw content here...\n\nExample:\nCAT 2026 Notification Released\nRegistration: 1 Aug - 15 Sep 2026\nExam Date: 29 Nov 2026\nEligibility: Graduate with 50% marks\nFee: ₹2400 (General), ₹1200 (SC/ST)\nConducting Body: IIM Bangalore\n...`}
+            className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-mono leading-relaxed focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-y"
+          />
+        </div>
+
+        <div className="bg-purple-50 border border-purple-100 rounded p-3">
+          <p className="text-xs text-purple-700">
+            <strong>What AI will generate:</strong> Important dates, status, eligibility, fees, vacancy, all module flags, SEO title & description (Google Discover optimized), tags, and 6+ FAQs targeting featured snippets.
+          </p>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded">
+            Cancel
+          </button>
+          <button type="button" onClick={() => onGenerate(rawContent || undefined)}
+            className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-1.5">
+            <Sparkles size={14} />
+            Generate All Fields
+          </button>
         </div>
       </div>
     </div>

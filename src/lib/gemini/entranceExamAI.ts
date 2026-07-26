@@ -89,13 +89,66 @@ RULES:
 Return ONLY the JSON object. No markdown code fences, no explanation.
 `;
 
+const GENERATE_WITH_RAW_PROMPT = (examName: string, year: number, rawContent: string) => `
+You are an SEO expert for Indian education portals. I have raw unstructured data about the entrance exam "${examName}" for ${year}. Extract all information and generate structured data.
+
+RAW DATA PROVIDED BY EDITOR:
+---
+${rawContent.slice(0, 6000)}
+---
+
+Using the above raw data, extract and generate a complete JSON object. Use EXACT dates from the raw data when available. Infer missing fields intelligently.
+
+Return ONLY a valid JSON object with this exact structure (no markdown, no explanation, just JSON):
+
+{
+  "shortName": "short abbreviation",
+  "conductingBody": "extracted from raw data or inferred",
+  "officialWebsite": "extracted URL or best guess",
+  "importantDates": [
+    {"label": "Event Name", "date": "YYYY-MM-DD", "isUrgent": true/false}
+  ],
+  "vacancy": number or null,
+  "status": "upcoming|registration-open|registration-closed|admit-card-released|exam-conducted|answer-key-released|result-declared|completed",
+  "hasNotification": true/false,
+  "hasApplication": true/false,
+  "hasAdmitCard": true/false,
+  "hasSyllabus": true/false,
+  "hasAnswerKey": true/false,
+  "hasResult": true/false,
+  "hasCutoff": true/false,
+  "hasCounselling": true/false,
+  "seoTitle": "under 60 chars, include exam name + year + key action",
+  "seoDescription": "under 160 chars, optimized for Google Discover CTR",
+  "tags": ["8-12 tags for discovery"],
+  "faqs": [
+    {"question": "...", "answer": "2-3 sentence detailed answer based on the raw data"}
+  ]
+}
+
+RULES:
+- Extract REAL dates from the raw data. Convert any date format to YYYY-MM-DD.
+- If raw data mentions registration fee, include vacancy count, eligibility — use those exact values.
+- Set module flags (has*) to true for content types mentioned in the raw data.
+- Determine status based on current date (July ${year}) relative to the dates.
+- FAQs should be based on actual information from the raw data, not generic.
+- Mark dates as "isUrgent": true if they are deadlines (registration closes, exam date).
+- Include ALL dates mentioned in raw data, not just 6.
+- SEO title and description should reference specific facts from the raw data.
+
+Return ONLY the JSON object. No markdown code fences, no explanation.
+`;
+
 export async function generateExamDataWithAI(
   examName: string,
   year: number,
   apiKey: string,
-  model?: string
+  model?: string,
+  rawContent?: string
 ): Promise<AIExamData> {
-  const prompt = GENERATE_PROMPT(examName, year);
+  const prompt = rawContent
+    ? GENERATE_WITH_RAW_PROMPT(examName, year, rawContent)
+    : GENERATE_PROMPT(examName, year);
   const raw = await generateWithGemini(prompt, apiKey, model);
 
   // Clean potential markdown wrapping
