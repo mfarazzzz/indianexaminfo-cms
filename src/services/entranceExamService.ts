@@ -306,7 +306,8 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
   exam: ExamIdentity;
   edition: ExamEdition;
 }> {
-  const slug = input.slug || generateSlug(input.name);
+  // Prefer short name for slug (e.g. "CAT" → "cat"), fall back to full name
+  const slug = input.slug || generateSlug(input.shortName || input.name);
 
   // Check slug uniqueness
   const { data: existing } = await db
@@ -335,6 +336,7 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
       cycle_frequency: input.cycleFrequency ?? "annual",
       status: "upcoming",
       is_featured: false,
+      is_published: true,
     })
     .select(DETAIL_SELECT)
     .single();
