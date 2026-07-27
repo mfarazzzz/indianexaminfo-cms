@@ -79,13 +79,13 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
     {"question": "What is the exam pattern?", "answer": "answer"},
     {"question": "What is the syllabus?", "answer": "answer"},
     {"question": "What is the application fee?", "answer": "answer"},
-    {"question": "How to download admit card?", "answer": "answer"},
+    {"question": "How to download [exam] ${year} admit card?", "answer": "answer"},
     {"question": "When will result be declared?", "answer": "answer"},
     {"question": "What is the cutoff?", "answer": "answer"},
     {"question": "How many attempts allowed?", "answer": "answer"},
     {"question": "What is the selection process?", "answer": "answer"},
     {"question": "Is there negative marking?", "answer": "answer"},
-    {"question": "What are the best books?", "answer": "answer"},
+    {"question": "Which colleges accept this score?", "answer": "answer"},
     {"question": "What is the counselling process?", "answer": "answer"}
   ],
   "contentModules": {
@@ -102,11 +102,35 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
     },
     "howToDownloadAdmitCard": {
       "title": "How to Download [exam] ${year} Admit Card",
-      "steps": [{"order": 1, "text": "step"}]
+      "steps": [{"order": 1, "text": "Visit official website"}, {"order": 2, "text": "Login with registration number and password"}, {"order": 3, "text": "Click Download Admit Card link"}, {"order": 4, "text": "Verify details and print"}]
     },
     "howToCheckResult": {
       "title": "How to Check [exam] ${year} Result",
-      "steps": [{"order": 1, "text": "step"}]
+      "steps": [{"order": 1, "text": "Visit official website"}, {"order": 2, "text": "Login with credentials"}, {"order": 3, "text": "Click Check Result/Scorecard"}, {"order": 4, "text": "Download and save"}]
+    },
+    "howToDownloadAnswerKey": {
+      "title": "How to Download [exam] ${year} Answer Key",
+      "steps": [{"order": 1, "text": "Visit official website"}, {"order": 2, "text": "Login to candidate portal"}, {"order": 3, "text": "Click on Answer Key link"}, {"order": 4, "text": "Download PDF"}]
+    },
+    "howToDownloadNotification": {
+      "title": "How to Download [exam] ${year} Notification",
+      "steps": [{"order": 1, "text": "Visit official website"}, {"order": 2, "text": "Go to Notifications/Downloads section"}, {"order": 3, "text": "Click on Official Notification PDF"}, {"order": 4, "text": "Save and read carefully"}]
+    },
+    "howToFillApplication": {
+      "title": "How to Fill [exam] ${year} Application Form",
+      "steps": [{"order": 1, "text": "Register with email and phone"}, {"order": 2, "text": "Fill academic details"}, {"order": 3, "text": "Select exam center preferences"}, {"order": 4, "text": "Upload documents"}, {"order": 5, "text": "Review and submit"}]
+    },
+    "howToPayFee": {
+      "title": "How to Pay [exam] ${year} Application Fee",
+      "steps": [{"order": 1, "text": "Login to application portal"}, {"order": 2, "text": "Go to Fee Payment section"}, {"order": 3, "text": "Select payment mode (UPI/Card/Net Banking)"}, {"order": 4, "text": "Complete payment and save receipt"}]
+    },
+    "howToCorrectApplication": {
+      "title": "How to Correct [exam] ${year} Application Form",
+      "steps": [{"order": 1, "text": "Login during correction window"}, {"order": 2, "text": "Click Edit Application"}, {"order": 3, "text": "Make corrections in allowed fields"}, {"order": 4, "text": "Submit and pay additional fee if required"}]
+    },
+    "howToRecoverLogin": {
+      "title": "How to Recover [exam] ${year} Login Details",
+      "steps": [{"order": 1, "text": "Visit official website login page"}, {"order": 2, "text": "Click Forgot Password/Registration Number"}, {"order": 3, "text": "Enter registered email or phone"}, {"order": 4, "text": "Follow OTP verification steps"}]
     },
     "examPattern": {
       "mode": "Online CBT",
@@ -140,8 +164,8 @@ RULES:
 - All known dates must be YYYY-MM-DD format.
 - SEO title MUST be under 60 characters.
 - SEO description MUST be under 160 characters.
-- Generate exactly 15 FAQs targeting "People Also Ask" queries.
-- Content modules: fill with real information. Leave steps generic if details unknown.
+- Generate exactly 15 FAQs targeting "People Also Ask" queries. Include both informational ("What is...", "When is...") and how-to ("How to apply...", "How to download...") questions.
+- Content modules: fill ALL step-by-step guides with detailed 4-6 steps each.
 - Exam pattern: use real data (sections, marks, duration) if known.
 - Syllabus: list actual subjects and key topics.
 
@@ -156,7 +180,16 @@ RAW DATA PROVIDED BY EDITOR:
 ${rawContent.slice(0, 6000)}
 ---
 
-Using the above raw data, extract and generate a complete JSON object. Use EXACT dates from the raw data when available. Infer missing fields intelligently.
+CRITICAL DATE EXTRACTION INSTRUCTIONS:
+- Look for ANY date mentions in the raw data: "1 Aug 2026", "August 1, 2026", "01-08-2026", "01/08/2026", "1st August", etc.
+- Convert ALL dates to YYYY-MM-DD format. Examples:
+  - "1 Aug 2026" → "${year}-08-01"
+  - "29 November 2026" → "${year}-11-29"  
+  - "15 Sep 2026" → "${year}-09-15"
+  - "January 2027" → "${year + 1}-01-15" (use 15 as day if only month given)
+- Map dates to these standard labels: "Notification Release", "Registration Opens", "Registration Closes", "Application Correction Window", "Admit Card Release", "Exam Date", "Answer Key Release", "Result Declaration", "Counselling Starts", "Cutoff Release"
+- If the raw data says "Registration: 1 Aug - 15 Sep 2026", that means Registration Opens = ${year}-08-01 and Registration Closes = ${year}-09-15
+- NEVER leave a date as empty string if the raw data contains that date. Extract every single date mentioned.
 
 Return ONLY a valid JSON object with this exact structure (no markdown, no explanation, just JSON):
 
@@ -165,7 +198,16 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
   "conductingBody": "extracted from raw data or inferred",
   "officialWebsite": "extracted URL or best guess",
   "importantDates": [
-    {"label": "Event Name", "date": "YYYY-MM-DD", "isUrgent": true/false}
+    {"label": "Notification Release", "date": "YYYY-MM-DD or empty", "isUrgent": false},
+    {"label": "Registration Opens", "date": "YYYY-MM-DD or empty", "isUrgent": true},
+    {"label": "Registration Closes", "date": "YYYY-MM-DD or empty", "isUrgent": true},
+    {"label": "Application Correction Window", "date": "YYYY-MM-DD or empty", "isUrgent": false},
+    {"label": "Admit Card Release", "date": "YYYY-MM-DD or empty", "isUrgent": false},
+    {"label": "Exam Date", "date": "YYYY-MM-DD or empty", "isUrgent": true},
+    {"label": "Answer Key Release", "date": "YYYY-MM-DD or empty", "isUrgent": false},
+    {"label": "Result Declaration", "date": "YYYY-MM-DD or empty", "isUrgent": false},
+    {"label": "Counselling Starts", "date": "YYYY-MM-DD or empty", "isUrgent": false},
+    {"label": "Cutoff Release", "date": "YYYY-MM-DD or empty", "isUrgent": false}
   ],
   "vacancy": number or null,
   "status": "upcoming|registration-open|registration-closed|admit-card-released|exam-conducted|answer-key-released|result-declared|completed",
@@ -184,9 +226,15 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
     {"question": "...", "answer": "2-3 sentence detailed answer based on the raw data"}
   ],
   "contentModules": {
-    "howToApply": {"title": "How to Apply", "steps": [{"order": 1, "text": "step details", "link": "url if found"}]},
-    "howToDownloadAdmitCard": {"title": "...", "steps": [...]},
-    "howToCheckResult": {"title": "...", "steps": [...]},
+    "howToApply": {"title": "How to Apply for ${examName} ${year}", "steps": [{"order": 1, "text": "detailed step from raw data or inferred", "link": "url if found"}]},
+    "howToDownloadAdmitCard": {"title": "How to Download ${examName} ${year} Admit Card", "steps": [{"order": 1, "text": "Visit official website"}, {"order": 2, "text": "Login with registration number and password"}, {"order": 3, "text": "Click on Download Admit Card"}, {"order": 4, "text": "Verify details and print"}]},
+    "howToCheckResult": {"title": "How to Check ${examName} ${year} Result", "steps": [{"order": 1, "text": "Visit official website"}, {"order": 2, "text": "Login with credentials"}, {"order": 3, "text": "Click on Check Result/Scorecard"}, {"order": 4, "text": "Download and save"}]},
+    "howToDownloadAnswerKey": {"title": "How to Download ${examName} ${year} Answer Key", "steps": [{"order": 1, "text": "step"}]},
+    "howToDownloadNotification": {"title": "How to Download ${examName} ${year} Notification", "steps": [{"order": 1, "text": "step"}]},
+    "howToFillApplication": {"title": "How to Fill ${examName} ${year} Application Form", "steps": [{"order": 1, "text": "step"}]},
+    "howToPayFee": {"title": "How to Pay ${examName} ${year} Application Fee", "steps": [{"order": 1, "text": "step"}]},
+    "howToCorrectApplication": {"title": "How to Correct ${examName} ${year} Application Form", "steps": [{"order": 1, "text": "step"}]},
+    "howToRecoverLogin": {"title": "How to Recover ${examName} ${year} Login Details", "steps": [{"order": 1, "text": "step"}]},
     "examPattern": {"mode": "...", "duration": "...", "totalMarks": N, "sections": [{"name":"...", "questions": N, "marks": N}], "markingScheme": "..."},
     "selectionProcess": ["step1", "step2"],
     "syllabus": [{"subject": "...", "topics": ["...", "..."]}],
@@ -198,14 +246,13 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
 }
 
 RULES:
-- Extract REAL dates from the raw data. Convert any date format to YYYY-MM-DD.
-- Generate 15 FAQs based on the raw data content.
-- Fill content modules with REAL information from the raw data.
-- If raw data mentions how to apply steps, fill howToApply with actual steps.
+- Extract REAL dates from the raw data. Convert ANY date format to YYYY-MM-DD. This is the MOST IMPORTANT rule.
+- Generate 12-15 FAQs based on the raw data. Include both informational ("What is...", "When is...") and how-to ("How to apply...", "How to download...") questions targeting "People Also Ask" featured snippets.
+- Fill ALL contentModules step-by-step guides with REAL detailed steps (minimum 4-6 steps each). Use information from the raw data. If specific steps not in raw data, infer logical steps based on the exam type.
 - Extract fee structure, eligibility, exam pattern from raw data if present.
-- Include ALL dates mentioned in raw data.
+- Include ALL dates mentioned in raw data — never skip a date that's clearly stated.
 - Set module flags based on what content exists in the raw data.
-- Leave fields empty/null if information is not available in the raw data.
+- Leave fields empty/null ONLY if information is genuinely not available anywhere in the raw data.
 
 Return ONLY the JSON object. No markdown code fences, no explanation.
 `;

@@ -471,7 +471,7 @@ export function EntranceExamEditorPage() {
         {activeTab === "modules" && <ModulesTab form={form} />}
         {activeTab === "content" && <ContentModulesTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("Content modules saved."); await loadExam(); } }} />}
         {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("News saved."); await loadExam(); } }} />}
-        {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
+        {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSaveModules={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("SEO settings saved."); await loadExam(); } }} />}
         {activeTab === "editions" && <HistoryTab editions={editions}
           onDelete={async (edId, label) => {
             if (!confirm(`Delete edition "${label}"? This cannot be undone.`)) return;
@@ -884,7 +884,7 @@ function NewsTab({ editionId, contentModules, onSave }: { editionId: string | nu
   const [news, setNews] = React.useState<any[]>((contentModules.news as any[]) ?? []);
   const [saving, setSaving] = React.useState(false);
   const [editingIdx, setEditingIdx] = React.useState<number | null>(null);
-  const [draft, setDraft] = React.useState({ title: "", content: "", excerpt: "", tags: "", isFeatured: false });
+  const [draft, setDraft] = React.useState({ title: "", content: "", excerpt: "", tags: "", isFeatured: false, featureImage: "" });
 
   const handleSave = async () => {
     setSaving(true);
@@ -904,6 +904,7 @@ function NewsTab({ editionId, contentModules, onSave }: { editionId: string | nu
       updatedAt: new Date().toISOString(),
       isPublished: true,
       isFeatured: draft.isFeatured,
+      featureImage: draft.featureImage || null,
     };
     if (editingIdx !== null) {
       const updated = [...news];
@@ -913,12 +914,12 @@ function NewsTab({ editionId, contentModules, onSave }: { editionId: string | nu
     } else {
       setNews([item, ...news]);
     }
-    setDraft({ title: "", content: "", excerpt: "", tags: "", isFeatured: false });
+    setDraft({ title: "", content: "", excerpt: "", tags: "", isFeatured: false, featureImage: "" });
   };
 
   const editNews = (idx: number) => {
     const item = news[idx];
-    setDraft({ title: item.title, content: item.content ?? "", excerpt: item.excerpt ?? "", tags: (item.tags ?? []).join(", "), isFeatured: item.isFeatured ?? false });
+    setDraft({ title: item.title, content: item.content ?? "", excerpt: item.excerpt ?? "", tags: (item.tags ?? []).join(", "), isFeatured: item.isFeatured ?? false, featureImage: item.featureImage ?? "" });
     setEditingIdx(idx);
   };
 
@@ -944,6 +945,16 @@ function NewsTab({ editionId, contentModules, onSave }: { editionId: string | nu
           className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="News title *" />
         <textarea value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })}
           rows={4} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="News content (supports HTML for rich text)" />
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Feature Image URL</label>
+          <input value={draft.featureImage} onChange={(e) => setDraft({ ...draft, featureImage: e.target.value })}
+            className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="https://... (image URL for news thumbnail/card)" />
+          {draft.featureImage && (
+            <div className="mt-2 relative inline-block">
+              <img src={draft.featureImage} alt="Preview" className="h-20 w-32 object-cover rounded border border-slate-200" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            </div>
+          )}
+        </div>
         <input value={draft.excerpt} onChange={(e) => setDraft({ ...draft, excerpt: e.target.value })}
           className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="Short excerpt (auto-generated if empty)" />
         <div className="flex items-center gap-4">
@@ -960,7 +971,7 @@ function NewsTab({ editionId, contentModules, onSave }: { editionId: string | nu
             {editingIdx !== null ? "Update" : "Publish"}
           </button>
           {editingIdx !== null && (
-            <button type="button" onClick={() => { setEditingIdx(null); setDraft({ title: "", content: "", excerpt: "", tags: "", isFeatured: false }); }}
+            <button type="button" onClick={() => { setEditingIdx(null); setDraft({ title: "", content: "", excerpt: "", tags: "", isFeatured: false, featureImage: "" }); }}
               className="text-xs px-3 py-1.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-100">Cancel</button>
           )}
         </div>
@@ -972,7 +983,10 @@ function NewsTab({ editionId, contentModules, onSave }: { editionId: string | nu
         {news.map((item, i) => (
           <div key={item.id ?? i} className="border border-slate-200 rounded-lg p-3 bg-white">
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
+              {item.featureImage && (
+                <img src={item.featureImage} alt="" className="w-16 h-12 object-cover rounded border border-slate-100 shrink-0" />
+              )}
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <h4 className="text-sm font-medium text-slate-800 line-clamp-1">{item.title}</h4>
                   {item.isFeatured && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Featured</span>}
@@ -997,15 +1011,103 @@ function NewsTab({ editionId, contentModules, onSave }: { editionId: string | nu
   );
 }
 
-function SEOTab({ form, faqFields, appendFaq, removeFaq }: { form: any; faqFields: any[]; appendFaq: (v: any) => void; removeFaq: (i: number) => void }) {
+function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModules, onSaveModules }: { form: any; faqFields: any[]; appendFaq: (v: any) => void; removeFaq: (i: number) => void; editionId: string | null; contentModules: Record<string, unknown>; onSaveModules: (modules: Record<string, unknown>) => Promise<void> }) {
+  const existingSeo = (contentModules.newsSeo as any) ?? {};
+  const [newsSeo, setNewsSeo] = React.useState({
+    newsKeywords: existingSeo.newsKeywords ?? "",
+    standout: existingSeo.standout ?? "",
+    syndicationSource: existingSeo.syndicationSource ?? "",
+    maxImagePreview: existingSeo.maxImagePreview ?? "large",
+    robotsNewsTag: existingSeo.robotsNewsTag ?? "",
+    googleNewsCategory: existingSeo.googleNewsCategory ?? "",
+    discoverOptIn: existingSeo.discoverOptIn ?? true,
+  });
+  const [savingSeo, setSavingSeo] = React.useState(false);
+
+  const handleSaveNewsSeo = async () => {
+    setSavingSeo(true);
+    try {
+      await onSaveModules({ ...contentModules, newsSeo: newsSeo });
+    } finally {
+      setSavingSeo(false);
+    }
+  };
+
   return (
-    <div className="space-y-4">
-      <Field label="SEO Title" name="seoTitle" form={form} placeholder="Override page title for search engines" />
-      <div>
-        <label className="block text-xs font-medium text-slate-600 mb-1">SEO Description</label>
-        <textarea {...form.register("seoDescription")} rows={3} placeholder="Meta description..." className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" />
+    <div className="space-y-6">
+      {/* Standard SEO */}
+      <div className="space-y-4">
+        <Field label="SEO Title" name="seoTitle" form={form} placeholder="Override page title for search engines" />
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">SEO Description</label>
+          <textarea {...form.register("seoDescription")} rows={3} placeholder="Meta description..." className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" />
+        </div>
+        <Field label="Tags (comma-separated)" name="tags" form={form} placeholder="cat, mba, management, entrance" />
       </div>
-      <Field label="Tags (comma-separated)" name="tags" form={form} placeholder="cat, mba, management, entrance" />
+
+      {/* Google News & Discover SEO */}
+      <div className="border border-slate-200 rounded-lg">
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-700">📰 News SEO (Google News & Discover)</h3>
+          <button type="button" onClick={handleSaveNewsSeo} disabled={savingSeo || !editionId}
+            className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">
+            {savingSeo ? "Saving..." : "Save News SEO"}
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">News Keywords</label>
+            <input value={newsSeo.newsKeywords} onChange={(e) => setNewsSeo({ ...newsSeo, newsKeywords: e.target.value })}
+              className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="comma-separated keywords for Google News (max 10)" />
+            <p className="text-xs text-slate-400 mt-0.5">Used in news_keywords meta tag for Google News indexing</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Google News Category</label>
+              <select value={newsSeo.googleNewsCategory} onChange={(e) => setNewsSeo({ ...newsSeo, googleNewsCategory: e.target.value })}
+                className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
+                <option value="">Select category</option>
+                <option value="Education">Education</option>
+                <option value="India">India</option>
+                <option value="Science">Science</option>
+                <option value="Technology">Technology</option>
+                <option value="Business">Business</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Max Image Preview</label>
+              <select value={newsSeo.maxImagePreview} onChange={(e) => setNewsSeo({ ...newsSeo, maxImagePreview: e.target.value })}
+                className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
+                <option value="large">Large (recommended for Discover)</option>
+                <option value="standard">Standard</option>
+                <option value="none">None</option>
+              </select>
+              <p className="text-xs text-slate-400 mt-0.5">Large images improve visibility in Google Discover</p>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Standout Tag URL</label>
+            <input value={newsSeo.standout} onChange={(e) => setNewsSeo({ ...newsSeo, standout: e.target.value })}
+              className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="URL of the original story (if this is original reporting)" />
+            <p className="text-xs text-slate-400 mt-0.5">Google News standout tag for original journalism credit</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Syndication Source</label>
+            <input value={newsSeo.syndicationSource} onChange={(e) => setNewsSeo({ ...newsSeo, syndicationSource: e.target.value })}
+              className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="Original source URL if content is syndicated" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Robots News Directives</label>
+            <input value={newsSeo.robotsNewsTag} onChange={(e) => setNewsSeo({ ...newsSeo, robotsNewsTag: e.target.value })}
+              className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="e.g. noindex, nosnippet (leave empty for default indexing)" />
+            <p className="text-xs text-slate-400 mt-0.5">Controls how Google News indexes this content</p>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={newsSeo.discoverOptIn} onChange={(e) => setNewsSeo({ ...newsSeo, discoverOptIn: e.target.checked })} className="rounded" />
+            Opt-in to Google Discover (ensure large featured image is set)
+          </label>
+        </div>
+      </div>
 
       {/* FAQs */}
       <div>
