@@ -9,6 +9,7 @@
  * Other pillars continue using the generic examService.ts.
  */
 import { db } from "@/lib/supabase/client";
+import { revalidateExams } from "@/lib/revalidate";
 import type { Pillar } from "@/types/exam";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -357,6 +358,9 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
     .single();
   if (edErr) throw edErr;
 
+  // Trigger frontend cache revalidation
+  revalidateExams().catch(() => {});
+
   return {
     exam: mapExamIdentityRow(examRow as Record<string, unknown>),
     edition: mapEditionRow(edRow as Record<string, unknown>),
@@ -412,6 +416,10 @@ export async function updateExamIdentity(
     .select(DETAIL_SELECT)
     .single();
   if (error) throw error;
+
+  // Trigger frontend cache revalidation
+  revalidateExams().catch(() => {});
+
   return mapExamIdentityRow(data as Record<string, unknown>);
 }
 
@@ -474,6 +482,10 @@ export async function updateEdition(
     .select("*")
     .single();
   if (error) throw error;
+
+  // Trigger frontend cache revalidation
+  revalidateExams().catch(() => {});
+
   return mapEditionRow(data as Record<string, unknown>);
 }
 
