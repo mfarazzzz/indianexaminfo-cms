@@ -11,6 +11,8 @@ import {
 import { getCategories, type Category } from "@/services/categoryService";
 import { deleteExam } from "@/services/examService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { RichEditor } from "@/components/shared/RichEditor";
+import { ImageUploader } from "@/components/shared/ImageUploader";
 import { getErrorMessage } from "@/lib/utils";
 import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
 import { useSettings } from "@/hooks/useSettings";
@@ -943,17 +945,23 @@ function NewsTab({ editionId, contentModules, onSave }: { editionId: string | nu
         <h4 className="text-sm font-semibold text-slate-700">{editingIdx !== null ? "✏️ Edit News" : "➕ Add News"}</h4>
         <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })}
           className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="News title *" />
-        <textarea value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-          rows={4} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="News content (supports HTML for rich text)" />
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Feature Image URL</label>
-          <input value={draft.featureImage} onChange={(e) => setDraft({ ...draft, featureImage: e.target.value })}
-            className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="https://... (image URL for news thumbnail/card)" />
-          {draft.featureImage && (
-            <div className="mt-2 relative inline-block">
-              <img src={draft.featureImage} alt="Preview" className="h-20 w-32 object-cover rounded border border-slate-200" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            </div>
-          )}
+          <label className="block text-xs font-medium text-slate-500 mb-1">News Content</label>
+          <RichEditor
+            content={draft.content}
+            onChange={(html) => setDraft({ ...draft, content: html })}
+            placeholder="Write news content here..."
+            minHeight={200}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Feature Image</label>
+          <ImageUploader
+            value={draft.featureImage}
+            onChange={(url) => setDraft({ ...draft, featureImage: url })}
+            folder="media"
+            label="Upload Feature Image"
+          />
         </div>
         <input value={draft.excerpt} onChange={(e) => setDraft({ ...draft, excerpt: e.target.value })}
           className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="Short excerpt (auto-generated if empty)" />
