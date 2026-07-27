@@ -85,6 +85,7 @@ export interface ExamIdentity {
   seoTitle: string | null;
   seoDescription: string | null;
   isFeatured: boolean;
+  isPublished: boolean;
   faqs: { question: string; answer: string }[];
   currentEditionId: string | null;
   createdAt: string;
@@ -101,6 +102,7 @@ export interface EntranceExamListItem {
   conductingBody: string;
   cycleFrequency: CycleFrequency;
   isFeatured: boolean;
+  isPublished: boolean;
   currentEdition: {
     id: string;
     year: number;
@@ -194,6 +196,7 @@ function mapExamIdentityRow(row: Record<string, unknown>): ExamIdentity {
     seoTitle: (row.seo_title as string) ?? null,
     seoDescription: (row.seo_description as string) ?? null,
     isFeatured: (row.is_featured as boolean) ?? false,
+    isPublished: (row.is_published as boolean) ?? false,
     faqs: (row.faqs as { question: string; answer: string }[]) ?? [],
     currentEditionId: (row.current_edition_id as string) ?? null,
     createdAt: row.created_at as string,
@@ -217,6 +220,7 @@ function mapListItem(row: Record<string, unknown>): EntranceExamListItem {
     conductingBody: (row.conducting_body as string) ?? "",
     cycleFrequency: (row.cycle_frequency as CycleFrequency) ?? "annual",
     isFeatured: (row.is_featured as boolean) ?? false,
+    isPublished: (row.is_published as boolean) ?? false,
     currentEdition: edition
       ? {
           id: edition.id as string,

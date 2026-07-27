@@ -4,6 +4,7 @@
  * Field mapping mirrors frontend types/exam.ts ExamEntity exactly.
  */
 import { db } from "@/lib/supabase/client";
+import { revalidateExams } from "@/lib/revalidate";
 import type { ExamEntity, ExamStatus, Pillar } from "@/types/exam";
 
 // ── Row mapper: Supabase snake_case → camelCase ────────────────────────────
@@ -285,6 +286,7 @@ export async function publishExam(id: string): Promise<ExamEntity> {
     .select(LIST_SELECT)
     .single();
   if (error) throw error;
+  revalidateExams().catch(() => {});
   return mapRow(data as Record<string, unknown>);
 }
 
@@ -296,6 +298,7 @@ export async function unpublishExam(id: string): Promise<ExamEntity> {
     .select(LIST_SELECT)
     .single();
   if (error) throw error;
+  revalidateExams().catch(() => {});
   return mapRow(data as Record<string, unknown>);
 }
 

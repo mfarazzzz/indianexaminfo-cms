@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Plus, Trash2, History, Sparkles, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, History, Sparkles, Loader2, Globe } from "lucide-react";
 import { toast } from "sonner";
 import { useForm, useFieldArray } from "react-hook-form";
 import {
@@ -9,7 +9,7 @@ import {
   type ExamEdition, type ExamIdentity, type EditionStatus, type CycleFrequency, type CycleSession,
 } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
-import { deleteExam } from "@/services/examService";
+import { deleteExam, publishExam, unpublishExam } from "@/services/examService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { RichEditor } from "@/components/shared/RichEditor";
 import { ImageUploader } from "@/components/shared/ImageUploader";
@@ -97,6 +97,8 @@ export function EntranceExamEditorPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [showAIDialog, setShowAIDialog] = useState(false);
+  const [isPublished, setIsPublished] = useState(true);
+  const [publishing, setPublishing] = useState(false);
   const { getSetting } = useSettings();
 
   const form = useForm<FormData>({
@@ -127,6 +129,7 @@ export function EntranceExamEditorPage() {
     try {
       const data = await getEntranceExam(id);
       setExam(data.exam);
+      setIsPublished(data.exam.isPublished);
       setCurrentEdition(data.currentEdition);
       setEditions(data.editions);
       // Populate form with exam identity
@@ -425,6 +428,33 @@ export function EntranceExamEditorPage() {
         <div className="flex items-center gap-2">
           {!isNew && (
             <>
+              {/* Publish status badge + toggle */}
+              <button type="button" onClick={async () => {
+                setPublishing(true);
+                try {
+                  if (isPublished) {
+                    await unpublishExam(exam!.id);
+                    setIsPublished(false);
+                    toast.success("Exam unpublished. It won't appear on the frontend.");
+                  } else {
+                    await publishExam(exam!.id);
+                    setIsPublished(true);
+                    toast.success("Exam published! It will appear on the frontend shortly.");
+                  }
+                } catch (err) {
+                  toast.error(getErrorMessage(err));
+                } finally {
+                  setPublishing(false);
+                }
+              }} disabled={publishing}
+                className={`flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  isPublished
+                    ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+                    : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                } disabled:opacity-50`}>
+                <Globe size={14} />
+                {publishing ? "..." : isPublished ? "Published ✓" : "Draft — Publish"}
+              </button>
               <button type="button" onClick={() => setShowAIDialog(true)} disabled={aiGenerating}
                 className="flex items-center gap-1.5 rounded border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50">
                 {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
