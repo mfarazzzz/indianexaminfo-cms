@@ -153,7 +153,7 @@ export function EntranceExamEditorPage() {
         editionStatus: data.currentEdition?.status ?? "upcoming",
         notificationDate: data.currentEdition?.notificationDate ?? "",
         vacancy: data.currentEdition?.vacancy?.toString() ?? "",
-        importantDates: data.currentEdition?.importantDates ?? [],
+        importantDates: mergeWithStandardDates(data.currentEdition?.importantDates ?? []),
         hasNotification: data.currentEdition?.hasNotification ?? false,
         hasApplication: data.currentEdition?.hasApplication ?? false,
         hasAdmitCard: data.currentEdition?.hasAdmitCard ?? false,
@@ -604,12 +604,40 @@ const STANDARD_DATE_LABELS = [
   { label: "Cutoff Release", isUrgent: false },
 ];
 
+/** Merge DB dates with standard rows so all 10 standard rows are always visible */
+function mergeWithStandardDates(dbDates: { label: string; date: string; isUrgent: boolean }[]): { label: string; date: string; isUrgent: boolean }[] {
+  const merged = STANDARD_DATE_LABELS.map((std) => {
+    const match = dbDates.find((d) =>
+      d.label.toLowerCase().replace(/[^a-z]/g, "").includes(std.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8)) ||
+      std.label.toLowerCase().replace(/[^a-z]/g, "").includes(d.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8))
+    );
+    return match ? { label: std.label, date: match.date, isUrgent: match.isUrgent } : { label: std.label, date: "", isUrgent: std.isUrgent };
+  });
+  // Append any custom dates from DB that don't match standard labels
+  const standardLabelsNorm = STANDARD_DATE_LABELS.map((s) => s.label.toLowerCase().replace(/[^a-z]/g, ""));
+  for (const d of dbDates) {
+    const dNorm = d.label.toLowerCase().replace(/[^a-z]/g, "");
+    const isStandard = standardLabelsNorm.some((s) => s.includes(dNorm.slice(0, 8)) || dNorm.includes(s.slice(0, 8)));
+    if (!isStandard) merged.push(d);
+  }
+  return merged;
+}
+
 function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, watchFrequency }: { form: any; dateFields: any[]; appendDate: (v: any) => void; removeDate: (i: number) => void; replaceDates: (v: any[]) => void; watchFrequency: CycleFrequency }) {
-  // On first render, ensure standard date fields exist
+  // On first render, ensure standard date fields exist ONLY if truly empty
+  // Use a small delay to allow form.reset() from loadExam to propagate first
+  const didInit = React.useRef(false);
   React.useEffect(() => {
-    if (dateFields.length === 0) {
-      replaceDates(STANDARD_DATE_LABELS.map((d) => ({ label: d.label, date: "", isUrgent: d.isUrgent })));
-    }
+    if (didInit.current) return;
+    // Wait a tick for form.reset() to propagate to field arrays
+    const timer = setTimeout(() => {
+      didInit.current = true;
+      const currentDates = form.getValues("importantDates") as any[];
+      if (!currentDates || currentDates.length === 0) {
+        replaceDates(STANDARD_DATE_LABELS.map((d) => ({ label: d.label, date: "", isUrgent: d.isUrgent })));
+      }
+    }, 100);
+    return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
