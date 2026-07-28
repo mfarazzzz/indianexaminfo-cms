@@ -252,10 +252,12 @@ export function SettingsPage() {
         {activeTab === "ai" && (
           <div>
             <h2 className="mb-4 text-base font-semibold text-slate-900">AI Settings</h2>
-            <Field label="AI API Key" hint="Groq (gsk_...) or Gemini (AQ./AIza) key">
+
+            {/* Primary API Key */}
+            <Field label="Primary AI API Key" hint="Used for all AI operations. Groq (gsk_...) or Gemini (AIza...) key">
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <MaskedInput value={(get("gemini_api_key","") as string)} onChange={(v) => set("gemini_api_key", v)} placeholder="gsk_... or AQ...." />
+                  <MaskedInput value={(get("gemini_api_key","") as string)} onChange={(v) => set("gemini_api_key", v)} placeholder="gsk_... or AIza..." />
                 </div>
                 <button onClick={testAi} disabled={aiStatus === "testing"}
                   className="inline-flex items-center gap-1.5 rounded border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
@@ -266,21 +268,45 @@ export function SettingsPage() {
               {aiStatus === "ok" && <p className="mt-1 text-xs text-green-600">✅ Connected</p>}
               {aiStatus === "fail" && <p className="mt-1 text-xs text-red-600">❌ {aiError || "Connection failed"}</p>}
             </Field>
-            <Field label="AI Model" hint="Auto-detected from key type">
+
+            {/* Fallback API Key */}
+            <Field label="Fallback AI API Key (optional)" hint="Used when primary key fails or hits rate limits. Different provider recommended.">
+              <MaskedInput value={(get("ai_fallback_key","") as string)} onChange={(v) => set("ai_fallback_key", v)} placeholder="gsk_... or AIza... (different from primary)" />
+              <p className="mt-1 text-xs text-slate-400">Tip: Use Groq as primary (fast) and Gemini as fallback (higher limits), or vice versa.</p>
+            </Field>
+
+            {/* Model Selection */}
+            <Field label="Primary Model" hint="Model used with the primary key">
               <select value={(get("gemini_model","llama-3.3-70b-versatile") as string)} onChange={(e) => set("gemini_model", e.target.value)}
                 className="rounded border border-slate-200 px-3 py-2 text-sm focus:outline-none">
-                <optgroup label="Groq (recommended)">
-                  <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (best)</option>
-                  <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (fastest)</option>
-                  <option value="mixtral-8x7b-32768">mixtral-8x7b-32768 (good)</option>
+                <optgroup label="Groq (recommended — fast)">
+                  <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (best quality)</option>
+                  <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (fastest, lower quality)</option>
+                  <option value="mixtral-8x7b-32768">mixtral-8x7b-32768 (good balance)</option>
+                </optgroup>
+                <optgroup label="Gemini (higher limits)">
+                  <option value="gemini-2.5-flash">gemini-2.5-flash (recommended)</option>
+                  <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (fastest)</option>
+                </optgroup>
+              </select>
+            </Field>
+
+            <Field label="Fallback Model (optional)" hint="Model used with the fallback key">
+              <select value={(get("ai_fallback_model","") as string)} onChange={(e) => set("ai_fallback_model", e.target.value)}
+                className="rounded border border-slate-200 px-3 py-2 text-sm focus:outline-none">
+                <option value="">(Use default for key type)</option>
+                <optgroup label="Groq">
+                  <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
+                  <option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option>
+                  <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
                 </optgroup>
                 <optgroup label="Gemini">
                   <option value="gemini-2.5-flash">gemini-2.5-flash</option>
                   <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
-                  <option value="gemini-3.5-flash">gemini-3.5-flash</option>
                 </optgroup>
               </select>
             </Field>
+
             {[
               { key: "ai_enabled",      label: "Enable AI Features" },
               { key: "ai_auto_seo",     label: "Auto-generate SEO on Save" },
@@ -307,7 +333,7 @@ export function SettingsPage() {
               </select>
             </Field>
             <div className="mt-4">
-              <button onClick={() => save(["gemini_api_key","gemini_model","ai_enabled","ai_auto_seo","ai_auto_summary","ai_auto_faq","ai_language","ai_tone"])} disabled={saving}
+              <button onClick={() => save(["gemini_api_key","gemini_model","ai_fallback_key","ai_fallback_model","ai_enabled","ai_auto_seo","ai_auto_summary","ai_auto_faq","ai_language","ai_tone"])} disabled={saving}
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
                 {saving ? "Saving…" : "Save AI Settings"}
               </button>

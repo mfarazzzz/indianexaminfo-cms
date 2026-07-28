@@ -91,7 +91,9 @@ const DEFAULT_MODELS: Record<string, string> = {
 export async function generateWithGemini(
   prompt: string,
   apiKey: string,
-  model?: string
+  model?: string,
+  fallbackKey?: string,
+  fallbackModel?: string
 ): Promise<string> {
   const key = cleanKey(apiKey);
   if (!key) throw new Error("API key not configured. Set it in Settings → AI.");
@@ -99,10 +101,29 @@ export async function generateWithGemini(
   const provider = detectProvider(key);
   const finalModel = model || DEFAULT_MODELS[provider];
 
-  if (provider === "groq") {
-    return generateWithGroq(prompt, key, finalModel);
+  try {
+    if (provider === "groq") {
+      return await generateWithGroq(prompt, key, finalModel);
+    }
+    return await generateWithGeminiDirect(prompt, key, finalModel);
+  } catch (err) {
+    // If primary fails with rate limit or size error, try fallback
+    const errMsg = err instanceof Error ? err.message : "";
+    const isRetryable = errMsg.includes("429") || errMsg.includes("413") || errMsg.includes("Rate limit") || errMsg.includes("too large");
+
+    if (isRetryable && fallbackKey) {
+      const fbKey = cleanKey(fallbackKey);
+      if (fbKey) {
+        const fbProvider = detectProvider(fbKey);
+        const fbModel = fallbackModel || DEFAULT_MODELS[fbProvider];
+        if (fbProvider === "groq") {
+          return await generateWithGroq(prompt, fbKey, fbModel);
+        }
+        return await generateWithGeminiDirect(prompt, fbKey, fbModel);
+      }
+    }
+    throw err; // Re-throw if no fallback or fallback not applicable
   }
-  return generateWithGeminiDirect(prompt, key, finalModel);
 }
 
 /** List available models (for debugging) */
