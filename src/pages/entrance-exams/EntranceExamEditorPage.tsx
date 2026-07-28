@@ -16,6 +16,9 @@ import { ImageUploader } from "@/components/shared/ImageUploader";
 import { ModulePanel } from "@/components/content-modules/ModulePanel";
 import { getErrorMessage } from "@/lib/utils";
 import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
+import { aiFillIdentityTab, aiFillDatesTab, aiFillSEOTab, aiFillNewsTab, aiFillModulesTab } from "@/lib/gemini/tabAI";
+import { aiGenerateForModule } from "@/lib/modules/moduleAI";
+import { AIFillButton } from "@/components/shared/AIFillButton";
 import { useSettings } from "@/hooks/useSettings";
 
 const EDITION_STATUSES: { value: EditionStatus; label: string }[] = [
@@ -98,6 +101,7 @@ export function EntranceExamEditorPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [showAIDialog, setShowAIDialog] = useState(false);
+  const [tabAiFilling, setTabAiFilling] = useState<string | null>(null);
   const [isPublished, setIsPublished] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const { getSetting } = useSettings();
@@ -384,6 +388,123 @@ export function EntranceExamEditorPage() {
     }
   };
 
+  // ── Tab-Level AI Handlers ─────────────────────────────────────────────────
+
+  const getAICredentials = () => {
+    const apiKey = getSetting("gemini_api_key", "") as string;
+    const model = getSetting("gemini_model", "") as string || undefined;
+    if (!apiKey) throw new Error("No AI API key configured. Go to Settings → AI.");
+    return { apiKey, model };
+  };
+
+  const handleAIFillIdentity = async (rawContent: string) => {
+    const examName = form.getValues("name");
+    if (!examName) { toast.error("Enter exam name first."); return; }
+    setTabAiFilling("identity");
+    try {
+      const { apiKey, model } = getAICredentials();
+      const data = await aiFillIdentityTab(examName, rawContent, apiKey, model);
+      if (data.shortName) form.setValue("shortName", data.shortName);
+      if (data.conductingBody) form.setValue("conductingBody", data.conductingBody);
+      if (data.officialWebsite) form.setValue("officialWebsite", data.officialWebsite);
+      toast.success("Identity tab filled by AI. Review and save.");
+    } catch (err) { toast.error(getErrorMessage(err)); }
+    finally { setTabAiFilling(null); }
+  };
+
+  const handleAIFillDates = async (rawContent: string) => {
+    const examName = form.getValues("name");
+    const year = form.getValues("editionYear") || new Date().getFullYear();
+    if (!examName) { toast.error("Enter exam name first."); return; }
+    setTabAiFilling("edition");
+    try {
+      const { apiKey, model } = getAICredentials();
+      const data = await aiFillDatesTab(examName, year, rawContent, apiKey, model);
+      if (data.importantDates.length > 0) {
+        const current = form.getValues("importantDates") as { label: string; date: string; isUrgent: boolean }[];
+        const merged = [...current];
+        for (const ai of data.importantDates) {
+          if (!ai.date || !ai.label) continue;
+          const idx = merged.findIndex((d) => d.label.toLowerCase().replace(/[^a-z]/g, "").includes(ai.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8)));
+          if (idx >= 0) merged[idx] = { ...merged[idx], date: ai.date, isUrgent: ai.isUrgent };
+          else merged.push(ai);
+        }
+        replaceDates(merged);
+      }
+      if (data.status) form.setValue("editionStatus", data.status as EditionStatus);
+      if (data.vacancy) form.setValue("vacancy", String(data.vacancy));
+      if (data.notificationDate) form.setValue("notificationDate", data.notificationDate);
+      toast.success("Dates & Status tab filled by AI. Review and save.");
+    } catch (err) { toast.error(getErrorMessage(err)); }
+    finally { setTabAiFilling(null); }
+  };
+
+  const handleAIFillSEO = async (rawContent: string) => {
+    const examName = form.getValues("name");
+    const year = form.getValues("editionYear") || new Date().getFullYear();
+    if (!examName) { toast.error("Enter exam name first."); return; }
+    setTabAiFilling("seo");
+    try {
+      const { apiKey, model } = getAICredentials();
+      const data = await aiFillSEOTab(examName, year, rawContent, apiKey, model);
+      if (data.seoTitle) form.setValue("seoTitle", data.seoTitle);
+      if (data.seoDescription) form.setValue("seoDescription", data.seoDescription);
+      if (data.tags.length > 0) form.setValue("tags", data.tags.join(", "));
+      if (data.faqs.length > 0) replaceFaqs(data.faqs);
+      toast.success("SEO tab filled by AI. Review and save.");
+    } catch (err) { toast.error(getErrorMessage(err)); }
+    finally { setTabAiFilling(null); }
+  };
+
+  const handleAIFillNews = async (rawContent: string) => {
+    if (!currentEdition) { toast.error("Save the exam first to generate news."); return; }
+    const examName = form.getValues("name");
+    const year = form.getValues("editionYear") || new Date().getFullYear();
+    setTabAiFilling("news");
+    try {
+      const { apiKey, model } = getAICredentials();
+      const items = await aiFillNewsTab(examName, year, rawContent, apiKey, model);
+      if (items.length > 0) {
+        const { updateEdition: updateEd } = await import("@/services/entranceExamService");
+        const existing = currentEdition.contentModules ?? {};
+        const newsItems = items.map((item) => ({
+          id: crypto.randomUUID(),
+          title: item.title,
+          content: item.content,
+          excerpt: item.excerpt,
+          tags: item.tags,
+          isFeatured: item.isFeatured,
+          author: "AI Generated",
+          publishedAt: new Date().toISOString(),
+          isPublished: true,
+        }));
+        await updateEd(currentEdition.id, { contentModules: { ...existing, news: { items: newsItems } } });
+        await loadExam();
+        toast.success(`AI generated ${items.length} news items. Review in News tab.`);
+      }
+    } catch (err) { toast.error(getErrorMessage(err)); }
+    finally { setTabAiFilling(null); }
+  };
+
+  const handleAIFillModules = async (rawContent: string) => {
+    if (!currentEdition) { toast.error("Save the exam first to generate modules."); return; }
+    const examName = form.getValues("name");
+    const year = form.getValues("editionYear") || new Date().getFullYear();
+    setTabAiFilling("modules");
+    try {
+      const { apiKey, model } = getAICredentials();
+      const data = await aiFillModulesTab(examName, year, rawContent, apiKey, model);
+      if (Object.keys(data.contentModules).length > 0) {
+        const { updateEdition: updateEd } = await import("@/services/entranceExamService");
+        const existing = currentEdition.contentModules ?? {};
+        await updateEd(currentEdition.id, { contentModules: { ...existing, ...data.contentModules } });
+        await loadExam();
+        toast.success("Content modules filled by AI. Check the Modules tab.");
+      }
+    } catch (err) { toast.error(getErrorMessage(err)); }
+    finally { setTabAiFilling(null); }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -498,6 +619,17 @@ export function EntranceExamEditorPage() {
 
       {/* Tab Content */}
       <div className="bg-white rounded-b-lg border border-slate-200 border-t-0 p-5">
+        {/* Tab-level AI Fill bar */}
+        {!isNew && activeTab !== "editions" && (
+          <div className="flex items-center justify-end mb-4 pb-3 border-b border-slate-100">
+            {activeTab === "identity" && <AIFillButton variant="icon" scope="Identity Tab" loading={tabAiFilling === "identity"} onFill={handleAIFillIdentity} />}
+            {activeTab === "edition" && <AIFillButton variant="icon" scope="Dates & Status Tab" loading={tabAiFilling === "edition"} onFill={handleAIFillDates} />}
+            {activeTab === "modules" && <AIFillButton variant="icon" scope="All Modules" loading={tabAiFilling === "modules"} onFill={handleAIFillModules} />}
+            {activeTab === "news" && <AIFillButton variant="icon" scope="News Tab" loading={tabAiFilling === "news"} onFill={handleAIFillNews} />}
+            {activeTab === "seo" && <AIFillButton variant="icon" scope="SEO Tab" loading={tabAiFilling === "seo"} onFill={handleAIFillSEO} />}
+          </div>
+        )}
+
         {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} isNew={isNew} />}
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency} />}
         {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
