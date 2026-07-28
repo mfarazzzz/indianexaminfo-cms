@@ -23,7 +23,7 @@ async function generateWithGroq(prompt: string, apiKey: string, model: string): 
       model,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
-      max_tokens: 4096,
+      max_tokens: 8192,
     }),
   });
 
@@ -55,7 +55,7 @@ async function generateWithGeminiDirect(prompt: string, apiKey: string, model: s
     },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+      generationConfig: { temperature: 0.7, maxOutputTokens: 8192 },
     }),
   });
 

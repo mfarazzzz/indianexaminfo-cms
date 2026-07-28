@@ -177,19 +177,31 @@ You are an SEO expert for Indian education portals. I have raw unstructured data
 
 RAW DATA PROVIDED BY EDITOR:
 ---
-${rawContent.slice(0, 6000)}
+${rawContent.slice(0, 10000)}
 ---
 
 CRITICAL DATE EXTRACTION INSTRUCTIONS:
-- Look for ANY date mentions in the raw data: "1 Aug 2026", "August 1, 2026", "01-08-2026", "01/08/2026", "1st August", etc.
+- Look for ANY date mentions in the raw data: "1 Aug 2026", "August 1, 2026", "01-08-2026", "01/08/2026", "1st August", "AUG 03, 2026", "Nov 04, 2026", etc.
 - Convert ALL dates to YYYY-MM-DD format. Examples:
   - "1 Aug 2026" → "${year}-08-01"
+  - "AUG 03, 2026" → "${year}-08-03"
   - "29 November 2026" → "${year}-11-29"  
+  - "NOV 29, 2026" → "${year}-11-29"
   - "15 Sep 2026" → "${year}-09-15"
-  - "January 2027" → "${year + 1}-01-15" (use 15 as day if only month given)
-- Map dates to these standard labels: "Notification Release", "Registration Opens", "Registration Closes", "Application Correction Window", "Admit Card Release", "Exam Date", "Answer Key Release", "Result Declaration", "Counselling Starts", "Cutoff Release"
+  - "SEP 15, 2026" → "${year}-09-15"
+  - "Nov 04, 2026" → "${year}-11-04"
+  - "January 2027" or "First week of January 2027" → "${year + 1}-01-07"
+- IMPORTANT LABEL MAPPING — map these common phrases to standard labels:
+  - "Registration Starts" / "Registration Opens" / "Application begins" → "Registration Opens"
+  - "Registration Ends" / "Registration Closes" / "Last date to apply" / "Application deadline" → "Registration Closes"
+  - "Test Day" / "Exam Date" / "Exam Day" / "Date of Exam" → "Exam Date"
+  - "Admit Card" / "Admit Card Download" / "Hall Ticket" → "Admit Card Release"
+  - "Result" / "Score Card" / "Result Declaration" / "Results declared" → "Result Declaration"
+  - "Notification" / "Bulletin" / "Advertisement" → "Notification Release"
+  - "Correction Window" / "Edit Application" → "Application Correction Window"
 - If the raw data says "Registration: 1 Aug - 15 Sep 2026", that means Registration Opens = ${year}-08-01 and Registration Closes = ${year}-09-15
-- NEVER leave a date as empty string if the raw data contains that date. Extract every single date mentioned.
+- NEVER leave a date as empty string if the raw data contains that date. Extract EVERY SINGLE date mentioned.
+- Look for dates in tables, bullet points, "Important Dates" sections, headers, and any format.
 
 Return ONLY a valid JSON object with this exact structure (no markdown, no explanation, just JSON):
 

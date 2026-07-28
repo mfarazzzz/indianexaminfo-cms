@@ -35,7 +35,7 @@ export async function aiFillIdentityTab(
 
 RAW DATA:
 ---
-${rawContent.slice(0, 4000)}
+${rawContent.slice(0, 8000)}
 ---
 
 Return ONLY a valid JSON object:
@@ -76,14 +76,21 @@ export async function aiFillDatesTab(
 
 RAW DATA:
 ---
-${rawContent.slice(0, 4000)}
+${rawContent.slice(0, 8000)}
 ---
 
-CRITICAL DATE EXTRACTION:
-- Convert ALL date formats to YYYY-MM-DD.
-- "1 Aug 2026" → "${year}-08-01", "29 Nov 2026" → "${year}-11-29"
-- "Registration: 1 Aug - 15 Sep" → two separate dates
-- NEVER skip a date that is clearly mentioned
+CRITICAL DATE EXTRACTION — EXTRACT EVERY DATE YOU CAN FIND:
+- Convert ALL date formats to YYYY-MM-DD: "AUG 03, 2026" → "${year}-08-03", "NOV 29, 2026" → "${year}-11-29", "Sep 15, 2026" → "${year}-09-15"
+- "First week of January 2027" → "${year + 1}-01-07"
+- MAP these phrases to standard labels:
+  - "Registration Starts/Opens/begins" → "Registration Opens"
+  - "Registration Ends/Closes/Last date" → "Registration Closes"
+  - "Test Day/Exam Date/Exam Day" → "Exam Date"
+  - "Admit Card/Hall Ticket download" → "Admit Card Release"
+  - "Result/Scorecard/declared" → "Result Declaration"
+  - "Notification/Bulletin released" → "Notification Release"
+- SEARCH the entire text for an "Important Dates" section — extract ALL dates from it
+- DO NOT leave dates empty if they exist in the raw data!
 
 Return ONLY valid JSON:
 {
@@ -133,7 +140,7 @@ export async function aiFillSEOTab(
   model?: string
 ): Promise<SEOAIData> {
   const prompt = `Generate SEO data for the entrance exam "${examName}" ${year}.
-${rawContent ? `\nContext from raw data:\n---\n${rawContent.slice(0, 3000)}\n---` : ""}
+${rawContent ? `\nContext from raw data:\n---\n${rawContent.slice(0, 6000)}\n---` : ""}
 
 Return ONLY valid JSON:
 {
@@ -197,7 +204,7 @@ export async function aiFillNewsTab(
 
 RAW DATA:
 ---
-${rawContent.slice(0, 4000)}
+${rawContent.slice(0, 8000)}
 ---
 
 Return ONLY valid JSON — an array of news items:
@@ -234,7 +241,7 @@ export async function aiFillModulesTab(
   model?: string
 ): Promise<ModulesAIData> {
   const prompt = `Generate all content module data for the entrance exam "${examName}" ${year}.
-${rawContent ? `\nRAW DATA:\n---\n${rawContent.slice(0, 4000)}\n---` : ""}
+${rawContent ? `\nRAW DATA:\n---\n${rawContent.slice(0, 8000)}\n---` : ""}
 
 Return ONLY valid JSON with content for each module that you have data for:
 {
