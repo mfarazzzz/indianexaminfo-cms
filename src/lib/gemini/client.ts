@@ -1,130 +1,66 @@
 /**
- * AI client — supports multiple providers (Groq, Gemini).
- * 
- * Groq is the recommended provider: fast, reliable, generous free tier.
- * Gemini is kept as an option but has known issues with AQ. auth keys.
+ * AI client — backward-compatible wrapper.
+ *
+ * Routes through the new multi-provider fallback system (ai_providers table).
+ * Falls back to passed key parameters if no providers are configured in the table.
  */
+import { generateWithFallback } from "@/lib/ai/fallbackWrapper";
+import { getEnabledProviders } from "@/services/aiProviderService";
+import { OpenAICompatibleAdapter } from "@/lib/ai/adapters/openai-compatible";
+import { GeminiAdapter } from "@/lib/ai/adapters/gemini";
+import type { AIProviderName } from "@/types/aiProvider";
 
 /** Strip wrapping quotes that Supabase jsonb may add */
 function cleanKey(raw: string): string {
-  return raw.replace(/^["']|["']$/g, '').trim();
+  return (raw ?? "").replace(/^["']|["']$/g, "").trim();
 }
-
-// ── Groq (OpenAI-compatible) ─────────────────────────────────────────────────
-
-async function generateWithGroq(prompt: string, apiKey: string, model: string): Promise<string> {
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7,
-      max_tokens: 4096,
-    }),
-  });
-
-  if (res.status === 429) {
-    throw new Error("Rate limited by Groq. Wait a moment and try again.");
-  }
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => "");
-    console.error("[Groq] API error:", res.status, errBody.slice(0, 300));
-    let detail = "";
-    try { detail = JSON.parse(errBody)?.error?.message || ""; } catch {}
-    if (res.status === 401) throw new Error("Invalid Groq API key. Check Settings → AI.");
-    throw new Error(`Groq API error (${res.status}). ${detail}`);
-  }
-
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
-}
-
-// ── Gemini (native REST) ─────────────────────────────────────────────────────
-
-async function generateWithGeminiDirect(prompt: string, apiKey: string, model: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 8192 },
-    }),
-  });
-
-  if (res.status === 429) throw new Error("Rate limited by Google. Wait 60 seconds.");
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => "");
-    console.error("[Gemini] API error:", res.status, errBody.slice(0, 300));
-    let detail = "";
-    try { detail = JSON.parse(errBody)?.error?.message || ""; } catch {}
-    if (res.status === 401 || res.status === 403) throw new Error(`Gemini key rejected (${res.status}). ${detail}`);
-    if (res.status === 404) throw new Error(`Model "${model}" not found. ${detail}`);
-    throw new Error(`Gemini error (${res.status}). ${detail}`);
-  }
-
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-}
-
-// ── Public API ───────────────────────────────────────────────────────────────
 
 /** Detect provider from API key format */
-function detectProvider(apiKey: string): "groq" | "gemini" {
+function detectProvider(apiKey: string): AIProviderName {
   if (apiKey.startsWith("gsk_")) return "groq";
   return "gemini";
 }
 
-/** Default model for each provider */
-const DEFAULT_MODELS: Record<string, string> = {
-  groq: "llama-3.3-70b-versatile",
-  gemini: "gemini-2.5-flash",
-};
-
+/**
+ * Main AI generation function.
+ *
+ * Signature preserved for backward compatibility.
+ * Internally routes to the new fallback system when providers are configured.
+ */
 export async function generateWithGemini(
   prompt: string,
   apiKey: string,
   model?: string,
-  fallbackKey?: string,
-  fallbackModel?: string,
-  fallbackKey2?: string
+  _fallbackKey?: string,
+  _fallbackModel?: string,
+  _fallbackKey2?: string
 ): Promise<string> {
-  const keys = [
-    { key: cleanKey(apiKey), model: model },
-    { key: cleanKey(fallbackKey ?? ""), model: fallbackModel },
-    { key: cleanKey(fallbackKey2 ?? ""), model: undefined },
-  ].filter((k) => k.key.length > 5);
-
-  if (keys.length === 0) throw new Error("API key not configured. Set it in Settings → AI.");
-
-  let lastError: Error | null = null;
-
-  for (const { key, model: m } of keys) {
-    try {
-      const provider = detectProvider(key);
-      const finalModel = m || DEFAULT_MODELS[provider];
-      if (provider === "groq") {
-        return await generateWithGroq(prompt, key, finalModel);
-      }
-      return await generateWithGeminiDirect(prompt, key, finalModel);
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-      const msg = lastError.message;
-      // Only fallback on rate limit or size errors — not auth errors
-      const isRetryable = msg.includes("429") || msg.includes("413") || msg.includes("Rate limit") || msg.includes("too large") || msg.includes("TPM");
-      if (!isRetryable) throw lastError; // Auth errors should fail immediately
-      // Continue to next key
+  // Try the new provider system first
+  try {
+    const providers = await getEnabledProviders();
+    if (providers.length > 0) {
+      return await generateWithFallback(prompt, "legacy-consumer");
+    }
+  } catch (err) {
+    // If the new system has providers but ALL fail, throw that error
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("All configured AI keys failed") || msg.includes("No AI providers")) {
+      // Fall through to legacy
+    } else {
+      throw err; // Real error from a provider (non-retryable)
     }
   }
 
-  throw lastError ?? new Error("All AI keys failed.");
+  // Fallback: use passed parameters directly (when no providers in table)
+  const key = cleanKey(apiKey);
+  if (!key) throw new Error("API key not configured. Set it in Settings → AI.");
+
+  const provider = detectProvider(key);
+  const finalModel = model || (provider === "groq" ? "llama-3.3-70b-versatile" : "gemini-2.5-flash");
+
+  const adapter = provider === "gemini" ? new GeminiAdapter() : new OpenAICompatibleAdapter(provider);
+  const response = await adapter.generate({ prompt, apiKey: key, model: finalModel });
+  return response.content;
 }
 
 /** List available models (for debugging) */
