@@ -388,6 +388,11 @@ export async function generateExamDataWithAI(
   if (cleaned.startsWith("```")) {
     cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
   }
+  // Handle case where AI adds trailing text after the JSON
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (lastBrace > 0 && lastBrace < cleaned.length - 1) {
+    cleaned = cleaned.slice(0, lastBrace + 1);
+  }
 
   try {
     const data = JSON.parse(cleaned);
@@ -413,6 +418,34 @@ export async function generateExamDataWithAI(
       contentModules: data.contentModules ?? {},
     };
   } catch (e) {
-    throw new Error("AI returned invalid JSON. Try again.");
+    // Try to salvage truncated JSON by finding the last valid object
+    try {
+      const partialMatch = cleaned.match(/^\{[\s\S]*\}/);
+      if (partialMatch) {
+        const data = JSON.parse(partialMatch[0]);
+        return {
+          shortName: data.shortName ?? "",
+          conductingBody: data.conductingBody ?? "",
+          officialWebsite: data.officialWebsite ?? "",
+          importantDates: Array.isArray(data.importantDates) ? data.importantDates : [],
+          vacancy: data.vacancy ?? null,
+          status: data.status ?? "upcoming",
+          hasNotification: data.hasNotification ?? true,
+          hasApplication: data.hasApplication ?? true,
+          hasAdmitCard: data.hasAdmitCard ?? true,
+          hasSyllabus: data.hasSyllabus ?? true,
+          hasAnswerKey: data.hasAnswerKey ?? true,
+          hasResult: data.hasResult ?? true,
+          hasCutoff: data.hasCutoff ?? true,
+          hasCounselling: data.hasCounselling ?? false,
+          seoTitle: data.seoTitle ?? "",
+          seoDescription: data.seoDescription ?? "",
+          tags: Array.isArray(data.tags) ? data.tags : [],
+          faqs: Array.isArray(data.faqs) ? data.faqs : [],
+          contentModules: data.contentModules ?? {},
+        };
+      }
+    } catch {}
+    throw new Error("AI returned invalid JSON. The response may have been truncated. Try again or use a shorter raw content.");
   }
 }
