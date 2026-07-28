@@ -55,7 +55,7 @@ This plan implements the Dynamic Content Modules feature in 14 tasks across 6 ph
   - Toggle OFF collapses editor but retains content; toggle ON expands
   - Requirements: R1
 
-- [ ] 8. Integrate ModulePanel into EntranceExamEditorPage
+- [x] 8. Integrate ModulePanel into EntranceExamEditorPage
   - Replace existing Modules tab (checkboxes) and Content tab with single Modules tab rendering ModulePanel
   - Pass editionId, contentModules, userId as props
   - Load module registry on mount; initialize _config from has_* flags if missing

@@ -82,6 +82,8 @@ export interface ModuleContentData {
 export interface ModuleConfig {
   moduleOrder: string[];
   enabledModules: string[];
+  modes?: Record<string, string>;
+  syncTimestamps?: Record<string, string>;
 }
 
 export interface ContentModulesData {
