@@ -17,7 +17,6 @@ import { ModulePanel } from "@/components/content-modules/ModulePanel";
 import { getErrorMessage } from "@/lib/utils";
 import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
 import { aiFillIdentityTab, aiFillDatesTab, aiFillSEOTab, aiFillNewsTab, aiFillModulesTab } from "@/lib/gemini/tabAI";
-import { aiGenerateForModule } from "@/lib/modules/moduleAI";
 import { AIFillButton } from "@/components/shared/AIFillButton";
 import { useSettings } from "@/hooks/useSettings";
 
@@ -380,7 +379,36 @@ export function EntranceExamEditorPage() {
         } catch {} // non-critical — will be saved on next Save click
       }
 
-      toast.success("AI generated all fields including content modules. Review and save.");
+      // Auto-save the form immediately so AI data persists without requiring manual Save click
+      if (currentEdition) {
+        try {
+          await updateEdition(currentEdition.id, {
+            status: data.status as EditionStatus || form.getValues("editionStatus"),
+            vacancy: data.vacancy ?? null,
+            importantDates: data.importantDates.filter((d) => d.date && d.date.trim() !== ""),
+            hasNotification: data.hasNotification,
+            hasApplication: data.hasApplication,
+            hasAdmitCard: data.hasAdmitCard,
+            hasSyllabus: data.hasSyllabus,
+            hasAnswerKey: data.hasAnswerKey,
+            hasResult: data.hasResult,
+            hasCutoff: data.hasCutoff,
+            hasCounselling: data.hasCounselling,
+          });
+          await updateExamIdentity(exam!.id, {
+            shortName: data.shortName || undefined,
+            conductingBody: data.conductingBody || undefined,
+            officialWebsite: data.officialWebsite || undefined,
+            seoTitle: data.seoTitle || undefined,
+            seoDescription: data.seoDescription || undefined,
+            tags: data.tags.length > 0 ? data.tags : undefined,
+            faqs: data.faqs.length > 0 ? data.faqs : undefined,
+          });
+          await loadExam(); // Reload to reflect saved data
+        } catch {} // non-critical
+      }
+
+      toast.success("AI generated and saved all fields. Page will refresh with new data.");
     } catch (err) {
       toast.error("AI generation failed: " + getErrorMessage(err));
     } finally {
@@ -407,7 +435,16 @@ export function EntranceExamEditorPage() {
       if (data.shortName) form.setValue("shortName", data.shortName);
       if (data.conductingBody) form.setValue("conductingBody", data.conductingBody);
       if (data.officialWebsite) form.setValue("officialWebsite", data.officialWebsite);
-      toast.success("Identity tab filled by AI. Review and save.");
+      // Auto-save to DB
+      if (exam) {
+        await updateExamIdentity(exam.id, {
+          shortName: data.shortName || undefined,
+          conductingBody: data.conductingBody || undefined,
+          officialWebsite: data.officialWebsite || undefined,
+        });
+        await loadExam();
+      }
+      toast.success("Identity filled and saved.");
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setTabAiFilling(null); }
   };
@@ -430,11 +467,21 @@ export function EntranceExamEditorPage() {
           else merged.push(ai);
         }
         replaceDates(merged);
+        // Auto-save dates to DB
+        if (currentEdition) {
+          await updateEdition(currentEdition.id, {
+            importantDates: merged.filter((d) => d.date && d.date.trim() !== ""),
+            status: (data.status as EditionStatus) || undefined,
+            vacancy: data.vacancy ?? undefined,
+            notificationDate: data.notificationDate || undefined,
+          });
+          await loadExam();
+        }
       }
       if (data.status) form.setValue("editionStatus", data.status as EditionStatus);
       if (data.vacancy) form.setValue("vacancy", String(data.vacancy));
       if (data.notificationDate) form.setValue("notificationDate", data.notificationDate);
-      toast.success("Dates & Status tab filled by AI. Review and save.");
+      toast.success("Dates & Status filled and saved.");
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setTabAiFilling(null); }
   };
@@ -451,7 +498,17 @@ export function EntranceExamEditorPage() {
       if (data.seoDescription) form.setValue("seoDescription", data.seoDescription);
       if (data.tags.length > 0) form.setValue("tags", data.tags.join(", "));
       if (data.faqs.length > 0) replaceFaqs(data.faqs);
-      toast.success("SEO tab filled by AI. Review and save.");
+      // Auto-save to DB
+      if (exam) {
+        await updateExamIdentity(exam.id, {
+          seoTitle: data.seoTitle || undefined,
+          seoDescription: data.seoDescription || undefined,
+          tags: data.tags.length > 0 ? data.tags : undefined,
+          faqs: data.faqs.length > 0 ? data.faqs : undefined,
+        });
+        await loadExam();
+      }
+      toast.success("SEO tab filled and saved.");
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setTabAiFilling(null); }
   };
