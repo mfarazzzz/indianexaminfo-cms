@@ -107,7 +107,15 @@ const DATE_LABELS: DateLabel[] = [
 
 function extractDatesFromRaw(rawContent: string, year: number): { label: string; date: string; isUrgent: boolean }[] {
   const results: { label: string; date: string; isUrgent: boolean }[] = [];
-  const lines = rawContent.split(/[\n\r]+/);
+
+  // Normalize: split on patterns that look like label boundaries
+  // Handle concatenated text like "Registration OpensAug 3, 2026Registration ClosesSep 15, 2026"
+  const normalized = rawContent
+    .replace(/([a-z])([A-Z])/g, "$1\n$2") // Split camelCase boundaries
+    .replace(/(IST|PM|AM)\s*/gi, "$1\n") // Split after time markers
+    .replace(/(\d{4})\s*([A-Z])/g, "$1\n$2"); // Split after year before uppercase
+
+  const lines = normalized.split(/[\n\r]+/);
 
   for (const line of lines) {
     for (const dl of DATE_LABELS) {
@@ -115,7 +123,6 @@ function extractDatesFromRaw(rawContent: string, year: number): { label: string;
         if (pattern.test(line)) {
           const date = parseDate(line, year);
           if (date) {
-            // Don't add duplicates
             if (!results.find((r) => r.label === dl.label)) {
               results.push({ label: dl.label, date, isUrgent: dl.isUrgent });
             }
@@ -126,27 +133,31 @@ function extractDatesFromRaw(rawContent: string, year: number): { label: string;
     }
   }
 
-  // Also look for tabular data: "Label\tDate" or "Label: Date" patterns
-  const tabPatterns = [
-    /Registration\s*Opens[:\s]*([A-Za-z]+\s+\d{1,2},?\s*\d{4})/i,
-    /Registration\s*Closes[:\s]*([A-Za-z]+\s+\d{1,2},?\s*\d{4})/i,
-    /Admit\s*Card[^:]*[:\s]*([A-Za-z]+\s+\d{1,2},?\s*\d{4})/i,
-    /Exam\s*Date[:\s]*([A-Za-z]+\s+\d{1,2},?\s*\d{4})/i,
-    /Result[^:]*[:\s]*([A-Za-z]+[^,\d]*\d{4})/i,
-    /Test\s*Day[:\s]*[A-Za-z]*,?\s*([A-Za-z]+\s+\d{1,2},?\s*\d{4})/i,
+  // Direct pattern matching on raw text (handles any format)
+  const directPatterns: [RegExp, string, boolean][] = [
+    [/Registration\s*Opens[:\s,]*([A-Za-z]+\s+\d{1,2},?\s*\d{4})/i, "Registration Opens", true],
+    [/Registration\s*Closes[:\s,]*([A-Za-z]+\s+\d{1,2},?\s*\d{4})/i, "Registration Closes", true],
+    [/Admit\s*Card\s*(?:Download\s*)?(?:Begins|Release|Available)?[:\s,]*([A-Za-z]+\s+\d{1,2},?\s*\d{4})/i, "Admit Card Release", false],
+    [/(?:Exam\s*Date|Test\s*Day|Test\s*Date)[:\s,]*(?:[A-Za-z]*,?\s*)?([A-Za-z]+\s+\d{1,2},?\s*\d{4})/i, "Exam Date", true],
+    [/Result\s*Declaration[:\s,]*([A-Za-z]+[^,\n]*\d{4})/i, "Result Declaration", false],
+    [/Notification\s*(?:Release|Date)[:\s,]*([A-Za-z]+\s+\d{1,2},?\s*\d{4})/i, "Notification Release", false],
   ];
 
-  const labelMap = ["Registration Opens", "Registration Closes", "Admit Card Release", "Exam Date", "Result Declaration", "Exam Date"];
-
-  for (let i = 0; i < tabPatterns.length; i++) {
-    if (results.find((r) => r.label === labelMap[i])) continue; // already found
-    const match = rawContent.match(tabPatterns[i]);
+  for (const [pattern, label, isUrgent] of directPatterns) {
+    if (results.find((r) => r.label === label)) continue;
+    const match = rawContent.match(pattern);
     if (match) {
       const date = parseDate(match[1], year);
-      if (date) {
-        const isUrgent = ["Registration Opens", "Registration Closes", "Exam Date"].includes(labelMap[i]);
-        results.push({ label: labelMap[i], date, isUrgent });
-      }
+      if (date) results.push({ label, date, isUrgent });
+    }
+  }
+
+  // Handle "First week of January 2027" for Result Declaration
+  if (!results.find((r) => r.label === "Result Declaration")) {
+    const resultMatch = rawContent.match(/Result[^.]*?(First\s+week\s+of\s+\w+\s+\d{4}|\w+\s+\d{4})/i);
+    if (resultMatch) {
+      const date = parseDate(resultMatch[1], year);
+      if (date) results.push({ label: "Result Declaration", date, isUrgent: false });
     }
   }
 

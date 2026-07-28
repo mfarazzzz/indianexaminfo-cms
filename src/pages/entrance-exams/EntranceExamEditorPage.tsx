@@ -186,7 +186,7 @@ export function EntranceExamEditorPage() {
           name: data.name,
           shortName: data.shortName,
           slug: data.slug || undefined,
-          categoryId: data.categoryId,
+          categoryId: data.categoryId || undefined as any,
           conductingBody: data.conductingBody,
           officialWebsite: data.officialWebsite,
           cycleFrequency: data.cycleFrequency,
