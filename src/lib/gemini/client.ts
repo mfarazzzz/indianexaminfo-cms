@@ -84,7 +84,7 @@ function detectProvider(apiKey: string): "groq" | "gemini" {
 
 /** Default model for each provider */
 const DEFAULT_MODELS: Record<string, string> = {
-  groq: "llama-3.1-8b-instant",
+  groq: "llama-3.3-70b-versatile",
   gemini: "gemini-2.5-flash",
 };
 

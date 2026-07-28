@@ -173,203 +173,22 @@ Return ONLY the JSON object. No markdown code fences, no explanation.
 `;
 
 const GENERATE_WITH_RAW_PROMPT = (examName: string, year: number, rawContent: string) => `
-You are an expert data extraction system for Indian education portals. Your job is to extract EVERY piece of information from the raw data below and map it into a structured JSON format.
+Extract ALL data from this raw text about "${examName}" ${year}. Return ONLY valid JSON.
 
-EXAM: "${examName}" for the year ${year}
+DATA:
+${rawContent.slice(0, 4500)}
 
-RAW DATA:
----
-${rawContent.slice(0, 6000)}
----
+Return this JSON structure (fill EVERY field from the data above):
+{"shortName":"abbreviation","conductingBody":"org name","officialWebsite":"url","importantDates":[{"label":"Notification Release","date":"YYYY-MM-DD","isUrgent":false},{"label":"Registration Opens","date":"YYYY-MM-DD","isUrgent":true},{"label":"Registration Closes","date":"YYYY-MM-DD","isUrgent":true},{"label":"Application Correction Window","date":"","isUrgent":false},{"label":"Admit Card Release","date":"YYYY-MM-DD","isUrgent":false},{"label":"Exam Date","date":"YYYY-MM-DD","isUrgent":true},{"label":"Answer Key Release","date":"","isUrgent":false},{"label":"Result Declaration","date":"YYYY-MM-DD","isUrgent":false},{"label":"Counselling Starts","date":"","isUrgent":false},{"label":"Cutoff Release","date":"","isUrgent":false}],"vacancy":null,"status":"upcoming","hasNotification":true,"hasApplication":true,"hasAdmitCard":true,"hasSyllabus":true,"hasAnswerKey":true,"hasResult":true,"hasCutoff":true,"hasCounselling":true,"seoTitle":"under 60 chars","seoDescription":"under 160 chars","tags":["10-12 tags"],"faqs":[{"question":"Q","answer":"detailed answer from data"}],"contentModules":{"overview":{"summary":"1-2 lines","body":"<p>HTML overview</p>"},"eligibility":{"qualification":"from data","ageLimit":"from data","nationality":"Indian","attempts":"No limit","additionalCriteria":"<p>details</p>"},"application-process":{"description":"<p>overview</p>","steps":[{"title":"step","description":"detail"}],"applyLink":"url","fee":"<p>fee details</p>"},"exam-pattern":{"mode":"CBT","duration":"time","totalMarks":0,"markingScheme":"scheme","sections":[{"name":"section","questions":0,"marks":0}],"notes":""},"syllabus":{"subjects":[{"name":"subject","topics":"<p>topics</p>"}],"notes":""},"admit-card":{"releaseDate":"","downloadLink":"url","body":"<p>instructions</p>","documents":"docs"},"result":{"declarationDate":"","checkLink":"url","body":"<p>details</p>","statistics":""},"cut-off":{"body":"<p>cutoff info</p>","categories":[{"category":"General","cutoff":"","year":"${year-1}"}],"notes":""},"counselling":{"body":"<p>process</p>","officialLink":"","rounds":[{"name":"Round 1","date":"","description":""}],"documents":""},"news":{"items":[{"title":"headline","date":"","summary":"brief","body":"<p>content</p>"}]},"importantLinks":[{"label":"Official Website","url":"","isOfficial":true,"type":"other"}],"highlights":["highlight1","highlight2"]}}
 
-TASK: Extract ALL information and return a comprehensive JSON object. Follow these rules STRICTLY:
-
-═══ DATE EXTRACTION (MOST CRITICAL) ═══
-Scan the ENTIRE raw data for ANY mention of dates in ANY format:
-- "AUG 03, 2026" → "${year}-08-03"
-- "August 3, 2026" → "${year}-08-03"
-- "3 Aug 2026" → "${year}-08-03"
-- "03-08-2026" → "${year}-08-03"
-- "SEP 15, 2026" → "${year}-09-15"
-- "November 29, 2026" → "${year}-11-29"
-- "NOV 29, 2026" → "${year}-11-29"
-- "Nov 04, 2026" → "${year}-11-04"
-- "First week of January 2027" → "${year + 1}-01-07"
-- "January 2027" → "${year + 1}-01-15"
-
-Map date labels to these STANDARD names:
-- Registration Starts/Opens/begins/window opens → "Registration Opens"
-- Registration Ends/Closes/deadline/last date → "Registration Closes"  
-- Test Day/Exam Date/Exam Day/Date of Exam → "Exam Date"
-- Admit Card/Hall Ticket/Download begins → "Admit Card Release"
-- Result/Score Card/declared/announced → "Result Declaration"
-- Notification/Bulletin/Information released → "Notification Release"
-- Correction/Edit/Modify application → "Application Correction Window"
-- Answer Key/Objection window → "Answer Key Release"
-- Counselling/Counseling/Allotment → "Counselling Starts"
-
-═══ FEE EXTRACTION ═══
-Look for: registration fee, application fee, exam fee amounts
-- Map to: general (unreserved), obc, sc, st categories
-- Extract payment modes mentioned
-
-═══ ELIGIBILITY EXTRACTION ═══
-Look for: degree requirements, percentage/CGPA cutoff, age limits, nationality, attempts, category-wise relaxation
-
-═══ CONTENT MODULE GENERATION ═══
-For EACH step-by-step guide, generate 5-7 DETAILED steps using information from the raw data:
-- howToApply: Use actual registration process described in raw data
-- howToDownloadAdmitCard: Use admit card section info
-- howToCheckResult: Use result checking process
-- howToPayFee: Use fee payment section info
-
-Return ONLY this JSON (no markdown, no explanation):
-
-{
-  "shortName": "abbreviation (e.g. CAT, JEE)",
-  "conductingBody": "full name of conducting organization from the data",
-  "officialWebsite": "URL found in data",
-  "importantDates": [
-    {"label": "Notification Release", "date": "YYYY-MM-DD", "isUrgent": false},
-    {"label": "Registration Opens", "date": "YYYY-MM-DD", "isUrgent": true},
-    {"label": "Registration Closes", "date": "YYYY-MM-DD", "isUrgent": true},
-    {"label": "Application Correction Window", "date": "", "isUrgent": false},
-    {"label": "Admit Card Release", "date": "YYYY-MM-DD", "isUrgent": false},
-    {"label": "Exam Date", "date": "YYYY-MM-DD", "isUrgent": true},
-    {"label": "Answer Key Release", "date": "", "isUrgent": false},
-    {"label": "Result Declaration", "date": "YYYY-MM-DD", "isUrgent": false},
-    {"label": "Counselling Starts", "date": "", "isUrgent": false},
-    {"label": "Cutoff Release", "date": "", "isUrgent": false}
-  ],
-  "vacancy": null,
-  "status": "upcoming",
-  "hasNotification": true,
-  "hasApplication": true,
-  "hasAdmitCard": true,
-  "hasSyllabus": true,
-  "hasAnswerKey": true,
-  "hasResult": true,
-  "hasCutoff": true,
-  "hasCounselling": true,
-  "seoTitle": "under 60 chars, exam name + year + action keyword",
-  "seoDescription": "under 160 chars, compelling for Google Discover",
-  "tags": ["exam-name", "abbreviation", "year", "category", "conducting-body", "admit-card", "result", "application", "eligibility", "syllabus", "cutoff"],
-  "faqs": [
-    {"question": "What is ${examName} ${year}?", "answer": "2-3 detailed sentences from the data"},
-    {"question": "When is ${examName} ${year} exam date?", "answer": "specific date and details"},
-    {"question": "How to apply for ${examName} ${year}?", "answer": "registration process summary"},
-    {"question": "What is the eligibility for ${examName} ${year}?", "answer": "qualification + percentage from data"},
-    {"question": "What is the application fee for ${examName} ${year}?", "answer": "fee amounts by category"},
-    {"question": "What is ${examName} ${year} exam pattern?", "answer": "mode, duration, sections"},
-    {"question": "How to download ${examName} ${year} admit card?", "answer": "process from data"},
-    {"question": "When will ${examName} ${year} result be declared?", "answer": "expected timeline"},
-    {"question": "What is the ${examName} ${year} syllabus?", "answer": "subjects overview"},
-    {"question": "How many attempts are allowed in ${examName}?", "answer": "from eligibility section"},
-    {"question": "What is the selection process for ${examName}?", "answer": "from data"},
-    {"question": "Is there negative marking in ${examName}?", "answer": "marking scheme details"},
-    {"question": "Which colleges accept ${examName} score?", "answer": "institutes from data"},
-    {"question": "What documents are needed for ${examName} ${year}?", "answer": "from data"},
-    {"question": "What is the reservation policy for ${examName} ${year}?", "answer": "SC/ST/OBC/EWS percentages"}
-  ],
-  "contentModules": {
-    "overview": {
-      "summary": "1-2 line summary of what this exam is",
-      "body": "<h3>About ${examName}</h3><p>paragraph about the exam</p><h3>Key Highlights</h3><ul><li>highlight 1</li></ul>"
-    },
-    "eligibility": {
-      "qualification": "exact qualification requirement from data",
-      "ageLimit": "age limit or No age limit",
-      "nationality": "nationality requirement",
-      "attempts": "attempts info or No limit",
-      "additionalCriteria": "<p>Additional criteria, relaxations for categories</p>"
-    },
-    "application-process": {
-      "description": "<p>Overview of application process</p>",
-      "steps": [{"title": "Step title", "description": "Detailed description from the data"}],
-      "applyLink": "URL",
-      "fee": "<p>General: ₹X, SC/ST/PwBD: ₹Y. Payment modes: ...</p>"
-    },
-    "exam-pattern": {
-      "mode": "Online CBT / Offline",
-      "duration": "total time",
-      "totalMarks": 0,
-      "markingScheme": "marking details",
-      "sections": [{"name": "Section", "questions": 0, "marks": 0, "duration": ""}],
-      "notes": "<p>Additional exam pattern notes</p>"
-    },
-    "syllabus": {
-      "subjects": [{"name": "Subject Name", "topics": "<ul><li>topic 1</li><li>topic 2</li></ul>"}],
-      "downloadLink": "",
-      "notes": "<p>Preparation tips</p>"
-    },
-    "admit-card": {
-      "releaseDate": "YYYY-MM-DD",
-      "downloadLink": "URL",
-      "body": "<p>Steps to download admit card, what to verify</p>",
-      "documents": "List of documents to carry"
-    },
-    "result": {
-      "declarationDate": "YYYY-MM-DD",
-      "checkLink": "URL",
-      "body": "<p>How to check result, scorecard details</p>",
-      "statistics": ""
-    },
-    "cut-off": {
-      "body": "<p>Cutoff information</p>",
-      "categories": [{"category": "General", "cutoff": "", "year": "${year - 1}"}],
-      "notes": ""
-    },
-    "counselling": {
-      "body": "<p>Counselling process overview</p>",
-      "officialLink": "",
-      "rounds": [{"name": "Round 1", "date": "", "description": ""}],
-      "documents": "<p>Required documents for counselling</p>"
-    },
-    "news": {
-      "items": [{"title": "News headline", "date": "YYYY-MM-DD", "summary": "brief", "body": "<p>details</p>"}]
-    },
-    "howToApply": {
-      "title": "How to Apply for ${examName} ${year}",
-      "steps": [{"order": 1, "text": "detailed step", "link": ""}]
-    },
-    "howToDownloadAdmitCard": {
-      "title": "How to Download ${examName} ${year} Admit Card",
-      "steps": [{"order": 1, "text": "detailed step"}]
-    },
-    "howToCheckResult": {
-      "title": "How to Check ${examName} ${year} Result",
-      "steps": [{"order": 1, "text": "detailed step"}]
-    },
-    "howToPayFee": {
-      "title": "How to Pay ${examName} ${year} Application Fee",
-      "steps": [{"order": 1, "text": "detailed step"}]
-    },
-    "howToFillApplication": {
-      "title": "How to Fill ${examName} ${year} Application Form",
-      "steps": [{"order": 1, "text": "detailed step"}]
-    },
-    "importantLinks": [
-      {"label": "Official Website", "url": "", "isOfficial": true, "type": "other"},
-      {"label": "Apply Online", "url": "", "isOfficial": true, "type": "apply"},
-      {"label": "Information Bulletin", "url": "", "isOfficial": true, "type": "notification"}
-    ],
-    "highlights": ["key highlight 1", "key highlight 2", "key highlight 3"]
-  }
-}
-
-CRITICAL RULES:
-1. EXTRACT every date from the raw data. If you see "AUG 03, 2026" anywhere, that MUST appear as "${year}-08-03" in importantDates.
-2. ALL FAQ answers must contain REAL information from the raw data, not placeholders.
-3. ALL content module text must use REAL details from the raw data.
-4. Fee amounts must be EXACT numbers from the data (e.g., ₹2700, ₹1350).
-5. Eligibility must quote EXACT requirements (e.g., "50% marks", "45% for SC/ST").
-6. Steps must be DETAILED (5-7 steps each) using the actual process described in raw data.
-7. Extract ALL URLs/links found in the raw data into importantLinks.
-8. If the data mentions institutes/colleges, include them in FAQ answers.
-9. Generate the overview.body as proper HTML with h3 headings and paragraphs.
-10. NEVER use placeholder text like "details", "answer", "step" — always use REAL content.
-
-Return ONLY the JSON object.`;
+RULES:
+1. Dates: "Aug 3, 2026"→"${year}-08-03", "Sep 15, 2026"→"${year}-09-15", "Nov 4, 2026"→"${year}-11-04", "Nov 29, 2026"→"${year}-11-29", "First week of January 2027"→"${year+1}-01-07". COPY dates EXACTLY as they appear.
+2. "Registration Opens"=when registration starts. "Registration Closes"=when registration ENDS/deadline.
+3. Fee: use EXACT amounts (₹2700, ₹1350 etc).
+4. Eligibility: quote EXACT percentages (50%, 45%).
+5. Generate 15 FAQs with REAL answers from the data.
+6. All HTML content must use real details, not placeholders.
+Return ONLY the JSON.`;
 
 export async function generateExamDataWithAI(
   examName: string,
