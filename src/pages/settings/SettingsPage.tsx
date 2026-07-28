@@ -275,52 +275,90 @@ export function SettingsPage() {
             {/* Key 1 (Primary) */}
             <div className="border border-slate-200 rounded-lg p-4 mb-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-slate-700">Key 1 (Primary)</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-700">Key 1 (Primary)</span>
+                  {(get("gemini_api_key","") as string).startsWith("gsk_") && <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-medium">Groq</span>}
+                  {(get("gemini_api_key","") as string).startsWith("AIza") && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">Gemini</span>}
+                </div>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${keyStatuses["key1"] === "ok" ? "bg-green-100 text-green-700" : keyStatuses["key1"] === "fail" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"}`}>
                   {keyStatuses["key1"] === "ok" ? "✅ Connected" : keyStatuses["key1"] === "fail" ? "❌ Failed" : "Not tested"}
                 </span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 mb-2">
                 <MaskedInput value={(get("gemini_api_key","") as string)} onChange={(v) => set("gemini_api_key", v)} placeholder="gsk_... (Groq) or AIza... (Gemini)" />
                 <button onClick={() => testSingleKey(get("gemini_api_key","") as string, "key1")} disabled={testingKey === "key1"}
                   className="shrink-0 inline-flex items-center gap-1 rounded border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                   {testingKey === "key1" ? <Loader2 size={12} className="animate-spin" /> : <TestTube2 size={12} />} Test
                 </button>
               </div>
-              <select value={(get("gemini_model","llama-3.3-70b-versatile") as string)} onChange={(e) => set("gemini_model", e.target.value)}
-                className="mt-2 w-full rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none">
-                <optgroup label="Groq"><option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option><option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option><option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option></optgroup>
-                <optgroup label="Gemini"><option value="gemini-2.5-flash">gemini-2.5-flash</option><option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option></optgroup>
-              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-slate-500 mb-0.5 block">Provider</label>
+                  <select value={(get("gemini_api_key","") as string).startsWith("gsk_") ? "groq" : "gemini"} disabled
+                    className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs bg-slate-50 text-slate-500">
+                    <option value="groq">Groq</option>
+                    <option value="gemini">Gemini (Google)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 mb-0.5 block">Model</label>
+                  <select value={(get("gemini_model","llama-3.3-70b-versatile") as string)} onChange={(e) => set("gemini_model", e.target.value)}
+                    className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none">
+                    <optgroup label="Groq"><option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option><option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option><option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option><option value="gemma2-9b-it">gemma2-9b-it</option></optgroup>
+                    <optgroup label="Gemini"><option value="gemini-2.5-flash">gemini-2.5-flash</option><option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option><option value="gemini-2.0-flash">gemini-2.0-flash</option></optgroup>
+                  </select>
+                </div>
+              </div>
             </div>
 
             {/* Key 2 (Fallback 1) */}
             <div className="border border-slate-200 rounded-lg p-4 mb-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-slate-700">Key 2 (Fallback)</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-700">Key 2 (Fallback)</span>
+                  {(get("ai_fallback_key","") as string).startsWith("gsk_") && <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-medium">Groq</span>}
+                  {(get("ai_fallback_key","") as string).startsWith("AIza") && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">Gemini</span>}
+                </div>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${keyStatuses["key2"] === "ok" ? "bg-green-100 text-green-700" : keyStatuses["key2"] === "fail" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"}`}>
                   {keyStatuses["key2"] === "ok" ? "✅ Connected" : keyStatuses["key2"] === "fail" ? "❌ Failed" : "Not tested"}
                 </span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 mb-2">
                 <MaskedInput value={(get("ai_fallback_key","") as string)} onChange={(v) => set("ai_fallback_key", v)} placeholder="gsk_... or AIza... (different provider recommended)" />
                 <button onClick={() => testSingleKey(get("ai_fallback_key","") as string, "key2")} disabled={testingKey === "key2"}
                   className="shrink-0 inline-flex items-center gap-1 rounded border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                   {testingKey === "key2" ? <Loader2 size={12} className="animate-spin" /> : <TestTube2 size={12} />} Test
                 </button>
               </div>
-              <select value={(get("ai_fallback_model","") as string)} onChange={(e) => set("ai_fallback_model", e.target.value)}
-                className="mt-2 w-full rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none">
-                <option value="">(Auto-detect from key type)</option>
-                <optgroup label="Groq"><option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option><option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option><option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option></optgroup>
-                <optgroup label="Gemini"><option value="gemini-2.5-flash">gemini-2.5-flash</option><option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option></optgroup>
-              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-slate-500 mb-0.5 block">Provider</label>
+                  <select value={(get("ai_fallback_key","") as string).startsWith("gsk_") ? "groq" : "gemini"} disabled
+                    className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs bg-slate-50 text-slate-500">
+                    <option value="groq">Groq</option>
+                    <option value="gemini">Gemini (Google)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 mb-0.5 block">Model</label>
+                  <select value={(get("ai_fallback_model","") as string)} onChange={(e) => set("ai_fallback_model", e.target.value)}
+                    className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none">
+                    <option value="">(Auto-detect)</option>
+                    <optgroup label="Groq"><option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option><option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option><option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option><option value="gemma2-9b-it">gemma2-9b-it</option></optgroup>
+                    <optgroup label="Gemini"><option value="gemini-2.5-flash">gemini-2.5-flash</option><option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option><option value="gemini-2.0-flash">gemini-2.0-flash</option></optgroup>
+                  </select>
+                </div>
+              </div>
             </div>
 
             {/* Key 3 (Fallback 2) */}
             <div className="border border-slate-200 rounded-lg p-4 mb-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-slate-700">Key 3 (Fallback 2)</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-700">Key 3 (Fallback 2)</span>
+                  {(get("ai_key_3","") as string).startsWith("gsk_") && <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-medium">Groq</span>}
+                  {(get("ai_key_3","") as string).startsWith("AIza") && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">Gemini</span>}
+                </div>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${keyStatuses["key3"] === "ok" ? "bg-green-100 text-green-700" : keyStatuses["key3"] === "fail" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"}`}>
                   {keyStatuses["key3"] === "ok" ? "✅ Connected" : keyStatuses["key3"] === "fail" ? "❌ Failed" : "Not tested"}
                 </span>
