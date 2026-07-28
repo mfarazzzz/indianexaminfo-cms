@@ -13,6 +13,7 @@ import { deleteExam, publishExam, unpublishExam } from "@/services/examService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { RichEditor } from "@/components/shared/RichEditor";
 import { ImageUploader } from "@/components/shared/ImageUploader";
+import { ModulePanel } from "@/components/content-modules/ModulePanel";
 import { getErrorMessage } from "@/lib/utils";
 import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
 import { useSettings } from "@/hooks/useSettings";
@@ -395,7 +396,6 @@ export function EntranceExamEditorPage() {
     { id: "identity", label: "Identity" },
     { id: "edition", label: "Dates & Status" },
     { id: "modules", label: "Modules" },
-    { id: "content", label: "Content" },
     { id: "news", label: "News" },
     { id: "seo", label: "SEO" },
     ...(!isNew ? [{ id: "editions", label: `Editions (${editions.length})` }] : []),
@@ -500,8 +500,7 @@ export function EntranceExamEditorPage() {
       <div className="bg-white rounded-b-lg border border-slate-200 border-t-0 p-5">
         {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} isNew={isNew} />}
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency} />}
-        {activeTab === "modules" && <ModulesTab form={form} />}
-        {activeTab === "content" && <ContentModulesTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("Content modules saved."); await loadExam(); } }} />}
+        {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
         {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("News saved."); await loadExam(); } }} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSaveModules={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("SEO settings saved."); await loadExam(); } }} />}
         {activeTab === "editions" && <HistoryTab editions={editions}
