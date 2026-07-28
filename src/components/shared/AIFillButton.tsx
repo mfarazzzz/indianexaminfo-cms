@@ -54,8 +54,11 @@ function AIFillModal({ scope, onFill, onClose, loading }: { scope: string; onFil
   const [rawContent, setRawContent] = useState("");
 
   const handleSubmit = async () => {
-    await onFill(rawContent);
-    onClose();
+    try {
+      await onFill(rawContent);
+    } finally {
+      onClose();
+    }
   };
 
   return (

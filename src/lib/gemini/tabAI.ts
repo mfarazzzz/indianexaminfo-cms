@@ -14,7 +14,21 @@ import { generateWithGemini } from "./client";
 function cleanJSON(raw: string): unknown {
   let s = raw.trim();
   if (s.startsWith("```")) s = s.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-  return JSON.parse(s);
+  // Strip trailing text after JSON
+  const lastBrace = s.lastIndexOf("}");
+  const lastBracket = s.lastIndexOf("]");
+  const lastClose = Math.max(lastBrace, lastBracket);
+  if (lastClose > 0 && lastClose < s.length - 1) {
+    s = s.slice(0, lastClose + 1);
+  }
+  try {
+    return JSON.parse(s);
+  } catch {
+    // Try to find valid JSON object or array
+    const match = s.match(/^[\[{][\s\S]*[\]}]/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error("AI returned invalid response. Try again.");
+  }
 }
 
 // ── Identity Tab ────────────────────────────────────────────────────────────
@@ -31,7 +45,9 @@ export async function aiFillIdentityTab(
   apiKey: string,
   model?: string
 ): Promise<IdentityAIData> {
-  const prompt = `Extract identity information for the entrance exam "${examName}" from the following raw data.
+  const hasRaw = rawContent && rawContent.trim().length > 10;
+  const prompt = hasRaw
+    ? `Extract identity information for the entrance exam "${examName}" from the following raw data.
 
 RAW DATA:
 ---
@@ -40,9 +56,19 @@ ${rawContent.slice(0, 8000)}
 
 Return ONLY a valid JSON object:
 {
-  "shortName": "short abbreviation (e.g. CAT, JEE, NEET) — extract from data or infer",
-  "conductingBody": "full name of the organization conducting this exam",
-  "officialWebsite": "official website URL — extract if present, else best guess"
+  "shortName": "short abbreviation (e.g. CAT, JEE, NEET) — extract from data",
+  "conductingBody": "full name of the organization conducting this exam — extract from data",
+  "officialWebsite": "official website URL — extract from data"
+}
+
+Return ONLY the JSON. No markdown, no explanation.`
+    : `Generate identity information for the entrance exam "${examName}". Use your knowledge to provide accurate data.
+
+Return ONLY a valid JSON object:
+{
+  "shortName": "short abbreviation (e.g. CAT, JEE, NEET)",
+  "conductingBody": "full official name of the organization conducting this exam",
+  "officialWebsite": "official website URL"
 }
 
 Return ONLY the JSON. No markdown, no explanation.`;
@@ -148,21 +174,21 @@ Return ONLY valid JSON:
   "seoDescription": "Max 160 chars — compelling meta description for Google Discover, mention key info students need",
   "tags": ["10-12 relevant tags for discovery — exam name, abbreviation, category, conducting body, year, exam type"],
   "faqs": [
-    {"question": "What is ${examName} ${year}?", "answer": "Detailed 2-3 sentence answer"},
-    {"question": "When is ${examName} ${year} exam date?", "answer": "answer"},
-    {"question": "How to apply for ${examName} ${year}?", "answer": "answer"},
-    {"question": "What is the eligibility for ${examName} ${year}?", "answer": "answer"},
-    {"question": "What is the exam pattern of ${examName}?", "answer": "answer"},
-    {"question": "What is the syllabus of ${examName}?", "answer": "answer"},
-    {"question": "What is the application fee for ${examName} ${year}?", "answer": "answer"},
-    {"question": "How to download ${examName} ${year} admit card?", "answer": "answer"},
-    {"question": "When will ${examName} ${year} result be declared?", "answer": "answer"},
-    {"question": "What is the cutoff for ${examName} ${year}?", "answer": "answer"},
-    {"question": "How many attempts are allowed in ${examName}?", "answer": "answer"},
-    {"question": "Is there negative marking in ${examName}?", "answer": "answer"},
-    {"question": "Which colleges accept ${examName} score?", "answer": "answer"},
-    {"question": "What is the selection process for ${examName} ${year}?", "answer": "answer"},
-    {"question": "What is the counselling process for ${examName}?", "answer": "answer"}
+    {"question": "What is ${examName} ${year}?", "answer": "Detailed 2-3 sentence answer about what this exam is, who conducts it, and its purpose"},
+    {"question": "When is ${examName} ${year} exam date?", "answer": "Provide the exact exam date or expected timeline based on available data"},
+    {"question": "How to apply for ${examName} ${year}?", "answer": "Summarize the registration/application process in 2-3 sentences"},
+    {"question": "What is the eligibility for ${examName} ${year}?", "answer": "State the educational qualification, percentage, and category-wise requirements"},
+    {"question": "What is the exam pattern of ${examName}?", "answer": "Describe mode (online/offline), duration, total marks, sections"},
+    {"question": "What is the syllabus of ${examName}?", "answer": "List major subjects or sections covered in the exam"},
+    {"question": "What is the application fee for ${examName} ${year}?", "answer": "State exact fee amounts for different categories"},
+    {"question": "How to download ${examName} ${year} admit card?", "answer": "Describe the steps to download from the official website"},
+    {"question": "When will ${examName} ${year} result be declared?", "answer": "Provide expected result declaration timeline"},
+    {"question": "What is the cutoff for ${examName} ${year}?", "answer": "Provide previous year cutoff trends or expected cutoff range"},
+    {"question": "How many attempts are allowed in ${examName}?", "answer": "State the attempt limit or if there is no limit"},
+    {"question": "Is there negative marking in ${examName}?", "answer": "Describe the marking scheme including any negative marking"},
+    {"question": "Which colleges accept ${examName} score?", "answer": "List top institutes or categories of institutes accepting this score"},
+    {"question": "What is the selection process for ${examName} ${year}?", "answer": "Describe stages: exam, shortlisting, interview/GD, final selection"},
+    {"question": "What is the counselling process for ${examName}?", "answer": "Describe counselling rounds, document verification, seat allocation"}
   ]
 }
 
