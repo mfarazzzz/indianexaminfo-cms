@@ -6,34 +6,34 @@ This plan implements the Dynamic Content Modules feature in 14 tasks across 6 ph
 
 ## Tasks
 
-- [ ] 1. Create module_registry database table and seed built-in modules
+- [x] 1. Create module_registry database table and seed built-in modules
   - Apply Supabase migration to create `module_registry` table with columns: id, slug, name, type, icon, description, display_order, fields (jsonb), is_active, created_at, updated_at, created_by
   - Add RLS policies: SELECT for authenticated, INSERT/UPDATE/DELETE for admin role
   - Add unique index on slug, composite index on (type, is_active, display_order)
   - Seed 12 built-in module definitions with complete FieldDefinition arrays in their fields jsonb
   - Requirements: R8
 
-- [ ] 2. Create TypeScript types and constants for module system
+- [x] 2. Create TypeScript types and constants for module system
   - Create `src/types/modules.ts` with FieldType, FieldDefinition, ModuleDefinition, ModuleConfig interfaces
   - Create `src/lib/modules/builtInSchemas.ts` with hardcoded field schemas for all 12 built-in modules
   - Create `src/lib/modules/fieldValidation.ts` with validation logic per field type
   - Export BUILT_IN_MODULE_SLUGS constant array
   - Requirements: R8, R7
 
-- [ ] 3. Create moduleRegistryService.ts
+- [x] 3. Create moduleRegistryService.ts
   - Implement getModuleRegistry(), getModuleBySlug(), createCustomModule(), updateModuleDefinition(), deleteCustomModule(), reorderModules()
   - Add slug uniqueness validation before insert/update
   - Reject deletion of built-in modules
   - Requirements: R3, R5
 
-- [ ] 4. Add content module persistence methods to entranceExamService
+- [x] 4. Add content module persistence methods to entranceExamService
   - Implement saveModuleContent(editionId, moduleSlug, content, userId) with jsonb merge
   - Implement saveModuleConfig(editionId, config) for moduleOrder and enabledModules
   - Implement getContentModules(editionId) to return full content_modules object
   - Trigger revalidateExams() on all save operations
   - Requirements: R4
 
-- [ ] 5. Create FieldRenderer and all field editor sub-components
+- [x] 5. Create FieldRenderer and all field editor sub-components
   - Create FieldRenderer.tsx as a switch/mapping component
   - Create 12 field editors: Text, Textarea, RichText, Number, Date, Select, Checkbox, Radio, Image, File, Url, Repeater
   - RichTextFieldEditor wraps existing RichEditor; ImageFieldEditor wraps existing ImageUploader
@@ -41,7 +41,7 @@ This plan implements the Dynamic Content Modules feature in 14 tasks across 6 ph
   - All editors support label, placeholder, required indicator, inline validation errors
   - Requirements: R2, R7
 
-- [ ] 6. Create useModuleAutosave hook
+- [x] 6. Create useModuleAutosave hook
   - Implement 2-second debounce on content changes
   - Track status: idle, saving, saved, error
   - Retry up to 3 times with exponential backoff on network failure
@@ -49,7 +49,7 @@ This plan implements the Dynamic Content Modules feature in 14 tasks across 6 ph
   - Return { save, scheduleAutosave, status, lastSavedAt }
   - Requirements: R4
 
-- [ ] 7. Create ModulePanel unified content editing interface
+- [x] 7. Create ModulePanel unified content editing interface
   - Create ModulePanel.tsx (top-level), ModulePanelHeader.tsx (status + add button), ModuleList.tsx (sortable via @dnd-kit), ModuleCard.tsx (toggle + expand + drag handle), ModuleContentEditor.tsx (renders fields from schema)
   - Drag-and-drop reorder persists via saveModuleConfig()
   - Toggle OFF collapses editor but retains content; toggle ON expands
