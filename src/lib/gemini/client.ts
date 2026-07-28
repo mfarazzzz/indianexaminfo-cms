@@ -23,7 +23,7 @@ async function generateWithGroq(prompt: string, apiKey: string, model: string): 
       model,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
-      max_tokens: 8192,
+      max_tokens: 4096,
     }),
   });
 
@@ -84,7 +84,7 @@ function detectProvider(apiKey: string): "groq" | "gemini" {
 
 /** Default model for each provider */
 const DEFAULT_MODELS: Record<string, string> = {
-  groq: "llama-3.3-70b-versatile",
+  groq: "llama-3.1-8b-instant",
   gemini: "gemini-2.5-flash",
 };
 

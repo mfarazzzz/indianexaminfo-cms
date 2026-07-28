@@ -179,7 +179,7 @@ EXAM: "${examName}" for the year ${year}
 
 RAW DATA:
 ---
-${rawContent.slice(0, 12000)}
+${rawContent.slice(0, 6000)}
 ---
 
 TASK: Extract ALL information and return a comprehensive JSON object. Follow these rules STRICTLY:
