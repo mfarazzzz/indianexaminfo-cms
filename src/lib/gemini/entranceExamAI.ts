@@ -153,6 +153,100 @@ function extractDatesFromRaw(rawContent: string, year: number): { label: string;
   return results;
 }
 
+// ── AI Date Fallback (tiny prompt, used when regex finds <3 dates) ──────────
+
+const AI_DATE_EXTRACT_PROMPT = (rawContent: string) => `Extract ALL event dates from this text. Return ONLY a JSON array of objects with "label" and "dateText" fields.
+
+TEXT:
+${rawContent.slice(0, 3000)}
+
+Return format: [{"label":"event name","dateText":"the date as written in text"}]
+Return ONLY the JSON array. No explanation.`;
+
+async function extractDatesWithAI(
+  rawContent: string,
+  year: number,
+  apiKey: string,
+  model?: string
+): Promise<{ label: string; date: string; isUrgent: boolean }[]> {
+  try {
+    const raw = await generateWithGemini(AI_DATE_EXTRACT_PROMPT(rawContent), apiKey, model);
+    let cleaned = raw.trim();
+    if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+    // Find JSON array
+    const arrStart = cleaned.indexOf("[");
+    const arrEnd = cleaned.lastIndexOf("]");
+    if (arrStart < 0 || arrEnd < 0) return [];
+    cleaned = cleaned.slice(arrStart, arrEnd + 1);
+
+    const items = JSON.parse(cleaned) as { label: string; dateText: string }[];
+    const results: { label: string; date: string; isUrgent: boolean }[] = [];
+
+    for (const item of items) {
+      if (!item.label || !item.dateText) continue;
+      const date = parseDate(item.dateText, year);
+      if (!date) continue;
+
+      // Map the AI-extracted label to our standard labels
+      const standardLabel = mapToStandardLabel(item.label);
+      if (!standardLabel) continue;
+
+      const isUrgent = ["Registration Opens", "Registration Closes", "Exam Date"].includes(standardLabel);
+      if (!results.find((r) => r.label === standardLabel)) {
+        results.push({ label: standardLabel, date, isUrgent });
+      }
+    }
+    return results;
+  } catch {
+    return []; // Fallback silently fails — regex results are still used
+  }
+}
+
+function mapToStandardLabel(rawLabel: string): string | null {
+  const l = rawLabel.toLowerCase();
+  if (/registration\s*(open|start|begin)/i.test(l)) return "Registration Opens";
+  if (/registration\s*(close|end|deadline)|last\s*date/i.test(l)) return "Registration Closes";
+  if (/exam\s*date|test\s*day|test\s*date/i.test(l)) return "Exam Date";
+  if (/admit\s*card|hall\s*ticket/i.test(l)) return "Admit Card Release";
+  if (/result|score\s*card/i.test(l)) return "Result Declaration";
+  if (/notification|bulletin/i.test(l)) return "Notification Release";
+  if (/correction|edit\s*application/i.test(l)) return "Application Correction Window";
+  if (/answer\s*key/i.test(l)) return "Answer Key Release";
+  if (/counsel/i.test(l)) return "Counselling Starts";
+  if (/cut\s*off/i.test(l)) return "Cutoff Release";
+  return null;
+}
+
+// ── Combined Date Extraction: Regex first, AI fallback if <3 dates ──────────
+
+async function extractAllDates(
+  rawContent: string,
+  year: number,
+  apiKey: string,
+  model?: string
+): Promise<{ label: string; date: string; isUrgent: boolean }[]> {
+  // Step 1: Try regex extraction (instant, free)
+  const regexDates = extractDatesFromRaw(rawContent, year);
+
+  // Step 2: If regex found enough dates (3+), use them directly
+  if (regexDates.length >= 3) {
+    return regexDates;
+  }
+
+  // Step 3: Regex found <3 dates — use AI fallback to catch dates in unusual formats
+  const aiDates = await extractDatesWithAI(rawContent, year, apiKey, model);
+
+  // Merge: regex results take priority, AI fills gaps
+  const merged = [...regexDates];
+  for (const aiDate of aiDates) {
+    if (!merged.find((r) => r.label === aiDate.label)) {
+      merged.push(aiDate);
+    }
+  }
+
+  return merged;
+}
+
 // ── Fee Pre-Parser ─────────────────────────────────────────────────────────
 
 function extractFees(rawContent: string): { general: number; sc: number; st: number; obc: number } | null {
@@ -347,7 +441,7 @@ export async function generateExamDataWithAI(
   let preExtractedEligibility: { qualification: string; ageLimit: string; nationality: string; attempts: string } | null = null;
 
   if (rawContent) {
-    preExtractedDates = extractDatesFromRaw(rawContent, year);
+    preExtractedDates = await extractAllDates(rawContent, year, apiKey, model);
     preExtractedFees = extractFees(rawContent);
     preExtractedEligibility = extractEligibility(rawContent);
   }
