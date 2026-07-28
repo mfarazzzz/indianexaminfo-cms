@@ -125,6 +125,24 @@ export function SettingsPage() {
   // AI test state
   const [aiStatus, setAiStatus] = useState<"idle"|"testing"|"ok"|"fail">("idle");
   const [aiError, setAiError] = useState("");
+  const [testingKey, setTestingKey] = useState<string | null>(null);
+  const [keyStatuses, setKeyStatuses] = useState<Record<string, "idle"|"ok"|"fail">>({});
+
+  const testSingleKey = async (key: string, keyLabel: string) => {
+    if (!key) return;
+    setTestingKey(keyLabel);
+    try {
+      await generateWithGemini("Say 'connected' in one word.", key, undefined);
+      setKeyStatuses((prev) => ({ ...prev, [keyLabel]: "ok" }));
+      toast.success(`${keyLabel}: Connected ✅`);
+    } catch (err) {
+      setKeyStatuses((prev) => ({ ...prev, [keyLabel]: "fail" }));
+      toast.error(`${keyLabel}: ${getErrorMessage(err)}`);
+    } finally {
+      setTestingKey(null);
+    }
+  };
+
   const testAi = async () => {
     setAiStatus("testing");
     setAiError("");
@@ -252,61 +270,73 @@ export function SettingsPage() {
         {activeTab === "ai" && (
           <div>
             <h2 className="mb-4 text-base font-semibold text-slate-900">AI Settings</h2>
+            <p className="text-xs text-slate-500 mb-4">Add multiple API keys. The system tries them in order — if one fails (rate limit), it automatically uses the next.</p>
 
-            {/* Primary API Key */}
-            <Field label="Primary AI API Key" hint="Used for all AI operations. Groq (gsk_...) or Gemini (AIza...) key">
+            {/* Key 1 (Primary) */}
+            <div className="border border-slate-200 rounded-lg p-4 mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-slate-700">Key 1 (Primary)</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${keyStatuses["key1"] === "ok" ? "bg-green-100 text-green-700" : keyStatuses["key1"] === "fail" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"}`}>
+                  {keyStatuses["key1"] === "ok" ? "✅ Connected" : keyStatuses["key1"] === "fail" ? "❌ Failed" : "Not tested"}
+                </span>
+              </div>
               <div className="flex gap-2">
-                <div className="flex-1">
-                  <MaskedInput value={(get("gemini_api_key","") as string)} onChange={(v) => set("gemini_api_key", v)} placeholder="gsk_... or AIza..." />
-                </div>
-                <button onClick={testAi} disabled={aiStatus === "testing"}
-                  className="inline-flex items-center gap-1.5 rounded border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                  {aiStatus === "testing" ? <Loader2 size={13} className="animate-spin" /> : <TestTube2 size={13} />}
-                  Test
+                <MaskedInput value={(get("gemini_api_key","") as string)} onChange={(v) => set("gemini_api_key", v)} placeholder="gsk_... (Groq) or AIza... (Gemini)" />
+                <button onClick={() => testSingleKey(get("gemini_api_key","") as string, "key1")} disabled={testingKey === "key1"}
+                  className="shrink-0 inline-flex items-center gap-1 rounded border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  {testingKey === "key1" ? <Loader2 size={12} className="animate-spin" /> : <TestTube2 size={12} />} Test
                 </button>
               </div>
-              {aiStatus === "ok" && <p className="mt-1 text-xs text-green-600">✅ Connected</p>}
-              {aiStatus === "fail" && <p className="mt-1 text-xs text-red-600">❌ {aiError || "Connection failed"}</p>}
-            </Field>
-
-            {/* Fallback API Key */}
-            <Field label="Fallback AI API Key (optional)" hint="Used when primary key fails or hits rate limits. Different provider recommended.">
-              <MaskedInput value={(get("ai_fallback_key","") as string)} onChange={(v) => set("ai_fallback_key", v)} placeholder="gsk_... or AIza... (different from primary)" />
-              <p className="mt-1 text-xs text-slate-400">Tip: Use Groq as primary (fast) and Gemini as fallback (higher limits), or vice versa.</p>
-            </Field>
-
-            {/* Model Selection */}
-            <Field label="Primary Model" hint="Model used with the primary key">
               <select value={(get("gemini_model","llama-3.3-70b-versatile") as string)} onChange={(e) => set("gemini_model", e.target.value)}
-                className="rounded border border-slate-200 px-3 py-2 text-sm focus:outline-none">
-                <optgroup label="Groq (recommended — fast)">
-                  <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (best quality)</option>
-                  <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (fastest, lower quality)</option>
-                  <option value="mixtral-8x7b-32768">mixtral-8x7b-32768 (good balance)</option>
-                </optgroup>
-                <optgroup label="Gemini (higher limits)">
-                  <option value="gemini-2.5-flash">gemini-2.5-flash (recommended)</option>
-                  <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (fastest)</option>
-                </optgroup>
+                className="mt-2 w-full rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none">
+                <optgroup label="Groq"><option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option><option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option><option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option></optgroup>
+                <optgroup label="Gemini"><option value="gemini-2.5-flash">gemini-2.5-flash</option><option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option></optgroup>
               </select>
-            </Field>
+            </div>
 
-            <Field label="Fallback Model (optional)" hint="Model used with the fallback key">
+            {/* Key 2 (Fallback 1) */}
+            <div className="border border-slate-200 rounded-lg p-4 mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-slate-700">Key 2 (Fallback)</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${keyStatuses["key2"] === "ok" ? "bg-green-100 text-green-700" : keyStatuses["key2"] === "fail" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"}`}>
+                  {keyStatuses["key2"] === "ok" ? "✅ Connected" : keyStatuses["key2"] === "fail" ? "❌ Failed" : "Not tested"}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <MaskedInput value={(get("ai_fallback_key","") as string)} onChange={(v) => set("ai_fallback_key", v)} placeholder="gsk_... or AIza... (different provider recommended)" />
+                <button onClick={() => testSingleKey(get("ai_fallback_key","") as string, "key2")} disabled={testingKey === "key2"}
+                  className="shrink-0 inline-flex items-center gap-1 rounded border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  {testingKey === "key2" ? <Loader2 size={12} className="animate-spin" /> : <TestTube2 size={12} />} Test
+                </button>
+              </div>
               <select value={(get("ai_fallback_model","") as string)} onChange={(e) => set("ai_fallback_model", e.target.value)}
-                className="rounded border border-slate-200 px-3 py-2 text-sm focus:outline-none">
-                <option value="">(Use default for key type)</option>
-                <optgroup label="Groq">
-                  <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
-                  <option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option>
-                  <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
-                </optgroup>
-                <optgroup label="Gemini">
-                  <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                  <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
-                </optgroup>
+                className="mt-2 w-full rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none">
+                <option value="">(Auto-detect from key type)</option>
+                <optgroup label="Groq"><option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option><option value="llama-3.1-8b-instant">llama-3.1-8b-instant</option><option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option></optgroup>
+                <optgroup label="Gemini"><option value="gemini-2.5-flash">gemini-2.5-flash</option><option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option></optgroup>
               </select>
-            </Field>
+            </div>
 
+            {/* Key 3 (Fallback 2) */}
+            <div className="border border-slate-200 rounded-lg p-4 mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-slate-700">Key 3 (Fallback 2)</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${keyStatuses["key3"] === "ok" ? "bg-green-100 text-green-700" : keyStatuses["key3"] === "fail" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"}`}>
+                  {keyStatuses["key3"] === "ok" ? "✅ Connected" : keyStatuses["key3"] === "fail" ? "❌ Failed" : "Not tested"}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <MaskedInput value={(get("ai_key_3","") as string)} onChange={(v) => set("ai_key_3", v)} placeholder="gsk_... or AIza... (optional 3rd key)" />
+                <button onClick={() => testSingleKey(get("ai_key_3","") as string, "key3")} disabled={testingKey === "key3"}
+                  className="shrink-0 inline-flex items-center gap-1 rounded border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  {testingKey === "key3" ? <Loader2 size={12} className="animate-spin" /> : <TestTube2 size={12} />} Test
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-400 mb-4">💡 Add keys from different providers for best reliability. Groq is fastest, Gemini has highest limits.</p>
+
+            {/* Toggles */}
             {[
               { key: "ai_enabled",      label: "Enable AI Features" },
               { key: "ai_auto_seo",     label: "Auto-generate SEO on Save" },
@@ -333,7 +363,7 @@ export function SettingsPage() {
               </select>
             </Field>
             <div className="mt-4">
-              <button onClick={() => save(["gemini_api_key","gemini_model","ai_fallback_key","ai_fallback_model","ai_enabled","ai_auto_seo","ai_auto_summary","ai_auto_faq","ai_language","ai_tone"])} disabled={saving}
+              <button onClick={() => save(["gemini_api_key","gemini_model","ai_fallback_key","ai_fallback_model","ai_key_3","ai_enabled","ai_auto_seo","ai_auto_summary","ai_auto_faq","ai_language","ai_tone"])} disabled={saving}
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
                 {saving ? "Saving…" : "Save AI Settings"}
               </button>

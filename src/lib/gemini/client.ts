@@ -93,37 +93,38 @@ export async function generateWithGemini(
   apiKey: string,
   model?: string,
   fallbackKey?: string,
-  fallbackModel?: string
+  fallbackModel?: string,
+  fallbackKey2?: string
 ): Promise<string> {
-  const key = cleanKey(apiKey);
-  if (!key) throw new Error("API key not configured. Set it in Settings → AI.");
+  const keys = [
+    { key: cleanKey(apiKey), model: model },
+    { key: cleanKey(fallbackKey ?? ""), model: fallbackModel },
+    { key: cleanKey(fallbackKey2 ?? ""), model: undefined },
+  ].filter((k) => k.key.length > 5);
 
-  const provider = detectProvider(key);
-  const finalModel = model || DEFAULT_MODELS[provider];
+  if (keys.length === 0) throw new Error("API key not configured. Set it in Settings → AI.");
 
-  try {
-    if (provider === "groq") {
-      return await generateWithGroq(prompt, key, finalModel);
-    }
-    return await generateWithGeminiDirect(prompt, key, finalModel);
-  } catch (err) {
-    // If primary fails with rate limit or size error, try fallback
-    const errMsg = err instanceof Error ? err.message : "";
-    const isRetryable = errMsg.includes("429") || errMsg.includes("413") || errMsg.includes("Rate limit") || errMsg.includes("too large");
+  let lastError: Error | null = null;
 
-    if (isRetryable && fallbackKey) {
-      const fbKey = cleanKey(fallbackKey);
-      if (fbKey) {
-        const fbProvider = detectProvider(fbKey);
-        const fbModel = fallbackModel || DEFAULT_MODELS[fbProvider];
-        if (fbProvider === "groq") {
-          return await generateWithGroq(prompt, fbKey, fbModel);
-        }
-        return await generateWithGeminiDirect(prompt, fbKey, fbModel);
+  for (const { key, model: m } of keys) {
+    try {
+      const provider = detectProvider(key);
+      const finalModel = m || DEFAULT_MODELS[provider];
+      if (provider === "groq") {
+        return await generateWithGroq(prompt, key, finalModel);
       }
+      return await generateWithGeminiDirect(prompt, key, finalModel);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      const msg = lastError.message;
+      // Only fallback on rate limit or size errors — not auth errors
+      const isRetryable = msg.includes("429") || msg.includes("413") || msg.includes("Rate limit") || msg.includes("too large") || msg.includes("TPM");
+      if (!isRetryable) throw lastError; // Auth errors should fail immediately
+      // Continue to next key
     }
-    throw err; // Re-throw if no fallback or fallback not applicable
   }
+
+  throw lastError ?? new Error("All AI keys failed.");
 }
 
 /** List available models (for debugging) */

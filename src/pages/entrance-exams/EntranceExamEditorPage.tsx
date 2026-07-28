@@ -423,8 +423,9 @@ export function EntranceExamEditorPage() {
     const model = getSetting("gemini_model", "") as string || undefined;
     const fallbackKey = getSetting("ai_fallback_key", "") as string || undefined;
     const fallbackModel = getSetting("ai_fallback_model", "") as string || undefined;
+    const key3 = getSetting("ai_key_3", "") as string || undefined;
     if (!apiKey) throw new Error("No AI API key configured. Go to Settings → AI.");
-    return { apiKey, model, fallbackKey, fallbackModel };
+    return { apiKey, model, fallbackKey, fallbackModel, key3 };
   };
 
   const handleAIFillIdentity = async (rawContent: string) => {
