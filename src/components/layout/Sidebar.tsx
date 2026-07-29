@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileText, BookOpen, Users, Tag, Link2,
   FileCode, Image, BarChart2, Megaphone, Palette, MapPin,
   TrendingUp, Settings, ClipboardList, LogOut, ExternalLink,
-  X,
+  X, Shield, Building2, GraduationCap, Navigation,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -32,10 +32,12 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Content",
     items: [
       { label: "Dashboard", to: "/dashboard", icon: <LayoutDashboard size={ICON_SIZE} /> },
-      { label: "Exam Manager", to: "/exams", icon: <FileText size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
-      { label: "Entrance Exams", to: "/entrance-exams", icon: <BookOpen size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      { label: "Entrance Exams", to: "/entrance-exams", icon: <GraduationCap size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      { label: "Sarkari Naukri", to: "/sarkari-naukri", icon: <ClipboardList size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      { label: "Sarkari Bharti", to: "/sarkari-bharti", icon: <Shield size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      { label: "Board Exams", to: "/board-exams", icon: <BookOpen size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      { label: "University Exams", to: "/university-exams", icon: <Building2 size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
       { label: "Content Posts", to: "/content", icon: <FileCode size={ICON_SIZE} />, permissions: [P.CREATE_POST, P.EDIT_ANY_POST] },
-      { label: "Sarkari Naukri", to: "/sarkari-naukri", icon: <ClipboardList size={ICON_SIZE} />, permissions: [P.CREATE_POST, P.EDIT_ANY_POST] },
       { label: "Education News", to: "/education-news", icon: <TrendingUp size={ICON_SIZE} />, permissions: [P.CREATE_POST, P.EDIT_ANY_POST] },
       { label: "Blog Posts", to: "/blog", icon: <BookOpen size={ICON_SIZE} />, permissions: [P.CREATE_POST, P.EDIT_ANY_POST] },
       { label: "Blog Authors", to: "/blog/authors", icon: <Users size={ICON_SIZE} />, permissions: [P.CREATE_POST] },
@@ -46,6 +48,7 @@ const NAV_GROUPS: NavGroup[] = [
     permissions: [P.MANAGE_CATEGORIES, P.MANAGE_MENUS, P.MANAGE_PAGES],
     items: [
       { label: "Categories", to: "/categories", icon: <Tag size={ICON_SIZE} />, permissions: [P.MANAGE_CATEGORIES] },
+      { label: "Navigation", to: "/navigation", icon: <Navigation size={ICON_SIZE} />, permissions: [P.MANAGE_MENUS] },
       { label: "Menu Manager", to: "/menus", icon: <Link2 size={ICON_SIZE} />, permissions: [P.MANAGE_MENUS] },
       { label: "Pages", to: "/pages", icon: <FileText size={ICON_SIZE} />, permissions: [P.MANAGE_PAGES] },
     ],

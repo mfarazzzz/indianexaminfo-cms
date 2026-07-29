@@ -119,6 +119,8 @@ const SarkariBhartiListPage = lazyPage(() => import("@/pages/sarkari-bharti/Sark
 const UniversityExamsListPage = lazyPage(() => import("@/pages/university-exams/UniversityExamsListPage"), "UniversityExamsListPage");
 // Board Exams
 const BoardExamsListPage = lazyPage(() => import("@/pages/board-exams/BoardExamsListPage"), "BoardExamsListPage");
+// Navigation Settings
+const NavigationSettingsPage = lazyPage(() => import("@/pages/navigation/NavigationSettingsPage"), "NavigationSettingsPage");
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -150,6 +152,7 @@ export const router = createBrowserRouter([
           { path: "/blog/new",          element: <BlogEditPage /> },
           { path: "/blog/:id",          element: <BlogEditPage /> },
           { path: "/categories",        element: <CategoriesPage /> },
+          { path: "/navigation",        element: <NavigationSettingsPage /> },
           { path: "/menus",             element: <MenusPage /> },
           { path: "/pages",             element: <PagesListPage /> },
           { path: "/pages/new",         element: <PageEditPage /> },
