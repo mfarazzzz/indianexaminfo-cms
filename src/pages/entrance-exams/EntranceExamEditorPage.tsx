@@ -382,10 +382,11 @@ export function EntranceExamEditorPage() {
       // Auto-save the form immediately so AI data persists without requiring manual Save click
       if (currentEdition) {
         try {
+          const validDates = data.importantDates.filter((d) => d.date && d.date.trim() !== "");
           await updateEdition(currentEdition.id, {
             status: data.status as EditionStatus || form.getValues("editionStatus"),
             vacancy: data.vacancy ?? null,
-            importantDates: data.importantDates.filter((d) => d.date && d.date.trim() !== ""),
+            importantDates: validDates,
             hasNotification: data.hasNotification,
             hasApplication: data.hasApplication,
             hasAdmitCard: data.hasAdmitCard,
@@ -404,11 +405,25 @@ export function EntranceExamEditorPage() {
             tags: data.tags.length > 0 ? data.tags : undefined,
             faqs: data.faqs.length > 0 ? data.faqs : undefined,
           });
+
+          // Also save content modules including eligibility and important-dates binding
+          if (data.contentModules && Object.keys(data.contentModules).length > 0) {
+            const existing = currentEdition.contentModules ?? {};
+            const modulesToSave = { ...existing, ...data.contentModules };
+            // Auto-seed important-dates module from the dates we just saved
+            if (validDates.length > 0) {
+              modulesToSave["important-dates"] = { dates: validDates, _meta: { updatedAt: new Date().toISOString(), updatedBy: "ai" } };
+            }
+            await updateEdition(currentEdition.id, { contentModules: modulesToSave });
+          }
+
           await loadExam(); // Reload to reflect saved data
-        } catch {} // non-critical
+        } catch (saveErr) {
+          console.error("[AI Fill] Auto-save failed:", saveErr);
+        }
       }
 
-      toast.success("AI generated and saved all fields. Page will refresh with new data.");
+      toast.success(`AI generated and saved. ${data.importantDates.length} dates extracted.`);
     } catch (err) {
       toast.error("AI generation failed: " + getErrorMessage(err));
     } finally {

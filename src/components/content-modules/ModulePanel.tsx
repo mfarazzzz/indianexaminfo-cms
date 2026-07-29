@@ -167,6 +167,21 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags }: Props) {
         staleCount={staleCount}
         allCollapsed={allCollapsed}
         onToggleCollapse={() => setAllCollapsed(!allCollapsed)}
+        onEnableAll={async () => {
+          if (!editionId) return;
+          const allSlugs = orderedModules.map((m) => m.slug);
+          const newConfig = { ...config, enabledModules: allSlugs };
+          setConfig(newConfig);
+          await saveModuleConfig(editionId, newConfig).catch(() => {});
+          toast.success("All modules enabled.");
+        }}
+        onDisableAll={async () => {
+          if (!editionId) return;
+          const newConfig = { ...config, enabledModules: [] };
+          setConfig(newConfig);
+          await saveModuleConfig(editionId, newConfig).catch(() => {});
+          toast.success("All modules disabled.");
+        }}
       />
       <p className="text-xs text-slate-500 mb-4">
         Modules auto-populate from Dates, SEO, and Identity data. Switch to Manual for full editing control.
