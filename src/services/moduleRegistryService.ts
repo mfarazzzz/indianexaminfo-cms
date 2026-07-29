@@ -9,7 +9,7 @@ import type { ModuleDefinition, FieldDefinition } from "@/types/modules";
 
 // ── Row Mapper ─────────────────────────────────────────────────────────────
 
-function mapRow(row: Record<string, unknown>): ModuleDefinition {
+function mapRow(row: Record<string, unknown>): ModuleDefinition & { applicablePillars?: string[] } {
   return {
     id: row.id as string,
     slug: row.slug as string,
@@ -23,6 +23,7 @@ function mapRow(row: Record<string, unknown>): ModuleDefinition {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     createdBy: (row.created_by as string) ?? null,
+    applicablePillars: (row.applicable_pillars as string[]) ?? [],
   };
 }
 
@@ -41,16 +42,30 @@ function validateSlug(slug: string): string | null {
 
 /**
  * Get all active modules from the registry, ordered by display_order.
+ * Optionally filter by pillar (returns modules applicable to that pillar).
  */
-export async function getModuleRegistry(): Promise<ModuleDefinition[]> {
-  const { data, error } = await db
+export async function getModuleRegistry(pillar?: string): Promise<ModuleDefinition[]> {
+  let q = db
     .from("module_registry")
     .select("*")
     .eq("is_active", true)
     .order("display_order", { ascending: true });
 
+  const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []).map((r: any) => mapRow(r));
+
+  let modules = (data ?? []).map((r: any) => mapRow(r));
+
+  // Filter by pillar if provided
+  if (pillar) {
+    modules = modules.filter((m: any) => {
+      const applicable = m.applicablePillars as string[] | undefined;
+      if (!applicable || applicable.length === 0) return true;
+      return applicable.includes(pillar);
+    });
+  }
+
+  return modules;
 }
 
 /**

@@ -54,7 +54,7 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags }: Props) {
     setLoading(true);
     try {
       let registry: ModuleDefinition[];
-      try { registry = await getModuleRegistry(); } catch { registry = BUILT_IN_MODULES; }
+      try { registry = await getModuleRegistry(exam?.pillar); } catch { registry = BUILT_IN_MODULES; }
       setModules(registry);
 
       if (editionId) {

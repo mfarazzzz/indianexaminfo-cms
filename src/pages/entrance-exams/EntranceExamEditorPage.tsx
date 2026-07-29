@@ -87,6 +87,16 @@ export function EntranceExamEditorPage() {
   const navigate = useNavigate();
   const isNew = !id || id === "new";
 
+  // Detect pillar from URL path
+  const pillarFromUrl = (() => {
+    const path = window.location.pathname;
+    if (path.includes("/sarkari-naukri")) return "sarkari-naukri";
+    if (path.includes("/sarkari-bharti")) return "sarkari-bharti";
+    if (path.includes("/board-exams")) return "board-university";
+    if (path.includes("/university-exams")) return "board-university";
+    return "entrance-exam";
+  })();
+
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [exam, setExam] = useState<ExamIdentity | null>(null);
@@ -124,8 +134,8 @@ export function EntranceExamEditorPage() {
   const watchFrequency = form.watch("cycleFrequency");
 
   useEffect(() => {
-    getCategories("entrance-exam").then(setCategories).catch(() => {});
-  }, []);
+    getCategories(pillarFromUrl).then(setCategories).catch(() => {});
+  }, [pillarFromUrl]);
 
   const loadExam = useCallback(async () => {
     if (isNew || !id) return;
@@ -169,7 +179,8 @@ export function EntranceExamEditorPage() {
       });
     } catch (err) {
       toast.error("Failed to load exam: " + getErrorMessage(err));
-      navigate("/entrance-exams");
+      const basePath = window.location.pathname.split("/")[1] || "entrance-exams";
+      navigate(`/${basePath}`);
     } finally {
       setLoading(false);
     }
@@ -186,6 +197,7 @@ export function EntranceExamEditorPage() {
           name: data.name,
           shortName: data.shortName,
           slug: data.slug || undefined,
+          pillar: pillarFromUrl,
           categoryId: data.categoryId || undefined as any,
           conductingBody: data.conductingBody,
           officialWebsite: data.officialWebsite,
@@ -193,7 +205,9 @@ export function EntranceExamEditorPage() {
           firstEditionYear: data.editionYear,
         });
         toast.success(`"${data.name}" created.`);
-        navigate(`/entrance-exams/${result.exam.id}`, { replace: true });
+        // Navigate back to the correct pillar list
+        const basePath = window.location.pathname.split("/new")[0] || "/entrance-exams";
+        navigate(`${basePath}/${result.exam.id}`, { replace: true });
         return;
       }
 
