@@ -127,6 +127,7 @@ export interface NewExamInput {
   name: string;
   shortName: string;
   slug?: string;
+  pillar?: string;
   categoryId: string;
   subcategoryId?: string;
   conductingBody: string;
@@ -247,11 +248,12 @@ const LIST_SELECT = `
 export async function getEntranceExams(opts?: {
   search?: string;
   categoryId?: string;
+  pillar?: string;
 }): Promise<EntranceExamListItem[]> {
   let q = db
     .from("exams")
     .select(LIST_SELECT)
-    .eq("pillar", "entrance-exam")
+    .eq("pillar", opts?.pillar ?? "entrance-exam")
     .order("is_featured", { ascending: false })
     .order("name");
 
@@ -332,7 +334,7 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
       slug,
       name: input.name,
       short_name: input.shortName,
-      pillar: "entrance-exam" as Pillar,
+      pillar: (input as any).pillar ?? "entrance-exam" as Pillar,
       category_id: input.categoryId || null,
       subcategory_id: input.subcategoryId || null,
       entity_type: "exam",

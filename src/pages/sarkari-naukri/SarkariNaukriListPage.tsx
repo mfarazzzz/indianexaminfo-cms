@@ -1,194 +1,145 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, Search, Filter, Briefcase, GraduationCap } from "lucide-react";
-import { listSarkariNaukri, getSarkariNaukriStats, type SarkariNaukri, type SarkariNaukriListOpts } from "@/services/sarkariNaukriService";
-import { StatusBadge } from "@/components/shared/StatusBadge";
+/**
+ * SarkariNaukriListPage — Independent list page for Government Jobs (Sarkari Naukri).
+ * Same UX pattern as EntranceExamListPage but filtered to pillar='sarkari-naukri'.
+ */
+import React, { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Search, Briefcase, Calendar, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { timeAgo } from "@/lib/utils";
+import { getEntranceExams, type EntranceExamListItem } from "@/services/entranceExamService";
+import { getCategories, type Category } from "@/services/categoryService";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { deleteExam } from "@/services/examService";
+import { getErrorMessage } from "@/lib/utils";
+
+const STATUS_COLORS: Record<string, string> = {
+  upcoming: "bg-yellow-100 text-yellow-700",
+  "notification-released": "bg-blue-100 text-blue-700",
+  "registration-open": "bg-green-100 text-green-700",
+  "registration-closed": "bg-red-100 text-red-700",
+  "admit-card-released": "bg-purple-100 text-purple-700",
+  "exam-conducted": "bg-indigo-100 text-indigo-700",
+  "answer-key-released": "bg-cyan-100 text-cyan-700",
+  "result-declared": "bg-emerald-100 text-emerald-700",
+  completed: "bg-gray-100 text-gray-500",
+};
 
 export function SarkariNaukriListPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  const [items, setItems] = useState<SarkariNaukri[]>([]);
-  const [count, setCount] = useState(0);
+  const [exams, setExams] = useState<EntranceExamListItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState(searchParams.get("search") ?? "");
-  const [typeFilter, setTypeFilter] = useState<string>(searchParams.get("type") ?? "");
-  const [stateFilter, setStateFilter] = useState<string>(searchParams.get("state") ?? "");
-  const [categoryFilter, setCategoryFilter] = useState<string>(searchParams.get("category") ?? "");
-  const [stats, setStats] = useState<{ total: number; exam: number; direct: number; published: number; featured: number } | null>(null);
+  const [search, setSearch] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<EntranceExamListItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const load = async () => {
+  useEffect(() => {
+    getCategories("sarkari-naukri").then(setCategories).catch(() => setCategories([]));
+  }, []);
+
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const opts: SarkariNaukriListOpts = { limit: 50 };
-      if (typeFilter) opts.recruitmentType = typeFilter as any;
-      if (stateFilter) opts.state = stateFilter;
-      if (categoryFilter) opts.category = categoryFilter;
-      if (search.trim()) opts.search = search.trim();
-      const result = await listSarkariNaukri(opts);
-      setItems(result.data);
-      setCount(result.count);
+      const opts: { search?: string; categoryId?: string; pillar?: string } = { pillar: "sarkari-naukri" };
+      if (search) opts.search = search;
+      if (categoryId) opts.categoryId = categoryId;
+      const data = await getEntranceExams(opts);
+      setExams(data);
     } catch (err) {
-      toast.error("Failed to load");
+      toast.error("Failed to load: " + getErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [search, categoryId]);
 
-  useEffect(() => { load(); }, [typeFilter, stateFilter, categoryFilter]);
-  useEffect(() => { getSarkariNaukriStats().then(setStats).catch(() => {}); }, []);
+  useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    load();
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteExam(deleteTarget.id);
+      toast.success(`"${deleteTarget.name}" deleted.`);
+      setDeleteTarget(null);
+      load();
+    } catch (err) { toast.error(getErrorMessage(err)); }
+    finally { setDeleting(false); }
   };
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Sarkari Naukri</h1>
-          <p className="text-sm text-slate-500">Government Jobs — Exam & Direct Recruitment ({count} entries)</p>
+          <p className="text-sm text-slate-500">{exams.length} government jobs</p>
         </div>
-        <button
-          onClick={() => navigate("/sarkari-naukri/new")}
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <Plus size={16} /> New Entry
+        <button onClick={() => navigate("/sarkari-naukri/new")}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+          <Plus size={16} /> New Job
         </button>
       </div>
 
-      {/* Stats Cards */}
-      {stats && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <div className="rounded-lg border bg-white p-3 text-center">
-            <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
-            <p className="text-xs text-slate-500">Total</p>
-          </div>
-          <button onClick={() => setTypeFilter("exam")} className={`rounded-lg border p-3 text-center transition ${typeFilter === "exam" ? "border-blue-300 bg-blue-50" : "bg-white hover:bg-slate-50"}`}>
-            <p className="text-2xl font-bold text-blue-600">{stats.exam}</p>
-            <p className="text-xs text-slate-500">Sarkari Exam</p>
-          </button>
-          <button onClick={() => setTypeFilter("direct")} className={`rounded-lg border p-3 text-center transition ${typeFilter === "direct" ? "border-green-300 bg-green-50" : "bg-white hover:bg-slate-50"}`}>
-            <p className="text-2xl font-bold text-green-600">{stats.direct}</p>
-            <p className="text-xs text-slate-500">Sarkari Bharti</p>
-          </button>
-          <div className="rounded-lg border bg-white p-3 text-center">
-            <p className="text-2xl font-bold text-emerald-600">{stats.published}</p>
-            <p className="text-xs text-slate-500">Published</p>
-          </div>
-          <div className="rounded-lg border bg-white p-3 text-center">
-            <p className="text-2xl font-bold text-amber-600">{stats.featured}</p>
-            <p className="text-xs text-slate-500">Featured</p>
-          </div>
+      <div className="flex flex-wrap items-center gap-3 bg-white rounded-lg border border-slate-200 p-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input type="text" placeholder="Search jobs..." value={search} onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-md border border-slate-200 pl-9 pr-3 py-1.5 text-sm" />
+        </div>
+        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
+          className="rounded-md border border-slate-200 px-3 py-1.5 text-sm">
+          <option value="">All Departments</option>
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" /></div>
+      ) : exams.length === 0 ? (
+        <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
+          <Briefcase size={40} className="mx-auto text-slate-300 mb-3" />
+          <p className="text-slate-500 text-sm">No government jobs found.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {exams.map((exam) => (
+            <div key={exam.id} onClick={() => navigate(`/sarkari-naukri/${exam.id}`)}
+              className="bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm cursor-pointer group relative">
+              <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(exam); }}
+                className="absolute top-2 right-2 p-1.5 rounded text-slate-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100">
+                <Trash2 size={14} />
+              </button>
+              <h3 className="font-medium text-slate-900 text-sm line-clamp-2 pr-6 mb-2">{exam.name}</h3>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">{exam.category.replace(/-/g, " ")}</span>
+                {exam.isPublished ? (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">● Live</span>
+                ) : (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">○ Draft</span>
+                )}
+                {exam.currentEdition && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_COLORS[exam.currentEdition.status] ?? "bg-gray-100 text-gray-600"}`}>
+                    {exam.currentEdition.status.replace(/-/g, " ")}
+                  </span>
+                )}
+              </div>
+              {exam.currentEdition?.nextDate && (
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <Calendar size={12} />
+                  <span>{exam.currentEdition.nextDate.label}:</span>
+                  <span className="font-medium text-slate-700">
+                    {new Date(exam.currentEdition.nextDate.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <form onSubmit={handleSearch} className="flex flex-1 items-center gap-2">
-          <div className="relative flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by title, organization..."
-              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-          <button type="submit" className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50">Search</button>
-        </form>
-
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">All Types</option>
-          <option value="exam">Sarkari Exam</option>
-          <option value="direct">Sarkari Bharti</option>
-        </select>
-
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">All Categories</option>
-          <option value="ssc">SSC</option>
-          <option value="railway">Railway</option>
-          <option value="banking">Banking</option>
-          <option value="state-psc">State PSC</option>
-          <option value="defence">Defence</option>
-          <option value="anganwadi">Anganwadi</option>
-          <option value="panchayat">Panchayat</option>
-          <option value="municipal">Municipal</option>
-          <option value="hospital">Hospital</option>
-          <option value="court">Court</option>
-          <option value="police">Police</option>
-        </select>
-
-        {(typeFilter || categoryFilter || stateFilter) && (
-          <button onClick={() => { setTypeFilter(""); setCategoryFilter(""); setStateFilter(""); }} className="text-xs text-blue-600 hover:underline">
-            Clear filters
-          </button>
-        )}
-      </div>
-
-      {/* Table */}
-      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="border-b border-slate-100 bg-slate-50">
-            <tr>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Title</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Type</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">State</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Category</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Status</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Updated</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {loading ? (
-              Array.from({ length: 8 }).map((_, i) => (
-                <tr key={i}><td colSpan={6} className="px-4 py-3"><div className="h-4 animate-pulse rounded bg-slate-100" /></td></tr>
-              ))
-            ) : items.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">No entries found</td></tr>
-            ) : (
-              items.map((item) => (
-                <tr
-                  key={item.id}
-                  onClick={() => navigate(`/sarkari-naukri/${item.id}`)}
-                  className="cursor-pointer hover:bg-slate-50 transition-colors"
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {item.isFeatured && <span className="text-amber-500">★</span>}
-                      <span className="font-medium text-slate-800 line-clamp-1">{item.title}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                      item.recruitmentType === 'exam' ? 'bg-blue-50 text-blue-700' : 'bg-green-50 text-green-700'
-                    }`}>
-                      {item.recruitmentType === 'exam' ? <GraduationCap size={12} /> : <Briefcase size={12} />}
-                      {item.recruitmentType === 'exam' ? 'Exam' : 'Bharti'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 capitalize">{item.state?.replace(/-/g, ' ') ?? '—'}</td>
-                  <td className="px-4 py-3 text-slate-600 capitalize">{item.category?.replace(/-/g, ' ') ?? '—'}</td>
-                  <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{timeAgo(item.updatedAt)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <ConfirmDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete Job" description={`Delete "${deleteTarget?.name}"? This cannot be undone.`}
+        confirmLabel="Delete" onConfirm={handleDelete} isLoading={deleting} confirmVariant="danger" />
     </div>
   );
 }

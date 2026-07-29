@@ -113,6 +113,12 @@ const SarkariNaukriEditPage = lazyPage(() => import("@/pages/sarkari-naukri/Sark
 // Entrance Exams (dedicated editorial workflow)
 const EntranceExamListPage  = lazyPage(() => import("@/pages/entrance-exams/EntranceExamListPage"),   "EntranceExamListPage");
 const EntranceExamEditorPage = lazyPage(() => import("@/pages/entrance-exams/EntranceExamEditorPage"), "EntranceExamEditorPage");
+// Sarkari Bharti (State Recruitments)
+const SarkariBhartiListPage = lazyPage(() => import("@/pages/sarkari-bharti/SarkariBhartiListPage"), "SarkariBhartiListPage");
+// University Exams
+const UniversityExamsListPage = lazyPage(() => import("@/pages/university-exams/UniversityExamsListPage"), "UniversityExamsListPage");
+// Board Exams
+const BoardExamsListPage = lazyPage(() => import("@/pages/board-exams/BoardExamsListPage"), "BoardExamsListPage");
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -172,6 +178,18 @@ export const router = createBrowserRouter([
           { path: "/entrance-exams",       element: <EntranceExamListPage /> },
           { path: "/entrance-exams/new",   element: <EntranceExamEditorPage /> },
           { path: "/entrance-exams/:id",   element: <EntranceExamEditorPage /> },
+          // Sarkari Bharti (State Recruitments)
+          { path: "/sarkari-bharti",       element: <SarkariBhartiListPage /> },
+          { path: "/sarkari-bharti/new",   element: <EntranceExamEditorPage /> },
+          { path: "/sarkari-bharti/:id",   element: <EntranceExamEditorPage /> },
+          // University Exams
+          { path: "/university-exams",     element: <UniversityExamsListPage /> },
+          { path: "/university-exams/new", element: <EntranceExamEditorPage /> },
+          { path: "/university-exams/:id", element: <EntranceExamEditorPage /> },
+          // Board Exams
+          { path: "/board-exams",          element: <BoardExamsListPage /> },
+          { path: "/board-exams/new",      element: <EntranceExamEditorPage /> },
+          { path: "/board-exams/:id",      element: <EntranceExamEditorPage /> },
           { path: "/users",             element: <RequirePermission anyOf={[P.MANAGE_USERS]}><UsersListPage /></RequirePermission> },
           { path: "/settings",          element: <RequirePermission anyOf={[P.MANAGE_SETTINGS]}><SettingsPage /></RequirePermission> },
           { path: "/audit",             element: <RequirePermission anyOf={[P.VIEW_AUDIT_LOG]}><AuditLogPage /></RequirePermission> },
