@@ -10,6 +10,7 @@
  *   Level 3 = Module-level (moduleAI.ts — existing)
  */
 import { generateWithGemini } from "./client";
+import { validateAndFixDate, INDIAN_DATE_PROMPT_RULES } from "@/lib/utils/indianDateParser";
 
 function cleanJSON(raw: string): unknown {
   let s = raw.trim();
@@ -104,33 +105,36 @@ RAW DATA:
 ---
 ${rawContent.slice(0, 8000)}
 ---
+${INDIAN_DATE_PROMPT_RULES}
 
-CRITICAL DATE EXTRACTION — EXTRACT EVERY DATE YOU CAN FIND:
-- Convert ALL date formats to YYYY-MM-DD: "AUG 03, 2026" → "${year}-08-03", "NOV 29, 2026" → "${year}-11-29", "Sep 15, 2026" → "${year}-09-15"
-- "First week of January 2027" → "${year + 1}-01-07"
+DATE EXTRACTION INSTRUCTIONS:
+- Extract EVERY date from the text and convert to YYYY-MM-DD.
 - MAP these phrases to standard labels:
-  - "Registration Starts/Opens/begins" → "Registration Opens"
-  - "Registration Ends/Closes/Last date" → "Registration Closes"
-  - "Test Day/Exam Date/Exam Day" → "Exam Date"
-  - "Admit Card/Hall Ticket download" → "Admit Card Release"
-  - "Result/Scorecard/declared" → "Result Declaration"
+  - "Registration Starts/Opens/begins/Start of submission" → "Registration Opens"
+  - "Registration Ends/Closes/Last date for submission" → "Registration Closes"
+  - "Last date for fee payment" → "Registration Closes" (same deadline)
+  - "Test Day/Exam Date/Date of Examination" → "Exam Date"
+  - "Admit Card/Hall Ticket/Download Admit Card" → "Admit Card Release"
+  - "Result/Scorecard/Declaration of Result" → "Result Declaration"
   - "Notification/Bulletin released" → "Notification Release"
-- SEARCH the entire text for an "Important Dates" section — extract ALL dates from it
+  - "Correction/Edit application/Online corrections" → "Application Correction Window"
+- For date ranges like "15.06.2026 to 18.06.2026", use the START date.
+- SEARCH the entire text for an "Important Dates" section — extract ALL dates from it.
 - DO NOT leave dates empty if they exist in the raw data!
 
 Return ONLY valid JSON:
 {
   "importantDates": [
-    {"label": "Notification Release", "date": "${year}-MM-DD or empty string", "isUrgent": false},
-    {"label": "Registration Opens", "date": "${year}-MM-DD or empty string", "isUrgent": true},
-    {"label": "Registration Closes", "date": "${year}-MM-DD or empty string", "isUrgent": true},
-    {"label": "Application Correction Window", "date": "${year}-MM-DD or empty string", "isUrgent": false},
-    {"label": "Admit Card Release", "date": "${year}-MM-DD or empty string", "isUrgent": false},
-    {"label": "Exam Date", "date": "${year}-MM-DD or empty string", "isUrgent": true},
-    {"label": "Answer Key Release", "date": "${year}-MM-DD or empty string", "isUrgent": false},
-    {"label": "Result Declaration", "date": "${year + 1}-MM-DD or empty string", "isUrgent": false},
-    {"label": "Counselling Starts", "date": "empty string", "isUrgent": false},
-    {"label": "Cutoff Release", "date": "empty string", "isUrgent": false}
+    {"label": "Notification Release", "date": "YYYY-MM-DD or empty string", "isUrgent": false},
+    {"label": "Registration Opens", "date": "YYYY-MM-DD or empty string", "isUrgent": true},
+    {"label": "Registration Closes", "date": "YYYY-MM-DD or empty string", "isUrgent": true},
+    {"label": "Application Correction Window", "date": "YYYY-MM-DD or empty string", "isUrgent": false},
+    {"label": "Admit Card Release", "date": "YYYY-MM-DD or empty string", "isUrgent": false},
+    {"label": "Exam Date", "date": "YYYY-MM-DD or empty string", "isUrgent": true},
+    {"label": "Answer Key Release", "date": "YYYY-MM-DD or empty string", "isUrgent": false},
+    {"label": "Result Declaration", "date": "YYYY-MM-DD or empty string", "isUrgent": false},
+    {"label": "Counselling Starts", "date": "YYYY-MM-DD or empty string", "isUrgent": false},
+    {"label": "Cutoff Release", "date": "YYYY-MM-DD or empty string", "isUrgent": false}
   ],
   "status": "upcoming|registration-open|registration-closed|admit-card-released|exam-conducted|answer-key-released|result-declared|completed",
   "vacancy": number or null,
@@ -141,11 +145,21 @@ Return ONLY the JSON.`;
 
   const raw = await generateWithGemini(prompt, apiKey, model);
   const data = cleanJSON(raw) as any;
+
+  // Post-process: validate and fix all dates deterministically
+  const importantDates = Array.isArray(data.importantDates)
+    ? data.importantDates.map((d: any) => ({
+        label: d.label ?? "",
+        date: validateAndFixDate(d.date ?? ""),
+        isUrgent: d.isUrgent ?? false,
+      }))
+    : [];
+
   return {
-    importantDates: Array.isArray(data.importantDates) ? data.importantDates : [],
+    importantDates,
     status: data.status ?? "upcoming",
     vacancy: data.vacancy ?? null,
-    notificationDate: data.notificationDate ?? "",
+    notificationDate: validateAndFixDate(data.notificationDate ?? ""),
   };
 }
 

@@ -13,6 +13,7 @@ import { deleteExam, publishExam, unpublishExam } from "@/services/examService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { RichEditor } from "@/components/shared/RichEditor";
 import { ImageUploader } from "@/components/shared/ImageUploader";
+import { DraggableList } from "@/components/shared/DraggableList";
 import { ModulePanel } from "@/components/content-modules/ModulePanel";
 import { getErrorMessage } from "@/lib/utils";
 import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
@@ -290,10 +291,10 @@ export function EntranceExamEditorPage() {
     }
   };
 
-  const handleStartNewEdition = async (year: number, session: CycleSession) => {
+  const handleStartNewEdition = async (year: number, session: CycleSession, editionLabel?: string) => {
     try {
-      const draft = await startNewEdition(exam!.id, { year, session });
-      toast.success(`New edition ${year} created as draft. Save to activate it.`);
+      const draft = await startNewEdition(exam!.id, { year, session, editionLabel });
+      toast.success(`New edition ${editionLabel || year} created as draft. Save to activate it.`);
       setDraftEdition(draft);
       setShowNewEdition(false);
       // Switch editor to show the draft edition fields
@@ -872,6 +873,16 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
     return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Drag reorder handler
+  const handleReorder = (orderedIds: string[]) => {
+    const currentDates = form.getValues("importantDates") as { label: string; date: string; isUrgent: boolean }[];
+    const reordered = orderedIds.map((id) => {
+      const idx = dateFields.findIndex((f) => f.id === id);
+      return currentDates[idx];
+    }).filter(Boolean);
+    replaceDates(reordered);
+  };
+
   return (
     <div className="space-y-5">
       {/* Year & Session — conditional on frequency */}
@@ -897,33 +908,37 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
         <Field label="Notification Date" name="notificationDate" form={form} type="date" />
         <Field label="Vacancy" name="vacancy" form={form} type="number" placeholder="Total seats (leave 0 if N/A)" />
       </div>
-
-      {/* Important Dates — pre-defined rows + custom */}
+      {/* Important Dates — pre-defined rows + custom — DRAGGABLE */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <div>
             <label className="text-xs font-medium text-slate-600">Important Dates</label>
-            <p className="text-xs text-slate-400">Leave date blank if not yet announced — blank dates won't appear on frontend.</p>
+            <p className="text-xs text-slate-400">Leave date blank if not yet announced — blank dates won't appear on frontend. Drag to reorder.</p>
           </div>
           <button type="button" onClick={() => appendDate({ label: "", date: "", isUrgent: false })}
             className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add Custom Date</button>
         </div>
-        <div className="space-y-2">
-          {dateFields.map((field, i) => (
-            <div key={field.id} className="flex items-center gap-2 bg-slate-50 rounded px-3 py-2">
-              <input {...form.register(`importantDates.${i}.label`)} placeholder="Date label"
-                className="flex-1 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
-              <input {...form.register(`importantDates.${i}.date`)} type="date"
-                className="w-40 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
-              <label className="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap">
-                <input type="checkbox" {...form.register(`importantDates.${i}.isUrgent`)} className="rounded" /> Urgent
-              </label>
-              <button type="button" onClick={() => removeDate(i)} className="text-red-400 hover:text-red-600 p-1">
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
+        <DraggableList
+          items={dateFields.map((f, i) => ({ ...f, _idx: i }))}
+          onReorder={handleReorder}
+          renderItem={(field, { dragHandleProps }) => {
+            const i = (field as any)._idx;
+            return (
+              <div className="flex items-center gap-2 bg-slate-50 rounded px-3 py-2">
+                <input {...form.register(`importantDates.${i}.label`)} placeholder="Date label"
+                  className="flex-1 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
+                <input {...form.register(`importantDates.${i}.date`)} type="date"
+                  className="w-40 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
+                <label className="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap">
+                  <input type="checkbox" {...form.register(`importantDates.${i}.isUrgent`)} className="rounded" /> Urgent
+                </label>
+                <button type="button" onClick={() => removeDate(i)} className="text-red-400 hover:text-red-600 p-1">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            );
+          }}
+        />
       </div>
     </div>
   );
@@ -1500,9 +1515,16 @@ function HistoryTab({ editions, onDelete, onPromote, onEdit }: { editions: ExamE
 
 // ── New Edition Dialog ─────────────────────────────────────────────────────
 
-function NewEditionDialog({ onConfirm, onCancel, frequency }: { onConfirm: (year: number, session: CycleSession) => void; onCancel: () => void; frequency: CycleFrequency }) {
+function NewEditionDialog({ onConfirm, onCancel, frequency }: { onConfirm: (year: number, session: CycleSession, editionLabel?: string) => void; onCancel: () => void; frequency: CycleFrequency }) {
   const [year, setYear] = useState(new Date().getFullYear() + 1);
   const [session, setSession] = useState<CycleSession>("main");
+  const [customLabel, setCustomLabel] = useState("");
+
+  // Auto-suggest label based on session selection
+  const suggestedLabel = session === "main" ? String(year)
+    : session === "session-1" ? `${year} Session 1`
+    : session === "session-2" ? `${year} Session 2`
+    : `${year} ${session.charAt(0).toUpperCase() + session.slice(1)}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -1514,7 +1536,7 @@ function NewEditionDialog({ onConfirm, onCancel, frequency }: { onConfirm: (year
             <input type="number" value={year} onChange={(e) => setYear(parseInt(e.target.value))}
               className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" />
           </div>
-          {frequency === "biannual" && (
+          {(frequency === "biannual" || frequency === "irregular") && (
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Cycle / Session</label>
               <select value={session} onChange={(e) => setSession(e.target.value as CycleSession)}
@@ -1523,11 +1545,32 @@ function NewEditionDialog({ onConfirm, onCancel, frequency }: { onConfirm: (year
               </select>
             </div>
           )}
+          {(frequency === "biannual" || frequency === "irregular") && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Edition Label <span className="text-slate-400">(custom name for this cycle)</span>
+              </label>
+              <input
+                type="text"
+                value={customLabel}
+                onChange={(e) => setCustomLabel(e.target.value)}
+                placeholder={suggestedLabel}
+                className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Examples: "CTET-Feb", "CTET-Sep", "JEE Main Jan", "JEE Main Apr"
+              </p>
+            </div>
+          )}
         </div>
         <p className="text-xs text-amber-600">⚠️ The current edition will be archived automatically.</p>
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 rounded">Cancel</button>
-          <button type="button" onClick={() => onConfirm(year, frequency === "biannual" ? session : "main")}
+          <button type="button" onClick={() => onConfirm(
+            year,
+            (frequency === "biannual" || frequency === "irregular") ? session : "main",
+            customLabel.trim() || undefined
+          )}
             className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded">Create Edition</button>
         </div>
       </div>

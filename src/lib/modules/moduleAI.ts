@@ -4,6 +4,7 @@
  * Generates focused content for a specific module type using the exam context.
  */
 import { generateWithGemini } from "@/lib/gemini/client";
+import { validateAndFixDate, INDIAN_DATE_PROMPT_SHORT } from "@/lib/utils/indianDateParser";
 import type { ExamIdentity, ExamEdition } from "@/services/entranceExamService";
 
 interface ModuleAIContext {
@@ -40,7 +41,9 @@ export async function aiGenerateForModule(
   }
 
   try {
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+    // Post-process any date fields in the module response
+    return fixModuleDateFields(moduleSlug, parsed);
   } catch {
     // If not JSON, treat as HTML body
     if (cleaned.includes("<") && cleaned.includes(">")) {
@@ -48,6 +51,30 @@ export async function aiGenerateForModule(
     }
     return { body: `<p>${cleaned}</p>` };
   }
+}
+
+/** Fix date fields in module-specific responses */
+function fixModuleDateFields(slug: string, data: Record<string, unknown>): Record<string, unknown> {
+  const dateKeys = ["releaseDate", "declarationDate", "date", "applicationStartDate", "applicationEndDate", "lastDateFeePayment"];
+  const result = { ...data };
+
+  for (const key of dateKeys) {
+    if (typeof result[key] === "string" && result[key]) {
+      result[key] = validateAndFixDate(result[key] as string);
+    }
+  }
+
+  // Fix dates in rounds arrays (counselling module)
+  if (Array.isArray(result.rounds)) {
+    result.rounds = (result.rounds as any[]).map((r: any) => {
+      if (r && typeof r.date === "string" && r.date) {
+        return { ...r, date: validateAndFixDate(r.date) };
+      }
+      return r;
+    });
+  }
+
+  return result;
 }
 
 function getModulePrompt(slug: string, examName: string, year: number, ctx: ModuleAIContext, rawContent?: string): string | null {
@@ -74,10 +101,10 @@ function getModulePrompt(slug: string, examName: string, year: number, ctx: Modu
       return `Generate subject-wise syllabus for "${examName}" ${year}.${rawContext}Return JSON: {"subjects": [{"name": "Subject/Section Name", "topics": "<html with bullet list of topics>"}], "downloadLink": "", "notes": "<html with preparation tips>"}. Include all major subjects. Use REAL data from raw content if provided. Return only valid JSON.`;
 
     case "admit-card":
-      return `Generate admit card information for "${examName}" ${year}.${rawContext}Return JSON: {"releaseDate": "", "downloadLink": "${identity.officialWebsite || ""}", "body": "<html with how to download admit card, steps, what details to check, what to bring to exam center>", "documents": "List of documents candidates must bring"}. Use REAL data from raw content if provided. Return only valid JSON.`;
+      return `Generate admit card information for "${examName}" ${year}.${rawContext}${INDIAN_DATE_PROMPT_SHORT}\nReturn JSON: {"releaseDate": "YYYY-MM-DD or empty", "downloadLink": "${identity.officialWebsite || ""}", "body": "<html with how to download admit card, steps, what details to check, what to bring to exam center>", "documents": "List of documents candidates must bring"}. Use REAL data from raw content if provided. Return only valid JSON.`;
 
     case "result":
-      return `Generate result information for "${examName}" ${year}.${rawContext}Return JSON: {"declarationDate": "", "checkLink": "${identity.officialWebsite || ""}", "body": "<html with how to check result, what the scorecard contains, next steps after result>", "statistics": "Expected statistics like total appeared, qualified, etc."}. Use REAL data from raw content if provided. Return only valid JSON.`;
+      return `Generate result information for "${examName}" ${year}.${rawContext}${INDIAN_DATE_PROMPT_SHORT}\nReturn JSON: {"declarationDate": "YYYY-MM-DD or empty", "checkLink": "${identity.officialWebsite || ""}", "body": "<html with how to check result, what the scorecard contains, next steps after result>", "statistics": "Expected statistics like total appeared, qualified, etc."}. Use REAL data from raw content if provided. Return only valid JSON.`;
 
     case "cut-off":
       return `Generate cutoff information for "${examName}" ${year}.${rawContext}Return JSON: {"body": "<html with explanation of cutoff, factors affecting cutoff, previous year trends>", "categories": [{"category": "General", "cutoff": "Expected score", "year": "${year - 1}"}], "notes": "<html with tips about cutoff, what happens after cutoff>"}. Include General, OBC, SC, ST, EWS categories. Use REAL data from raw content if provided. Return only valid JSON.`;

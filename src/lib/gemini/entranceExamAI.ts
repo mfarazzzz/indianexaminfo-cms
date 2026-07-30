@@ -9,6 +9,7 @@
  * content generation gets full creative freedom.
  */
 import { generateWithGemini } from "./client";
+import { parseDateText, INDIAN_DATE_PROMPT_RULES } from "@/lib/utils/indianDateParser";
 
 export interface AIExamData {
   shortName: string;
@@ -55,12 +56,14 @@ Return ONLY this JSON (no markdown):
   "vacancy": null,
   "status": "upcoming"
 }
+${INDIAN_DATE_PROMPT_RULES}
 
-RULES:
-- For dates: copy the EXACT label and EXACT date text as they appear. Do NOT reformat.
+ADDITIONAL RULES:
+- Copy the EXACT date text as written in the source text. Do NOT reformat.
+- Match each date to its CORRECT label. Read carefully which date belongs to which event.
+- Include EVERY date mentioned in the text.
 - For fee: extract exact numbers (2700, 1350 etc). null if not found.
-- For eligibility: copy the requirement sentence.
-- Include EVERY date mentioned in the text.`;
+- For eligibility: copy the requirement sentence.`;
 
 interface Stage1Result {
   shortName: string;
@@ -103,70 +106,28 @@ async function runStage1(
   }
 }
 
-// ── Date text → YYYY-MM-DD conversion (deterministic code) ─────────────────
-
-const MONTH_MAP: Record<string, string> = {
-  jan: "01", january: "01", feb: "02", february: "02", mar: "03", march: "03",
-  apr: "04", april: "04", may: "05", jun: "06", june: "06",
-  jul: "07", july: "07", aug: "08", august: "08", sep: "09", september: "09",
-  oct: "10", october: "10", nov: "11", november: "11", dec: "12", december: "12",
-};
-
-function parseDateText(text: string, _defaultYear: number): string {
-  if (!text) return "";
-  const t = text.trim();
-
-  // "Aug 3, 2026" / "August 3, 2026" / "AUG 03, 2026"
-  let m = t.match(/([A-Za-z]+)\s+(\d{1,2}),?\s*(\d{4})/);
-  if (m && MONTH_MAP[m[1].toLowerCase()]) {
-    return `${m[3]}-${MONTH_MAP[m[1].toLowerCase()]}-${m[2].padStart(2, "0")}`;
-  }
-
-  // "3 Aug 2026" / "03 August 2026"
-  m = t.match(/(\d{1,2})\s+([A-Za-z]+),?\s*(\d{4})/);
-  if (m && MONTH_MAP[m[2].toLowerCase()]) {
-    return `${m[3]}-${MONTH_MAP[m[2].toLowerCase()]}-${m[1].padStart(2, "0")}`;
-  }
-
-  // "03-08-2026" or "03/08/2026"
-  m = t.match(/(\d{2})[-/](\d{2})[-/](\d{4})/);
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-
-  // "2026-08-03" (already ISO)
-  m = t.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-
-  // "First week of January 2027"
-  m = t.match(/first\s+week\s+of\s+([A-Za-z]+)\s+(\d{4})/i);
-  if (m && MONTH_MAP[m[1].toLowerCase()]) {
-    return `${m[2]}-${MONTH_MAP[m[1].toLowerCase()]}-07`;
-  }
-
-  // "January 2027" (month + year only)
-  m = t.match(/([A-Za-z]+)\s+(\d{4})/);
-  if (m && MONTH_MAP[m[1].toLowerCase()]) {
-    return `${m[2]}-${MONTH_MAP[m[1].toLowerCase()]}-15`;
-  }
-
-  return "";
-}
+// ── Date text → YYYY-MM-DD conversion (uses shared indianDateParser) ────────
 
 // ── Label normalization ────────────────────────────────────────────────────
 
 function normalizeLabel(rawLabel: string): { label: string; isUrgent: boolean } | null {
   const l = rawLabel.toLowerCase().trim();
 
-  if (/registration\s*(open|start|begin|window\s*open)/i.test(l)) return { label: "Registration Opens", isUrgent: true };
-  if (/registration\s*(close|end|deadline)|last\s*date/i.test(l)) return { label: "Registration Closes", isUrgent: true };
+  if (/registration\s*(open|start|begin|window\s*open)|start\s*of\s*submission|application\s*(start|open|begin)/i.test(l)) return { label: "Registration Opens", isUrgent: true };
+  if (/registration\s*(close|end|deadline)|last\s*date\s*(for|of)\s*(submission|application|submitting)|application\s*(close|end|deadline)/i.test(l)) return { label: "Registration Closes", isUrgent: true };
+  if (/last\s*date\s*(for|of)\s*(fee|payment)|fee\s*(deadline|last\s*date)/i.test(l)) return { label: "Registration Closes", isUrgent: true };
   if (/exam\s*date|test\s*day|test\s*date|date\s*of\s*exam/i.test(l)) return { label: "Exam Date", isUrgent: true };
-  if (/admit\s*card|hall\s*ticket/i.test(l)) return { label: "Admit Card Release", isUrgent: false };
-  if (/result|score\s*card|declaration/i.test(l)) return { label: "Result Declaration", isUrgent: false };
+  if (/admit\s*card|hall\s*ticket|download\s*admit/i.test(l)) return { label: "Admit Card Release", isUrgent: false };
+  if (/result|score\s*card|declaration\s*of\s*result/i.test(l)) return { label: "Result Declaration", isUrgent: false };
   if (/notification|bulletin|advertisement/i.test(l)) return { label: "Notification Release", isUrgent: false };
-  if (/correction|edit\s*application|modify/i.test(l)) return { label: "Application Correction Window", isUrgent: false };
+  if (/correction|edit\s*application|modify|online\s*correction/i.test(l)) return { label: "Application Correction Window", isUrgent: false };
   if (/answer\s*key|objection/i.test(l)) return { label: "Answer Key Release", isUrgent: false };
   if (/counsel/i.test(l)) return { label: "Counselling Starts", isUrgent: false };
   if (/cut\s*off/i.test(l)) return { label: "Cutoff Release", isUrgent: false };
   if (/score\s*validity/i.test(l)) return null; // not a date we track
+
+  // Fallback: if the label contains "last date" without specific context, treat as registration closes
+  if (/last\s*date/i.test(l)) return { label: "Registration Closes", isUrgent: true };
 
   return null;
 }
@@ -178,6 +139,7 @@ function processStage1Dates(stage1Dates: { label: string; dateText: string }[], 
     const normalized = normalizeLabel(label);
     if (!normalized) continue;
 
+    // parseDateText handles ranges internally (takes first date from "X to Y")
     const date = parseDateText(dateText, year);
     if (!date) continue;
 

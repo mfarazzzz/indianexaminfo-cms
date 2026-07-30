@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { getEntranceExams, type EntranceExamListItem } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { BulkImportExport } from "@/components/shared/BulkImportExport";
 import { deleteExam } from "@/services/examService";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -81,6 +82,9 @@ export function GovtExamListPage() {
           <Plus size={16} /> New Recruitment
         </button>
       </div>
+
+      {/* Bulk Import/Export */}
+      <BulkImportExport pillar="sarkari-naukri" pillarLabel="Govt Exams" onImportComplete={load} />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 bg-white rounded-lg border border-slate-200 p-3">

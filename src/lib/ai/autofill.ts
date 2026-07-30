@@ -9,6 +9,7 @@
  * The API key is passed in from the calling component (via SettingsContext).
  * This avoids separate DB reads and RLS issues with sensitive settings.
  */
+import { validateAndFixDate, INDIAN_DATE_PROMPT_RULES } from "@/lib/utils/indianDateParser";
 
 /** Module-level API key set by the consuming component before calling autofill */
 let _activeKey: string = ''
@@ -137,6 +138,80 @@ async function callGemini(prompt: string, maxTokens = 8192): Promise<Record<stri
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DATE POST-PROCESSING — validates and fixes all dates from AI/JSON input
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/** Known date field keys in the AI response that need validation */
+const DATE_FIELD_KEYS = [
+  "registrationOpen", "registrationClose", "examWindowStart", "examWindowEnd",
+  "lastDateApply", "feeLastDate", "notificationDate", "examDate", "resultDate",
+  "admitCardDate", "answerKeyDate", "counsellingDate", "cutoffDate",
+  "releaseDate", "declarationDate", "applicationStartDate", "applicationEndDate",
+  "lastDateFeePayment", "admitCardReleaseDate", "answerKeyReleaseDate", "resultDeclaredDate",
+];
+
+/**
+ * Post-process AI response to validate/fix ALL date fields.
+ * Handles:
+ * - Top-level date strings (e.g., result.notificationDate)
+ * - dates/importantDates arrays with {date: "..."} objects
+ * - typeFields object with date keys
+ * - Nested objects recursively
+ */
+function postProcessDates(data: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...data };
+
+  // Fix top-level date fields
+  for (const key of DATE_FIELD_KEYS) {
+    if (typeof result[key] === "string" && result[key]) {
+      result[key] = validateAndFixDate(result[key] as string);
+    }
+  }
+
+  // Fix dates array (importantDates or dates)
+  for (const arrayKey of ["dates", "importantDates"]) {
+    if (Array.isArray(result[arrayKey])) {
+      result[arrayKey] = (result[arrayKey] as any[]).map((d: any) => {
+        if (d && typeof d.date === "string") {
+          return { ...d, date: validateAndFixDate(d.date) };
+        }
+        return d;
+      });
+    }
+  }
+
+  // Fix typeFields
+  if (result.typeFields && typeof result.typeFields === "object") {
+    const tf = { ...(result.typeFields as Record<string, unknown>) };
+    for (const key of DATE_FIELD_KEYS) {
+      if (typeof tf[key] === "string" && tf[key]) {
+        tf[key] = validateAndFixDate(tf[key] as string);
+      }
+    }
+    result.typeFields = tf;
+  }
+
+  // Fix contentModules date fields (admit-card.releaseDate, result.declarationDate, etc.)
+  if (result.contentModules && typeof result.contentModules === "object") {
+    const modules = { ...(result.contentModules as Record<string, any>) };
+    for (const [slug, mod] of Object.entries(modules)) {
+      if (mod && typeof mod === "object") {
+        const fixedMod = { ...mod };
+        for (const key of DATE_FIELD_KEYS) {
+          if (typeof fixedMod[key] === "string" && fixedMod[key]) {
+            fixedMod[key] = validateAndFixDate(fixedMod[key]);
+          }
+        }
+        modules[slug] = fixedMod;
+      }
+    }
+    result.contentModules = modules;
+  }
+
+  return result;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // EXAM AUTO-FILL
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -145,10 +220,10 @@ export interface ExamAutoFillResult { [key: string]: unknown }
 export async function autoFillExam(rawText: string): Promise<ExamAutoFillResult> {
   // If user pasted JSON directly (from ChatGPT/Perplexity), use it without API call
   const direct = tryDirectParse(rawText);
-  if (direct) return direct;
+  if (direct) return postProcessDates(direct);
 
   // Otherwise call AI to extract from raw text with comprehensive prompt
-  return callGemini(`You are an expert at extracting structured data from Indian exam/recruitment notifications. Extract ALL possible information from the given text and return comprehensive JSON.
+  const result = await callGemini(`You are an expert at extracting structured data from Indian exam/recruitment notifications. Extract ALL possible information from the given text and return comprehensive JSON.
 
 CRITICAL RULES:
 1. Dates must be in YYYY-MM-DD format
@@ -167,6 +242,7 @@ CRITICAL RULES:
 14. For entrance exams: fill examDuration, totalMarks, totalQuestions, negativeMarking, examMode, examMedium, numberOfAttempts, acceptedBy
 15. For recruitment: fill department, postName, jobLocation, payScale, groupLevel, lastDateApply, notificationDate, examDate
 16. dates array must include ALL key dates: notification, application start/end, admit card, exam date, result date — mark upcoming ones isUrgent:true
+${INDIAN_DATE_PROMPT_RULES}
 
 COMPLETE JSON SCHEMA (fill every field possible):
 {
@@ -246,6 +322,8 @@ IMPORTANT: Generate at least 15 detailed FAQs. Each FAQ answer must be 2-3 sente
 
 Text to extract from:
 ${rawText}`, 8192);
+
+  return postProcessDates(result);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -256,9 +334,9 @@ export interface ContentPostAutoFillResult { [key: string]: unknown }
 
 export async function autoFillContentPost(rawText: string): Promise<ContentPostAutoFillResult> {
   const direct = tryDirectParse(rawText);
-  if (direct) return direct;
+  if (direct) return postProcessDates(direct);
 
-  return callGemini(`You are an expert at extracting content post data from Indian exam notifications. Return comprehensive JSON.
+  const result = await callGemini(`You are an expert at extracting content post data from Indian exam notifications. Return comprehensive JSON.
 
 RULES:
 1. dates=YYYY-MM-DD
@@ -267,6 +345,7 @@ RULES:
 4. Content should be full HTML with paragraphs, headings, lists
 5. quickLinks should include official notification PDF, application link, and other relevant URLs
 6. Each FAQ answer must be 2-3 sentences minimum
+${INDIAN_DATE_PROMPT_RULES}
 
 SCHEMA:
 {
@@ -293,6 +372,8 @@ SCHEMA:
 }
 
 Text: ${rawText}`, 8192);
+
+  return postProcessDates(result);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

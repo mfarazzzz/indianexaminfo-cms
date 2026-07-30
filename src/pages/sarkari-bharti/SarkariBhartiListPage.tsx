@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { getEntranceExams, type EntranceExamListItem } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { BulkImportExport } from "@/components/shared/BulkImportExport";
 import { deleteExam } from "@/services/examService";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -37,6 +38,8 @@ export function SarkariBhartiListPage() {
         <div><h1 className="text-xl font-semibold text-slate-900">Sarkari Bharti</h1><p className="text-sm text-slate-500">{items.length} recruitments</p></div>
         <button onClick={() => navigate("/sarkari-bharti/new")} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"><Plus size={16} /> New Recruitment</button>
       </div>
+      {/* Bulk Import/Export */}
+      <BulkImportExport pillar="sarkari-bharti" pillarLabel="Sarkari Bharti" onImportComplete={load} />
       <div className="flex flex-wrap items-center gap-3 bg-white rounded-lg border border-slate-200 p-3">
         <div className="relative flex-1 min-w-[200px]"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="Search recruitments..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full rounded-md border border-slate-200 pl-9 pr-3 py-1.5 text-sm" /></div>
         <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="rounded-md border border-slate-200 px-3 py-1.5 text-sm"><option value="">All Departments</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>

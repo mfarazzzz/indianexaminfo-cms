@@ -10,6 +10,7 @@ import { createPillarService } from "@/services/pillarService";
 import { getCategories, type Category } from "@/services/categoryService";
 import { deleteExam } from "@/services/examService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { BulkImportExport } from "@/components/shared/BulkImportExport";
 import { getErrorMessage } from "@/lib/utils";
 import type { Pillar } from "@/types/exam";
 
@@ -85,6 +86,9 @@ export function PillarListPage({ pillar, title, entityLabel }: Props) {
           <Plus size={16} /> New {entityLabel}
         </button>
       </div>
+
+      {/* Bulk Import/Export */}
+      <BulkImportExport pillar={pillar} pillarLabel={title} onImportComplete={load} />
 
       <div className="flex flex-wrap items-center gap-3 bg-white rounded-lg border border-slate-200 p-3">
         <div className="relative flex-1 min-w-[200px]">

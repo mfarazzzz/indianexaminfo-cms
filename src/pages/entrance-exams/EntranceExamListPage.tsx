@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { getEntranceExams, type EntranceExamListItem } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { BulkImportExport } from "@/components/shared/BulkImportExport";
 import { deleteExam } from "@/services/examService";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -86,6 +87,9 @@ export function EntranceExamListPage() {
           New Exam
         </button>
       </div>
+
+      {/* Bulk Import/Export */}
+      <BulkImportExport pillar="entrance-exam" pillarLabel="Entrance Exams" onImportComplete={load} />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 bg-white rounded-lg border border-slate-200 p-3">
