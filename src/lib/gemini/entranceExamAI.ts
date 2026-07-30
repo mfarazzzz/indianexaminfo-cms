@@ -112,7 +112,7 @@ const MONTH_MAP: Record<string, string> = {
   oct: "10", october: "10", nov: "11", november: "11", dec: "12", december: "12",
 };
 
-function parseDateText(text: string, defaultYear: number): string {
+function parseDateText(text: string, _defaultYear: number): string {
   if (!text) return "";
   const t = text.trim();
 
