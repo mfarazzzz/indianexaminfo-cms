@@ -107,9 +107,9 @@ const AuditLogPage      = lazyPage(() => import("@/pages/audit/AuditLogPage"),  
 // CMS Education News modules
 const EduNewsListPage   = lazyPage(() => import("@/pages/education-news/EduNewsListPage"), "EduNewsListPage");
 const EduNewsEditPage   = lazyPage(() => import("@/pages/education-news/EduNewsEditPage"), "EduNewsEditPage");
-// Sarkari Naukri (Government Jobs — unified exam + direct)
-const SarkariNaukriListPage = lazyPage(() => import("@/pages/sarkari-naukri/SarkariNaukriListPage"), "SarkariNaukriListPage");
-const SarkariNaukriEditPage = lazyPage(() => import("@/pages/sarkari-naukri/SarkariNaukriEditPage"), "SarkariNaukriEditPage");
+// Govt Exam (Government Competitive Exams — UPSC, SSC, RRB, etc.)
+const GovtExamListPage = lazyPage(() => import("@/pages/govt-exam/GovtExamListPage"), "GovtExamListPage");
+const GovtExamEditorPage = lazyPage(() => import("@/pages/govt-exam/GovtExamEditorPage"), "default");
 // Entrance Exams (dedicated editorial workflow)
 const EntranceExamListPage  = lazyPage(() => import("@/pages/entrance-exams/EntranceExamListPage"),   "EntranceExamListPage");
 const EntranceExamEditorPage = lazyPage(() => import("@/pages/entrance-exams/EntranceExamEditorPage"), "EntranceExamEditorPage");
@@ -165,18 +165,22 @@ export const router = createBrowserRouter([
           { path: "/ads/creatives",     element: <CreativesPage /> },
           { path: "/ads/zones",         element: <ZonesPage /> },
           { path: "/ads/reports",       element: <ReportsPage /> },
-          // CMS Results (LEGACY — redirects to Sarkari Naukri)
-          { path: "/results",           element: <Navigate to="/sarkari-naukri" replace /> },
-          { path: "/results/new",       element: <Navigate to="/sarkari-naukri/new" replace /> },
-          { path: "/results/:id",       element: <Navigate to="/sarkari-naukri" replace /> },
+          // CMS Results (LEGACY — redirects to Govt Exam)
+          { path: "/results",           element: <Navigate to="/govt-exam" replace /> },
+          { path: "/results/new",       element: <Navigate to="/govt-exam/new" replace /> },
+          { path: "/results/:id",       element: <Navigate to="/govt-exam" replace /> },
           // CMS Education News
           { path: "/education-news",       element: <EduNewsListPage /> },
           { path: "/education-news/new",   element: <EduNewsEditPage /> },
           { path: "/education-news/:id",   element: <EduNewsEditPage /> },
-          // Sarkari Naukri (Government Jobs)
-          { path: "/sarkari-naukri",       element: <SarkariNaukriListPage /> },
-          { path: "/sarkari-naukri/new",   element: <SarkariNaukriEditPage /> },
-          { path: "/sarkari-naukri/:id",   element: <SarkariNaukriEditPage /> },
+          // Govt Exam (Government Competitive Exams — UPSC, SSC, RRB, etc.)
+          { path: "/govt-exam",            element: <GovtExamListPage /> },
+          { path: "/govt-exam/new",        element: <GovtExamEditorPage /> },
+          { path: "/govt-exam/:id",        element: <GovtExamEditorPage /> },
+          // Legacy Sarkari Naukri redirects → Govt Exam
+          { path: "/sarkari-naukri",       element: <Navigate to="/govt-exam" replace /> },
+          { path: "/sarkari-naukri/new",   element: <Navigate to="/govt-exam/new" replace /> },
+          { path: "/sarkari-naukri/:id",   element: <Navigate to="/govt-exam" replace /> },
           // Entrance Exams (dedicated editorial workflow)
           { path: "/entrance-exams",       element: <EntranceExamListPage /> },
           { path: "/entrance-exams/new",   element: <EntranceExamEditorPage /> },

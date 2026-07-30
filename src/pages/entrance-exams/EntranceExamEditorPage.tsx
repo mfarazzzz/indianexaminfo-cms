@@ -90,11 +90,23 @@ export function EntranceExamEditorPage() {
   // Detect pillar from URL path
   const pillarFromUrl = (() => {
     const path = window.location.pathname;
+    if (path.includes("/govt-exam")) return "sarkari-naukri";
     if (path.includes("/sarkari-naukri")) return "sarkari-naukri";
     if (path.includes("/sarkari-bharti")) return "sarkari-bharti";
     if (path.includes("/board-exams")) return "board-university";
     if (path.includes("/university-exams")) return "board-university";
     return "entrance-exam";
+  })();
+
+  // Derive the list path for back navigation
+  const listPath = (() => {
+    const path = window.location.pathname;
+    if (path.includes("/govt-exam")) return "/govt-exam";
+    if (path.includes("/sarkari-naukri")) return "/govt-exam";
+    if (path.includes("/sarkari-bharti")) return "/sarkari-bharti";
+    if (path.includes("/board-exams")) return "/board-exams";
+    if (path.includes("/university-exams")) return "/university-exams";
+    return "/entrance-exams";
   })();
 
   const [loading, setLoading] = useState(!isNew);
@@ -308,7 +320,7 @@ export function EntranceExamEditorPage() {
     try {
       await deleteExam(exam!.id);
       toast.success(`"${exam!.name}" deleted.`);
-      navigate("/entrance-exams");
+      navigate(listPath);
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
@@ -616,12 +628,12 @@ export function EntranceExamEditorPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <button type="button" onClick={() => navigate("/entrance-exams")} className="p-1.5 rounded hover:bg-slate-100 text-slate-500">
+          <button type="button" onClick={() => navigate(listPath)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500">
             <ArrowLeft size={18} />
           </button>
           <div className="min-w-0">
             <h1 className="text-lg font-semibold text-slate-900 truncate">
-              {isNew ? "New Entrance Exam" : exam?.name ?? ""}
+              {isNew ? (pillarFromUrl === "sarkari-naukri" ? "New Govt Exam Recruitment" : "New Entrance Exam") : exam?.name ?? ""}
             </h1>
             {currentEdition && !draftEdition && (
               <p className="text-xs text-slate-500">
