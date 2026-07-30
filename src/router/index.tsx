@@ -85,11 +85,10 @@ const TaxonomyManagerPage = lazyPage(() => import("@/pages/taxonomy/TaxonomyMana
 // Legacy pages (kept for non-entity features)
 const ExamsListPage     = lazyPage(() => import("@/pages/exams/ExamsListPage"),         "ExamsListPage");
 const ExamEditorPage    = lazyPage(() => import("@/pages/exams/ExamEditorPage"),        "ExamEditorPage");
-const ContentListPage   = lazyPage(() => import("@/pages/content/ContentListPage"),     "ContentListPage");
-const ContentEditPage   = lazyPage(() => import("@/pages/content/ContentEditPage"),     "ContentEditPage");
-const BlogListPage      = lazyPage(() => import("@/pages/blog/BlogListPage"),           "BlogListPage");
-const BlogEditPage      = lazyPage(() => import("@/pages/blog/BlogEditPage"),           "BlogEditPage");
 const BlogAuthorsPage   = lazyPage(() => import("@/pages/blog/BlogAuthorsPage"),        "BlogAuthorsPage");
+// Unified Content Management (replaces Content Posts, Blog Posts, Education News)
+const UnifiedContentListPage   = lazyPage(() => import("@/pages/unified-content/UnifiedContentListPage"),   "UnifiedContentListPage");
+const UnifiedContentEditorPage = lazyPage(() => import("@/pages/unified-content/UnifiedContentEditorPage"), "UnifiedContentEditorPage");
 const CategoriesPage    = lazyPage(() => import("@/pages/categories/CategoriesPage"),  "CategoriesPage");
 const MenusPage         = lazyPage(() => import("@/pages/menus/MenusPage"),             "MenusPage");
 const PagesListPage     = lazyPage(() => import("@/pages/pages/PagesListPage"),         "PagesListPage");
@@ -104,9 +103,6 @@ const ReportsPage       = lazyPage(() => import("@/pages/ads/ReportsPage"),     
 const UsersListPage     = lazyPage(() => import("@/pages/users/UsersListPage"),         "UsersListPage");
 const SettingsPage      = lazyPage(() => import("@/pages/settings/SettingsPage"),       "SettingsPage");
 const AuditLogPage      = lazyPage(() => import("@/pages/audit/AuditLogPage"),          "AuditLogPage");
-// CMS Education News modules
-const EduNewsListPage   = lazyPage(() => import("@/pages/education-news/EduNewsListPage"), "EduNewsListPage");
-const EduNewsEditPage   = lazyPage(() => import("@/pages/education-news/EduNewsEditPage"), "EduNewsEditPage");
 // Govt Exam (Government Competitive Exams — UPSC, SSC, RRB, etc.)
 const GovtExamListPage = lazyPage(() => import("@/pages/govt-exam/GovtExamListPage"), "GovtExamListPage");
 const GovtExamEditorPage = lazyPage(() => import("@/pages/govt-exam/GovtExamEditorPage"), "default");
@@ -144,13 +140,15 @@ export const router = createBrowserRouter([
           { path: "/exams",             element: <ExamsListPage /> },
           { path: "/exams/new",         element: <ExamEditorPage /> },
           { path: "/exams/:id",         element: <ExamEditorPage /> },
-          { path: "/content",           element: <ContentListPage /> },
-          { path: "/content/new",       element: <ContentEditPage /> },
-          { path: "/content/:id",       element: <ContentEditPage /> },
-          { path: "/blog",              element: <BlogListPage /> },
+          { path: "/content",           element: <UnifiedContentListPage /> },
+          { path: "/content/new",       element: <UnifiedContentEditorPage /> },
+          { path: "/content/:id",       element: <UnifiedContentEditorPage /> },
+          // Blog Authors (standalone management)
           { path: "/blog/authors",      element: <BlogAuthorsPage /> },
-          { path: "/blog/new",          element: <BlogEditPage /> },
-          { path: "/blog/:id",          element: <BlogEditPage /> },
+          // Redirects from old routes
+          { path: "/blog",              element: <Navigate to="/content" replace /> },
+          { path: "/blog/new",          element: <Navigate to="/content/new" replace /> },
+          { path: "/blog/:id",          element: <Navigate to="/content" replace /> },
           { path: "/categories",        element: <CategoriesPage /> },
           { path: "/navigation",        element: <NavigationSettingsPage /> },
           { path: "/menus",             element: <MenusPage /> },
@@ -169,10 +167,10 @@ export const router = createBrowserRouter([
           { path: "/results",           element: <Navigate to="/govt-exam" replace /> },
           { path: "/results/new",       element: <Navigate to="/govt-exam/new" replace /> },
           { path: "/results/:id",       element: <Navigate to="/govt-exam" replace /> },
-          // CMS Education News
-          { path: "/education-news",       element: <EduNewsListPage /> },
-          { path: "/education-news/new",   element: <EduNewsEditPage /> },
-          { path: "/education-news/:id",   element: <EduNewsEditPage /> },
+          // CMS Education News (redirects to unified content)
+          { path: "/education-news",       element: <Navigate to="/content" replace /> },
+          { path: "/education-news/new",   element: <Navigate to="/content/new" replace /> },
+          { path: "/education-news/:id",   element: <Navigate to="/content" replace /> },
           // Govt Exam (Government Competitive Exams — UPSC, SSC, RRB, etc.)
           { path: "/govt-exam",            element: <GovtExamListPage /> },
           { path: "/govt-exam/new",        element: <GovtExamEditorPage /> },
