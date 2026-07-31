@@ -113,7 +113,8 @@ async function callGemini(prompt: string, maxTokens = 8192): Promise<Record<stri
   }
 
   if (res.status === 400 || res.status === 401 || res.status === 403) {
-    _activeKey = '';
+    // Don't clear the key — this could be a transient provider error, not necessarily a bad key.
+    // Only surface the error to the user; they can manually re-enter if needed.
     const err = await res.text().catch(() => "");
     console.error("[AI] Auth error:", res.status, err.slice(0, 300));
     throw new Error(`Gemini API key error (${res.status}). Go to Settings → AI and verify your key, then try again.`);
@@ -230,18 +231,18 @@ CRITICAL RULES:
 2. pillar MUST be one of: "sarkari-naukri" | "entrance-exam" | "board-university"
 3. entityType MUST be one of: "recruitment" | "exam" | "board" | "university"
 4. status MUST be one of: "upcoming" | "active" | "registration-open" | "registration-closed" | "result-declared" | "completed" | "ongoing"
-5. Generate EXACTLY 15 FAQs minimum — cover eligibility, dates, fees, process, documents, preparation tips, exam pattern, result, cutoff, admit card, etc.
+5. Generate 6-8 high-quality FAQs — each answer MUST contain specific verifiable data (exact numbers, dates, fees, percentages). Do NOT write generic answers like "check official website".
 6. Set ALL boolean flags (hasNotification, hasApplication, etc.) to true if the exam logically has those resources
 7. Fill ALL type-specific fields based on the exam type (entrance exam fields for entrance exams, recruitment fields for jobs, etc.)
 8. officialWebsite MUST be a valid URL — infer from conducting body if not directly stated
 9. Fill selectionProcess with all stages (e.g. ["Written Exam", "Interview", "Document Verification"])
 10. Fill syllabusHighlights with key subjects/topics
-11. Fill tags with 8-12 relevant tags
-12. Fill searchKeywords with 10-15 keywords students would search for
+11. Fill tags with 8-10 relevant tags
+12. Fill searchKeywords with 8-12 keywords students would search for
 13. seoTitle must be under 60 chars, seoDescription under 160 chars — both must include exam name and year
 14. For entrance exams: fill examDuration, totalMarks, totalQuestions, negativeMarking, examMode, examMedium, numberOfAttempts, acceptedBy
 15. For recruitment: fill department, postName, jobLocation, payScale, groupLevel, lastDateApply, notificationDate, examDate
-16. dates array must include ALL key dates: notification, application start/end, admit card, exam date, result date — mark upcoming ones isUrgent:true
+16. dates array must include ALL key dates found in the text — mark upcoming ones isUrgent:true. Leave dates EMPTY if not found in text.
 ${INDIAN_DATE_PROMPT_RULES}
 
 COMPLETE JSON SCHEMA (fill every field possible):
@@ -318,7 +319,7 @@ COMPLETE JSON SCHEMA (fill every field possible):
   }
 }
 
-IMPORTANT: Generate at least 15 detailed FAQs. Each FAQ answer must be 2-3 sentences minimum. Cover: what is the exam, eligibility, age limit, educational qualification, application fee, how to apply, exam pattern, syllabus, admit card, result, cutoff, selection process, important dates, preparation tips, documents required.
+IMPORTANT: Generate 6-8 high-quality FAQs. Each FAQ answer must be 2-3 sentences with SPECIFIC data (exact numbers, names, percentages extracted from the text). Do NOT generate generic answers. Quality over quantity.
 
 Text to extract from:
 ${rawText}`, 8192);
@@ -341,10 +342,10 @@ export async function autoFillContentPost(rawText: string): Promise<ContentPostA
 RULES:
 1. dates=YYYY-MM-DD
 2. contentType MUST be one of: notification|application|admit-card|date-sheet|syllabus|answer-key|result|cutoff|previous-papers|mock-test|study-material|books
-3. Generate at least 15 detailed FAQs
+3. Generate 5-7 high-quality FAQs with specific verifiable data in each answer
 4. Content should be full HTML with paragraphs, headings, lists
 5. quickLinks should include official notification PDF, application link, and other relevant URLs
-6. Each FAQ answer must be 2-3 sentences minimum
+6. Each FAQ answer must contain exact data from the text (fees, dates, names, percentages)
 ${INDIAN_DATE_PROMPT_RULES}
 
 SCHEMA:
@@ -361,12 +362,11 @@ SCHEMA:
     {"label": "Official Notification PDF", "url": "https://...", "isPDF": true, "isOfficial": true},
     {"label": "Apply Online", "url": "https://...", "isPDF": false, "isOfficial": true}
   ],
-  "tags": ["tag1", "tag2", "...8-12 tags"],
+  "tags": ["tag1", "tag2", "...8-10 tags"],
   "seoTitle": "SEO title under 60 chars",
   "seoDescription": "Meta description under 160 chars",
   "faqs": [
-    {"question": "...", "answer": "Detailed 2-3 sentence answer"},
-    ...at least 15 FAQs
+    {"question": "...", "answer": "Answer with specific data from text (exact numbers, dates, names)"}
   ],
   "contentTypeData": {}
 }
@@ -392,8 +392,8 @@ RULES:
 1. section MUST be one of: education-news|exam-prep|career-guidance|scholarship|study-abroad|edtech|student-life|opinion
 2. postType MUST be one of: news|article|guide|listicle|opinion
 3. Content must be 600+ words in proper HTML with H2/H3 headings, paragraphs, bullet lists
-4. Generate at least 15 detailed FAQs with 2-3 sentence answers each
-5. Include relevant tags (8-12) and SEO metadata
+4. Generate 5-7 high-quality FAQs — each answer must contain specific facts from the text
+5. Include relevant tags (8-10) and SEO metadata
 
 SCHEMA:
 {
@@ -403,12 +403,11 @@ SCHEMA:
   "content": "<h2>...</h2><p>600+ words comprehensive HTML article</p>",
   "section": "education-news|exam-prep|...",
   "postType": "news|article|guide|...",
-  "tags": ["tag1", "tag2", "...8-12 tags"],
+  "tags": ["tag1", "tag2", "...8-10 tags"],
   "seoTitle": "SEO title under 60 chars",
   "seoDescription": "Meta description under 160 chars",
   "faqs": [
-    {"question": "...", "answer": "Detailed 2-3 sentence answer"},
-    ...at least 15 FAQs
+    {"question": "...", "answer": "Answer with specific data (numbers, names, dates)"}
   ]
 }
 

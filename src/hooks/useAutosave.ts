@@ -26,6 +26,20 @@ export interface UseAutosaveReturn {
 
 const DEBOUNCE_MS = 30_000
 const RETRY_MS = 10_000
+const MAX_RETRIES = 3
+
+/** Errors that should NOT trigger retry (non-transient) */
+function isNonRetryableError(err: unknown): boolean {
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase()
+    return (
+      msg.includes('401') || msg.includes('403') || msg.includes('unauthorized') ||
+      msg.includes('forbidden') || msg.includes('session expired') ||
+      msg.includes('jwt expired') || msg.includes('not authenticated')
+    )
+  }
+  return false
+}
 
 export function useAutosave(
   saveFn: () => Promise<void>,
@@ -39,6 +53,8 @@ export function useAutosave(
   useEffect(() => { saveFnRef.current = saveFn }, [saveFn])
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const retryCountRef = useRef(0)
+  const isSavingRef = useRef(false)
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -49,14 +65,30 @@ export function useAutosave(
 
   // runSave is stable — it only reads from refs, never from closed-over values
   const runSave = useCallback(async () => {
+    // Prevent double-save (rapid clicks or overlapping timers)
+    if (isSavingRef.current) return
+    isSavingRef.current = true
     setStatus('saving')
     try {
       await saveFnRef.current()
       setLastSaved(new Date())
       setStatus('saved')
-    } catch {
+      retryCountRef.current = 0 // reset on success
+    } catch (err) {
       setStatus('error')
-      timerRef.current = setTimeout(runSave, RETRY_MS)
+      // Don't retry on auth/session errors — user needs to re-authenticate
+      if (isNonRetryableError(err)) {
+        console.warn('[useAutosave] Non-retryable error, stopping retries:', err)
+        retryCountRef.current = 0
+      } else if (retryCountRef.current < MAX_RETRIES) {
+        retryCountRef.current++
+        timerRef.current = setTimeout(runSave, RETRY_MS)
+      } else {
+        console.warn('[useAutosave] Max retries reached, giving up')
+        retryCountRef.current = 0
+      }
+    } finally {
+      isSavingRef.current = false
     }
   }, []) // intentionally empty — all values accessed via refs
 

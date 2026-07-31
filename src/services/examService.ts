@@ -86,7 +86,10 @@ export async function getExams(opts?: ExamListOpts): Promise<{ data: ExamEntity[
   if (opts?.categoryId) q = q.eq("category_id", opts.categoryId);
   if (opts?.status) q = q.eq("status", opts.status);
   if (opts?.isFeatured !== undefined) q = q.eq("is_featured", opts.isFeatured);
-  if (opts?.search) q = q.ilike("name", `%${opts.search}%`);
+  if (opts?.search) {
+    const escaped = opts.search.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_").trim();
+    q = q.ilike("name", `%${escaped}%`);
+  }
   if (opts?.limit) q = q.limit(opts.limit);
   if (opts?.offset) q = q.range(opts.offset, opts.offset + (opts.limit ?? 25) - 1);
 
@@ -254,8 +257,15 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
     }
   }
 
-  // Auto-update last_updated if not explicitly set
-  if (!input.lastUpdated) {
+  // Auto-update last_updated ONLY if content meaningfully changed (not just a minor save)
+  // Google penalizes artificial "freshness" signals — only bump when real data changes
+  const MEANINGFUL_FIELDS = new Set([
+    "name", "status", "vacancy", "dates", "eligibility", "applicationFee",
+    "seoTitle", "seoDescription", "faqs", "hasAdmitCard", "hasResult",
+    "hasAnswerKey", "hasApplication", "hasNotification", "hasCutoff",
+  ]);
+  const hasMeaningfulChange = Object.keys(input).some(k => MEANINGFUL_FIELDS.has(k));
+  if (!input.lastUpdated && hasMeaningfulChange) {
     updates.last_updated = new Date().toISOString().split("T")[0];
   }
 
@@ -314,10 +324,12 @@ export async function checkSlugAvailable(slug: string, excludeId?: string): Prom
 // ── Search (used in content post editor for linking exams) ─────────────────
 
 export async function searchExams(query: string, limit = 10): Promise<ExamEntity[]> {
+  // Escape PostgREST special characters to prevent filter injection
+  const escaped = query.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_").trim();
   const { data, error } = await db
     .from("exams")
     .select(LIST_SELECT)
-    .ilike("name", `%${query}%`)
+    .ilike("name", `%${escaped}%`)
     .order("updated_at", { ascending: false })
     .limit(limit);
   if (error) throw error;

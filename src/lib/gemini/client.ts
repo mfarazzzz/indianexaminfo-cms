@@ -21,6 +21,16 @@ function detectProvider(apiKey: string): AIProviderName {
   return "gemini";
 }
 
+/** Create an AbortController with a timeout */
+function createTimeoutController(ms: number): { controller: AbortController; clear: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { controller, clear: () => clearTimeout(timer) };
+}
+
+/** Default timeout for AI calls: 45 seconds */
+const AI_TIMEOUT_MS = 45_000;
+
 /**
  * Main AI generation function.
  *

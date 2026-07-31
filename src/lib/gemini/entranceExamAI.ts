@@ -171,7 +171,7 @@ Return ONLY valid JSON:
 {"seoTitle":"under 60 chars with exam name+year","seoDescription":"under 160 chars for Google Discover","tags":["10-12 tags"],"faqs":[{"question":"Q about ${examName} ${year}","answer":"2-3 sentence detailed answer using real data above"}],"contentModules":{"overview":{"summary":"1-2 line summary","body":"<h3>About</h3><p>overview using facts above</p>"},"eligibility":{"qualification":"${facts.eligibility?.qualification || ""}","ageLimit":"No upper age limit","nationality":"Indian citizens","attempts":"No limit","additionalCriteria":"<p>Additional criteria from data</p>"},"application-process":{"description":"<p>Process overview</p>","steps":[{"title":"Step","description":"detail"}],"applyLink":"${facts.officialWebsite}","fee":"<p>General: ₹${facts.fee?.general || 0}, SC/ST/PwBD: ₹${facts.fee?.scSt || 0}</p>"},"exam-pattern":{"mode":"Computer Based Test","duration":"","totalMarks":0,"markingScheme":"","sections":[],"notes":""},"syllabus":{"subjects":[],"notes":""},"admit-card":{"releaseDate":"","downloadLink":"${facts.officialWebsite}","body":"<p>How to download</p>","documents":""},"result":{"declarationDate":"","checkLink":"${facts.officialWebsite}","body":"<p>How to check result</p>","statistics":""}}}
 
 RULES:
-- Generate 15 FAQs with REAL detailed answers (not "answer").
+- Generate 6 FAQs with REAL detailed answers containing specific data (exact fees, dates, eligibility percentages). Each answer MUST be 2-3 sentences with verifiable facts.
 - Use the VERIFIED FACTS in your content. 
 - seoTitle must be under 60 chars.
 - Include 5-7 steps in application-process.
@@ -182,8 +182,8 @@ RULES:
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const GENERATE_PROMPT = (examName: string, year: number) => `Generate complete data for entrance exam "${examName}" ${year}. Return ONLY valid JSON:
-{"shortName":"abbreviation","conductingBody":"org","officialWebsite":"url","importantDates":[{"label":"Notification Release","date":"${year}-MM-DD","isUrgent":false},{"label":"Registration Opens","date":"${year}-MM-DD","isUrgent":true},{"label":"Registration Closes","date":"${year}-MM-DD","isUrgent":true},{"label":"Application Correction Window","date":"","isUrgent":false},{"label":"Admit Card Release","date":"${year}-MM-DD","isUrgent":false},{"label":"Exam Date","date":"${year}-MM-DD","isUrgent":true},{"label":"Answer Key Release","date":"","isUrgent":false},{"label":"Result Declaration","date":"${year+1}-MM-DD","isUrgent":false},{"label":"Counselling Starts","date":"","isUrgent":false},{"label":"Cutoff Release","date":"","isUrgent":false}],"vacancy":null,"status":"upcoming","hasNotification":true,"hasApplication":true,"hasAdmitCard":true,"hasSyllabus":true,"hasAnswerKey":true,"hasResult":true,"hasCutoff":true,"hasCounselling":false,"seoTitle":"under 60 chars","seoDescription":"under 160 chars","tags":["10+ tags"],"faqs":[{"question":"What is ${examName} ${year}?","answer":"detailed real answer"},{"question":"When is ${examName} ${year} exam date?","answer":"real answer"},{"question":"How to apply for ${examName} ${year}?","answer":"real answer"},{"question":"What is eligibility for ${examName} ${year}?","answer":"real answer"},{"question":"What is exam pattern?","answer":"real answer"},{"question":"What is syllabus?","answer":"real answer"},{"question":"What is application fee?","answer":"real answer"},{"question":"How to download admit card?","answer":"real answer"},{"question":"When will result be declared?","answer":"real answer"},{"question":"What is cutoff?","answer":"real answer"},{"question":"How many attempts allowed?","answer":"real answer"},{"question":"What is selection process?","answer":"real answer"},{"question":"Is there negative marking?","answer":"real answer"},{"question":"Which colleges accept score?","answer":"real answer"},{"question":"What is counselling process?","answer":"real answer"}],"contentModules":{}}
-Use REAL data based on your knowledge. All dates YYYY-MM-DD format.`;
+{"shortName":"abbreviation","conductingBody":"org","officialWebsite":"url","importantDates":[{"label":"Notification Release","date":"","isUrgent":false},{"label":"Registration Opens","date":"","isUrgent":true},{"label":"Registration Closes","date":"","isUrgent":true},{"label":"Admit Card Release","date":"","isUrgent":false},{"label":"Exam Date","date":"","isUrgent":true},{"label":"Result Declaration","date":"","isUrgent":false}],"vacancy":null,"status":"upcoming","hasNotification":true,"hasApplication":true,"hasAdmitCard":true,"hasSyllabus":true,"hasAnswerKey":true,"hasResult":true,"hasCutoff":true,"hasCounselling":false,"seoTitle":"under 60 chars","seoDescription":"under 160 chars","tags":["8-10 tags"],"faqs":[{"question":"What is ${examName} ${year}?","answer":"detailed answer with conducting body name and exam purpose"},{"question":"What is the eligibility for ${examName} ${year}?","answer":"specific qualification, percentage, age limit"},{"question":"What is the exam pattern of ${examName}?","answer":"mode, duration, total marks, sections"},{"question":"What is the application fee for ${examName} ${year}?","answer":"exact fee amounts for each category"},{"question":"How to apply for ${examName} ${year}?","answer":"step by step process"},{"question":"What is the selection process?","answer":"stages of selection"}],"contentModules":{}}
+IMPORTANT: Leave all date values as EMPTY STRINGS — dates must be filled from official sources only. Use REAL data for identity, eligibility, fees, and exam pattern based on your knowledge. All answers must contain specific verifiable facts (numbers, names, percentages).`;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN EXPORT: Two-stage generation
@@ -198,9 +198,17 @@ export async function generateExamDataWithAI(
 ): Promise<AIExamData> {
 
   if (!rawContent || rawContent.trim().length < 50) {
-    // No raw data — single AI call from knowledge
+    // No raw data — generate from AI knowledge BUT mark dates as unverified/TBA
+    // Google YMYL policy: never publish unverified exam dates
     const raw = await generateWithGemini(GENERATE_PROMPT(examName, year), apiKey, model);
-    return parseAIResponse(raw);
+    const result = parseAIResponse(raw);
+    // Clear all dates — AI-fabricated dates are YMYL-dangerous
+    // Editors MUST fill these from official sources
+    result.importantDates = result.importantDates.map(d => ({
+      ...d,
+      date: "", // Leave blank — editor must verify from official source
+    }));
+    return result;
   }
 
   // ── STAGE 1: Extract facts (small, focused call) ──
@@ -229,8 +237,9 @@ export async function generateExamDataWithAI(
     tags = Array.isArray(data.tags) ? data.tags : [];
     faqs = Array.isArray(data.faqs) ? data.faqs : [];
     contentModules = data.contentModules ?? {};
-  } catch {
-    // Stage 2 failed — still return Stage 1 facts
+  } catch (err) {
+    // Stage 2 failed — still return Stage 1 facts but log the failure for debugging
+    console.warn("[entranceExamAI] Stage 2 (content generation) failed:", err instanceof Error ? err.message : String(err));
   }
 
   return {

@@ -36,7 +36,7 @@ export const DEFAULT_PROMPTS = {
     `Create a quick summary box for ${safe(v.examName)} ${safe(v.contentType)}. Return a JSON array of 4-6 key fact objects: [{"label": "...", "value": "..."}]. Focus on important dates, eligibility, and status. Return only valid JSON.`,
 
   faqs: (v: PromptVars) =>
-    `Generate 6 Frequently Asked Questions and detailed answers for ${safe(v.examName)} ${safe(v.contentType)} ${safe(v.year, 4)}. Language: ${safe(v.language) || "English"}. Return a JSON array: [{"question": "...", "answer": "..."}]. Questions should address what students commonly search for. Return only valid JSON.`,
+    `Generate 6 Frequently Asked Questions and detailed answers for ${safe(v.examName)} ${safe(v.contentType)} ${safe(v.year, 4)}. Language: ${safe(v.language) || "English"}. Return a JSON array: [{"question": "...", "answer": "..."}]. Each answer MUST contain specific verifiable data (exact numbers, dates, percentages, names). Do NOT write generic answers like "check official website". Return only valid JSON.`,
 
   fullContent: (v: PromptVars) =>
     `Write a comprehensive, SEO-optimized article (600-800 words) about ${safe(v.examName)} ${safe(v.contentType)} ${safe(v.year, 4)}. Language: ${safe(v.language) || "English"}. Tone: ${safe(v.tone) || "informative"}. Use HTML with proper H2/H3 tags, bullet points where helpful. Include key dates, eligibility, how to apply/download, and important instructions. Return only clean HTML — no markdown, no script tags, no inline styles.`,

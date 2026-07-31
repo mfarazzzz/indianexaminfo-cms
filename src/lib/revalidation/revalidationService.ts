@@ -280,6 +280,61 @@ export function revalidateAfterSarkariNaukriSave(entry: {
 }
 
 /**
+ * Enqueue revalidation after a content post save (blog, news, article, etc.).
+ * Tags: content (global), content:{slug}, hub:{contentType}
+ */
+export function revalidateAfterContentPostSave(post: {
+  slug: string;
+  contentType?: string;
+  examSlug?: string;
+  section?: string;
+}): void {
+  const tags = ["content", `content:${post.slug}`];
+  if (post.contentType) tags.push(`hub:${post.contentType}`);
+  if (post.examSlug) tags.push(`exam:${post.examSlug}`);
+  if (post.section) tags.push(`blog:${post.section}`);
+  // Global blog tag for listing pages
+  tags.push("blog");
+  enqueueTags(tags, `content-post-save:${post.slug}`);
+}
+
+/**
+ * Enqueue revalidation after a blog post save.
+ * Tags: blog, blog:{section}, blog:{slug}
+ */
+export function revalidateAfterBlogPostSave(post: {
+  slug: string;
+  section?: string;
+}): void {
+  const tags = ["blog", `blog:${post.slug}`];
+  if (post.section) tags.push(`blog:${post.section}`);
+  enqueueTags(tags, `blog-save:${post.slug}`);
+}
+
+/**
+ * Enqueue revalidation after a page save (CMS pages like about, contact, etc.).
+ * Tags: pages, page:{slug}
+ */
+export function revalidateAfterPageSave(page: { slug: string }): void {
+  enqueueTags(["pages", `page:${page.slug}`], `page-save:${page.slug}`);
+}
+
+/**
+ * Enqueue revalidation after menu changes.
+ * Menus affect the entire site navigation — revalidate broadly.
+ */
+export function revalidateAfterMenuSave(menuSlug: string): void {
+  enqueueTags(["menus", `menu:${menuSlug}`, "navigation"], `menu-save:${menuSlug}`);
+}
+
+/**
+ * Enqueue revalidation after category changes.
+ */
+export function revalidateAfterCategorySave(categorySlug: string): void {
+  enqueueTags(["categories", `category:${categorySlug}`, "exams"], `category-save:${categorySlug}`);
+}
+
+/**
  * Admin diagnostic: how many items are pending retry.
  */
 export function getRetryQueueLength(): number {

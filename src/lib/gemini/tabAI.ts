@@ -186,30 +186,24 @@ Return ONLY valid JSON:
 {
   "seoTitle": "Max 60 chars — include exam name + year + main benefit (e.g. 'CAT 2026 Notification, Eligibility & Apply')",
   "seoDescription": "Max 160 chars — compelling meta description for Google Discover, mention key info students need",
-  "tags": ["10-12 relevant tags for discovery — exam name, abbreviation, category, conducting body, year, exam type"],
+  "tags": ["8-10 relevant tags for discovery — exam name, abbreviation, category, conducting body, year, exam type"],
   "faqs": [
     {"question": "What is ${examName} ${year}?", "answer": "Detailed 2-3 sentence answer about what this exam is, who conducts it, and its purpose"},
-    {"question": "When is ${examName} ${year} exam date?", "answer": "Provide the exact exam date or expected timeline based on available data"},
-    {"question": "How to apply for ${examName} ${year}?", "answer": "Summarize the registration/application process in 2-3 sentences"},
     {"question": "What is the eligibility for ${examName} ${year}?", "answer": "State the educational qualification, percentage, and category-wise requirements"},
     {"question": "What is the exam pattern of ${examName}?", "answer": "Describe mode (online/offline), duration, total marks, sections"},
-    {"question": "What is the syllabus of ${examName}?", "answer": "List major subjects or sections covered in the exam"},
     {"question": "What is the application fee for ${examName} ${year}?", "answer": "State exact fee amounts for different categories"},
-    {"question": "How to download ${examName} ${year} admit card?", "answer": "Describe the steps to download from the official website"},
-    {"question": "When will ${examName} ${year} result be declared?", "answer": "Provide expected result declaration timeline"},
-    {"question": "What is the cutoff for ${examName} ${year}?", "answer": "Provide previous year cutoff trends or expected cutoff range"},
-    {"question": "How many attempts are allowed in ${examName}?", "answer": "State the attempt limit or if there is no limit"},
-    {"question": "Is there negative marking in ${examName}?", "answer": "Describe the marking scheme including any negative marking"},
-    {"question": "Which colleges accept ${examName} score?", "answer": "List top institutes or categories of institutes accepting this score"},
+    {"question": "How to apply for ${examName} ${year}?", "answer": "Summarize the registration/application process in 2-3 sentences"},
     {"question": "What is the selection process for ${examName} ${year}?", "answer": "Describe stages: exam, shortlisting, interview/GD, final selection"},
-    {"question": "What is the counselling process for ${examName}?", "answer": "Describe counselling rounds, document verification, seat allocation"}
+    {"question": "Is there negative marking in ${examName}?", "answer": "Describe the marking scheme including any negative marking"},
+    {"question": "Which colleges/organizations accept ${examName} score?", "answer": "List top institutes or categories of institutes accepting this score"}
   ]
 }
 
 RULES:
 - SEO title MUST be under 60 characters
 - SEO description MUST be under 160 characters  
-- Generate exactly 15 FAQs — mix of informational and how-to questions
+- Generate exactly 8 FAQs — each answer MUST contain specific verifiable data (exact numbers, names, percentages)
+- Do NOT generate generic answers like "Check official website" or "Visit the portal"
 - Use real data from the raw content where available
 Return ONLY the JSON.`;
 
