@@ -849,22 +849,45 @@ const STANDARD_DATE_LABELS = [
   { label: "Cutoff Release", isUrgent: false },
 ];
 
-/** Merge DB dates with standard rows so all 10 standard rows are always visible */
-function mergeWithStandardDates(dbDates: { label: string; date: string; isUrgent: boolean }[]): { label: string; date: string; isUrgent: boolean }[] {
+/** Merge DB dates with standard rows so all standard rows are always visible */
+function mergeWithStandardDates(rawDates: unknown): { label: string; date: string; isUrgent: boolean }[] {
+  // Ensure input is always an array
+  const dbDates: { label: string; date: string; isUrgent: boolean }[] = Array.isArray(rawDates) ? rawDates : [];
+  const usedDbIndices = new Set<number>();
+
   const merged = STANDARD_DATE_LABELS.map((std) => {
-    const match = dbDates.find((d) =>
-      d.label.toLowerCase().replace(/[^a-z]/g, "").includes(std.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8)) ||
-      std.label.toLowerCase().replace(/[^a-z]/g, "").includes(d.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8))
-    );
-    return match ? { label: std.label, date: match.date, isUrgent: match.isUrgent } : { label: std.label, date: "", isUrgent: std.isUrgent };
+    const stdNorm = std.label.toLowerCase().replace(/[^a-z]/g, "");
+    // Find the best match — prefer exact match, then longer prefix (min 12 chars)
+    let bestMatchIdx = -1;
+    let bestScore = 0;
+    dbDates.forEach((d, idx) => {
+      if (usedDbIndices.has(idx)) return;
+      const dNorm = d.label.toLowerCase().replace(/[^a-z]/g, "");
+      // Compute overlap score using longest common prefix
+      let score = 0;
+      for (let i = 0; i < Math.min(stdNorm.length, dNorm.length); i++) {
+        if (stdNorm[i] === dNorm[i]) score++;
+        else break;
+      }
+      // Only match if prefix ≥ 12 chars (avoids "registra" ambiguity)
+      if (score >= 12 && score > bestScore) {
+        bestScore = score;
+        bestMatchIdx = idx;
+      }
+    });
+    if (bestMatchIdx >= 0) {
+      usedDbIndices.add(bestMatchIdx);
+      const d = dbDates[bestMatchIdx];
+      return { label: std.label, date: d.date, isUrgent: d.isUrgent };
+    }
+    return { label: std.label, date: "", isUrgent: std.isUrgent };
   });
-  // Append any custom dates from DB that don't match standard labels
-  const standardLabelsNorm = STANDARD_DATE_LABELS.map((s) => s.label.toLowerCase().replace(/[^a-z]/g, ""));
-  for (const d of dbDates) {
-    const dNorm = d.label.toLowerCase().replace(/[^a-z]/g, "");
-    const isStandard = standardLabelsNorm.some((s) => s.includes(dNorm.slice(0, 8)) || dNorm.includes(s.slice(0, 8)));
-    if (!isStandard) merged.push(d);
-  }
+
+  // Append any custom dates from DB that weren't matched
+  dbDates.forEach((d, idx) => {
+    if (!usedDbIndices.has(idx)) merged.push(d);
+  });
+
   return merged;
 }
 
