@@ -119,7 +119,7 @@ export function GovtExamListPage() {
               className="bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer group relative">
               {/* View on Site + Delete buttons */}
               <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-                <ViewOnSiteButton pillar="government-exam" category={exam.category} slug={exam.slug} isPublished={exam.isPublished} />
+                <ViewOnSiteButton pillar="sarkari-naukri" category={exam.category} slug={exam.slug} isPublished={exam.isPublished} />
                 <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(exam); }}
                   className="p-1.5 rounded text-slate-300 hover:text-red-600 hover:bg-red-50"
                   title="Delete exam">

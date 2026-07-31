@@ -50,7 +50,7 @@ export function SarkariBhartiListPage() {
       : <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{items.map((item) => (
         <div key={item.id} onClick={() => navigate(`/sarkari-bharti/${item.id}`)} className="bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm cursor-pointer group relative">
           <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-            <ViewOnSiteButton pillar="government-jobs" category={item.category} slug={item.slug} isPublished={item.isPublished} />
+            <ViewOnSiteButton pillar="sarkari-bharti" category={item.category} slug={item.slug} isPublished={item.isPublished} />
             <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }} className="p-1.5 rounded text-slate-300 hover:text-red-600"><Trash2 size={14} /></button>
           </div>
           <h3 className="font-medium text-slate-900 text-sm line-clamp-2 pr-6 mb-2">{item.name}</h3>

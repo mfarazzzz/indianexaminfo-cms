@@ -2,8 +2,27 @@ import React from "react";
 import { ExternalLink } from "lucide-react";
 import { SITE } from "@/config/site";
 
+/**
+ * Maps CMS pillar slugs to the actual frontend route path.
+ * CMS pillars don't always match frontend URL structure.
+ */
+function getFrontendPillar(cmsPillar: string): string {
+  const map: Record<string, string> = {
+    "entrance-exam": "entrance-exam",
+    "sarkari-naukri": "sarkari-naukri",
+    "sarkari-bharti": "sarkari-naukri",
+    "government-exam": "sarkari-naukri",
+    "government-jobs": "sarkari-naukri",
+    "board-exam": "board-exam",
+    "board-university": "board-exam",
+    "university-exam": "board-exam",
+    "news": "news",
+  };
+  return map[cmsPillar] ?? cmsPillar;
+}
+
 interface ViewOnSiteButtonProps {
-  /** The pillar/section of the entity (e.g., "entrance-exam", "government-exam") */
+  /** The pillar/section of the entity (e.g., "entrance-exam", "sarkari-naukri") */
   pillar: string;
   /** The category slug (optional) */
   category?: string;
@@ -31,9 +50,10 @@ export function ViewOnSiteButton({
 }: ViewOnSiteButtonProps) {
   if (!slug) return null;
 
+  const frontendPillar = getFrontendPillar(pillar);
   const path = overridePath
     ? overridePath
-    : [pillar, category, slug].filter(Boolean).join("/");
+    : [frontendPillar, category, slug].filter(Boolean).join("/");
 
   const href = `${SITE.frontendUrl}/${path}`;
 

@@ -681,7 +681,7 @@ export function EntranceExamEditorPage() {
               </button>
               {exam?.slug && (
                 <ViewOnSiteButton
-                  pillar={exam.pillar === "sarkari-naukri" ? "government-exam" : exam.pillar}
+                  pillar={exam.pillar}
                   category={exam.category}
                   slug={exam.slug}
                   isPublished={isPublished}
