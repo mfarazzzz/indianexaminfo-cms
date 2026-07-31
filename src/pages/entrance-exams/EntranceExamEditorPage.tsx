@@ -637,7 +637,7 @@ export function EntranceExamEditorPage() {
           </button>
           <div className="min-w-0">
             <h1 className="text-lg font-semibold text-slate-900 truncate">
-              {isNew ? (pillarFromUrl === "sarkari-naukri" ? "New Govt Exam Recruitment" : "New Entrance Exam") : exam?.name ?? ""}
+              {isNew ? (pillarFromUrl === "government-exam" ? "New Govt Exam Recruitment" : pillarFromUrl === "govt-vacancy" ? "New Govt Vacancy" : "New Entrance Exam") : exam?.name ?? ""}
             </h1>
             {currentEdition && !draftEdition && (
               <p className="text-xs text-slate-500">
