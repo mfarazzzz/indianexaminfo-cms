@@ -10,6 +10,7 @@ import {
   listEducationNews, deleteEducationNews,
   type CmsEducationNews, type CmsEducationNewsListOpts,
 } from "@/services/educationNewsService";
+import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { formatDate, getErrorMessage } from "@/lib/utils";
 
 const CATEGORIES = [
@@ -101,6 +102,9 @@ export function EduNewsListPage() {
       header: "",
       cell: ({ row }) => (
         <div className="flex gap-1">
+          {row.original.status === "published" && row.original.slug && (
+            <ViewOnSiteButton pillar="news" slug={row.original.slug} isPublished={true} overridePath={`news/${row.original.slug}`} />
+          )}
           <button onClick={() => navigate(`/education-news/${row.original.id}`)} className="p-1.5 rounded hover:bg-slate-100">
             <Pencil className="w-3.5 h-3.5 text-slate-500" />
           </button>

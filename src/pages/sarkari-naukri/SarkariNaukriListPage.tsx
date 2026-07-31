@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { getEntranceExams, type EntranceExamListItem } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { deleteExam } from "@/services/examService";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -105,10 +106,14 @@ export function SarkariNaukriListPage() {
           {exams.map((exam) => (
             <div key={exam.id} onClick={() => navigate(`/sarkari-naukri/${exam.id}`)}
               className="bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm cursor-pointer group relative">
-              <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(exam); }}
-                className="absolute top-2 right-2 p-1.5 rounded text-slate-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100">
-                <Trash2 size={14} />
-              </button>
+              <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                <ViewOnSiteButton pillar="government-jobs" category={exam.category} slug={exam.slug} isPublished={exam.isPublished} />
+                <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(exam); }}
+                  className="p-1.5 rounded text-slate-300 hover:text-red-600 hover:bg-red-50"
+                  title="Delete">
+                  <Trash2 size={14} />
+                </button>
+              </div>
               <h3 className="font-medium text-slate-900 text-sm line-clamp-2 pr-6 mb-2">{exam.name}</h3>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">{exam.category.replace(/-/g, " ")}</span>

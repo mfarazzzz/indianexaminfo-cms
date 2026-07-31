@@ -10,6 +10,7 @@ import { getExams, deleteExam, type ExamListOpts } from "@/services/examService"
 import { getCategories, type Category } from "@/services/categoryService";
 import { EXAM_STATUSES } from "@/config/site";
 import { usePillars } from "@/hooks/usePillars";
+import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { formatDate , getErrorMessage, buildUrlPreview } from "@/lib/utils";
 import type { ExamEntity, Pillar } from "@/types/exam";
 
@@ -126,6 +127,12 @@ export function ExamsListPage() {
       header: "",
       cell: ({ row }) => (
         <div className="flex items-center gap-1">
+          <ViewOnSiteButton
+            pillar={row.original.pillar}
+            category={row.original.category}
+            slug={row.original.slug}
+            isPublished={row.original.status === "active" || row.original.status === "registration-open" || row.original.status === "result-declared" || row.original.status === "upcoming" || row.original.status === "ongoing"}
+          />
           <button
             onClick={() => navigate(`/exams/${row.original.id}`)}
             className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-blue-600"

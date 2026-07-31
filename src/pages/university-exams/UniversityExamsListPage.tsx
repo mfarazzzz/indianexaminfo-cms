@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { getEntranceExams, type EntranceExamListItem } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { deleteExam } from "@/services/examService";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -46,7 +47,10 @@ export function UniversityExamsListPage() {
       : items.length === 0 ? <div className="bg-white rounded-lg border p-12 text-center"><Building2 size={40} className="mx-auto text-slate-300 mb-3" /><p className="text-slate-500 text-sm">No university exams found.</p></div>
       : <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{items.map((item) => (
         <div key={item.id} onClick={() => navigate(`/university-exams/${item.id}`)} className="bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm cursor-pointer group relative">
-          <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }} className="absolute top-2 right-2 p-1.5 rounded text-slate-300 hover:text-red-600 opacity-0 group-hover:opacity-100"><Trash2 size={14} /></button>
+          <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+            <ViewOnSiteButton pillar="university-exam" category={item.category} slug={item.slug} isPublished={item.isPublished} />
+            <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }} className="p-1.5 rounded text-slate-300 hover:text-red-600 opacity-0 group-hover:opacity-100"><Trash2 size={14} /></button>
+          </div>
           <h3 className="font-medium text-slate-900 text-sm line-clamp-2 pr-6 mb-2">{item.name}</h3>
           <div className="flex items-center gap-2"><span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">{item.category.replace(/-/g, " ")}</span>
             {item.isPublished ? <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">● Live</span> : <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">○ Draft</span>}

@@ -6,6 +6,7 @@ import { getEntranceExams, type EntranceExamListItem } from "@/services/entrance
 import { getCategories, type Category } from "@/services/categoryService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { BulkImportExport } from "@/components/shared/BulkImportExport";
+import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { deleteExam } from "@/services/examService";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -133,14 +134,17 @@ export function EntranceExamListPage() {
               className="bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer group relative"
               onClick={() => navigate(`/entrance-exams/${exam.id}`)}
             >
-              {/* Delete button */}
-              <button
-                onClick={(e) => { e.stopPropagation(); setDeleteTarget(exam); }}
-                className="absolute top-2 right-2 p-1.5 rounded text-slate-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
-                title="Delete exam"
-              >
-                <Trash2 size={14} />
-              </button>
+              {/* View on Site + Delete buttons */}
+              <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                <ViewOnSiteButton pillar="entrance-exam" category={exam.category} slug={exam.slug} isPublished={exam.isPublished} />
+                <button
+                  onClick={(e) => { e.stopPropagation(); setDeleteTarget(exam); }}
+                  className="p-1.5 rounded text-slate-300 hover:text-red-600 hover:bg-red-50"
+                  title="Delete exam"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
 
               <div className="flex items-start justify-between gap-2 mb-2">
                 <h3 className="font-medium text-slate-900 text-sm leading-snug line-clamp-2 pr-6">
