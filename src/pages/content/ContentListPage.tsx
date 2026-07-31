@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, Search, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, ExternalLink } from "lucide-react";
 import { type ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { DataTable } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { getContentPosts, deleteContentPost, type ContentPost } from "@/services/contentService";
-import { CONTENT_TYPES } from "@/config/site";
+import { CONTENT_TYPES, SITE } from "@/config/site";
 import { usePillars } from "@/hooks/usePillars";
 import { formatDate , getErrorMessage } from "@/lib/utils";
 import type { ContentType } from "@/types/exam";
@@ -110,9 +110,20 @@ export function ContentListPage() {
     {
       id: "actions",
       header: "",
-      size: 70,
+      size: 100,
       cell: ({ row }) => (
         <div className="flex gap-1">
+          {row.original.status === "published" && (
+            <a
+              href={`${SITE.frontendUrl}/news/${row.original.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded p-1 text-slate-400 hover:bg-green-50 hover:text-green-600"
+              title="View on site"
+            >
+              <ExternalLink size={14} />
+            </a>
+          )}
           <button onClick={() => navigate(`/content/${row.original.id}`)}
             className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <Pencil size={14} />

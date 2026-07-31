@@ -4,7 +4,7 @@ import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Plus, Trash2, Save, Link as LinkIcon, FileText, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Trash2, Save, Link as LinkIcon, FileText, Image as ImageIcon, ExternalLink } from "lucide-react";
 import { getContentPostById, createContentPost, updateContentPost } from "@/services/contentService";
 import { searchExams } from "@/services/examService";
 import { revalidateAfterModuleSave } from "@/lib/revalidation/revalidationService";
@@ -15,7 +15,7 @@ import { autoFillContentPost } from "@/lib/ai/autofill";
 import { SlugInput } from "@/components/shared/SlugInput";
 import { AISuggestion } from "@/components/shared/AISuggestion";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { CONTENT_TYPES } from "@/config/site";
+import { CONTENT_TYPES, SITE } from "@/config/site";
 import { usePillars } from "@/hooks/usePillars";
 import { CONTENT_TYPE_CONFIGS } from "@/config/contentTypeFields";
 import { useAuth } from "@/hooks/useAuth";
@@ -355,6 +355,16 @@ function ContentEditPageInner() {
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={watch("status")} />
+          {!isNew && watch("status") === "published" && watch("slug") && (
+            <a
+              href={`${SITE.frontendUrl}/news/${watch("slug")}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors"
+            >
+              <ExternalLink size={14} /> View on Site
+            </a>
+          )}
           <AIAutoFillButton onClick={() => setAiDialogOpen(true)} />
           <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}

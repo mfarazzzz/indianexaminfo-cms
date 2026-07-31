@@ -4,7 +4,7 @@ import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Plus, Trash2, Save } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Trash2, Save, ExternalLink } from "lucide-react";
 import { getBlogPostById, createBlogPost, updateBlogPost, getAuthors } from "@/services/blogService";
 import { searchEntities } from "@/services/entity/entityService";
 import { RichEditor } from "@/components/shared/RichEditor";
@@ -16,7 +16,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { AIAutoFillDialog, AIAutoFillButton } from "@/components/shared/AIAutoFillDialog";
 import { autoFillBlogPost } from "@/lib/ai/autofill";
 import { revalidateBlogPost } from "@/lib/api/frontend";
-import { BLOG_SECTIONS, POST_TYPES } from "@/config/site";
+import { BLOG_SECTIONS, POST_TYPES, SITE } from "@/config/site";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermission } from "@/hooks/usePermission";
 import { P } from "@/config/permissions";
@@ -142,6 +142,16 @@ export function BlogEditPage() {
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={watch("status")} />
+          {!isNew && watch("status") === "published" && watch("slug") && (
+            <a
+              href={`${SITE.frontendUrl}/news/${watch("slug")}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors"
+            >
+              <ExternalLink size={14} /> View on Site
+            </a>
+          )}
           <AIAutoFillButton onClick={() => setAiDialogOpen(true)} />
           <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
