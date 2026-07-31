@@ -19,14 +19,14 @@ export function UniversityExamsListPage() {
   const [deleteTarget, setDeleteTarget] = useState<EntranceExamListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => { getCategories("university-exam").then((cats) => setCategories(cats.filter(c => c.name.toLowerCase().includes("university")))).catch(() => {}); }, []);
+  useEffect(() => { getCategories("university-exam").then(setCategories).catch(() => {}); }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       // University exams use university-exam pillar
       const data = await getEntranceExams({ pillar: "university-exam", search: search || undefined, categoryId: categoryId || undefined });
-      setItems(data.filter(d => d.category.includes("university") || d.category.includes("University")));
+      setItems(data);
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setLoading(false); }
   }, [search, categoryId]);

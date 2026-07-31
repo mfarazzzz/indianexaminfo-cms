@@ -19,13 +19,13 @@ export function BoardExamsListPage() {
   const [deleteTarget, setDeleteTarget] = useState<EntranceExamListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => { getCategories("board-exam").then((cats) => setCategories(cats.filter(c => c.name.toLowerCase().includes("board") || c.name.toLowerCase().includes("cbse") || c.name.toLowerCase().includes("icse")))).catch(() => {}); }, []);
+  useEffect(() => { getCategories("board-exam").then(setCategories).catch(() => {}); }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getEntranceExams({ pillar: "board-exam", search: search || undefined, categoryId: categoryId || undefined });
-      setItems(data.filter(d => d.category.includes("board") || d.category.includes("Board") || d.category.includes("cbse") || d.category.includes("state")));
+      setItems(data);
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setLoading(false); }
   }, [search, categoryId]);
