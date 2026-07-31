@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Plus, Trash2, History, Sparkles, Loader2, Globe } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, History, Sparkles, Loader2, Globe, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useForm, useFieldArray } from "react-hook-form";
 import {
@@ -19,6 +19,7 @@ import { getErrorMessage } from "@/lib/utils";
 import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
 import { aiFillIdentityTab, aiFillDatesTab, aiFillSEOTab, aiFillNewsTab, aiFillModulesTab } from "@/lib/gemini/tabAI";
 import { AIFillButton } from "@/components/shared/AIFillButton";
+import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { useSettings } from "@/hooks/useSettings";
 
 const EDITION_STATUSES: { value: EditionStatus; label: string }[] = [
@@ -678,6 +679,15 @@ export function EntranceExamEditorPage() {
                 <Globe size={14} />
                 {publishing ? "..." : isPublished ? "Published ✓" : "Draft — Publish"}
               </button>
+              {exam?.slug && (
+                <ViewOnSiteButton
+                  pillar={exam.pillar === "sarkari-naukri" ? "government-exam" : exam.pillar}
+                  category={exam.category}
+                  slug={exam.slug}
+                  isPublished={isPublished}
+                  size="lg"
+                />
+              )}
               <button type="button" onClick={() => setShowAIDialog(true)} disabled={aiGenerating}
                 className="flex items-center gap-1.5 rounded border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50">
                 {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
