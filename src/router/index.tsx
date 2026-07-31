@@ -183,7 +183,11 @@ export const router = createBrowserRouter([
           { path: "/entrance-exams",       element: <EntranceExamListPage /> },
           { path: "/entrance-exams/new",   element: <EntranceExamEditorPage /> },
           { path: "/entrance-exams/:id",   element: <EntranceExamEditorPage /> },
-          // Sarkari Bharti (State Recruitments)
+          // Govt Vacancy (previously Sarkari Bharti)
+          { path: "/govt-vacancy",         element: <SarkariBhartiListPage /> },
+          { path: "/govt-vacancy/new",     element: <EntranceExamEditorPage /> },
+          { path: "/govt-vacancy/:id",     element: <EntranceExamEditorPage /> },
+          // Legacy routes (redirect to new)
           { path: "/sarkari-bharti",       element: <SarkariBhartiListPage /> },
           { path: "/sarkari-bharti/new",   element: <EntranceExamEditorPage /> },
           { path: "/sarkari-bharti/:id",   element: <EntranceExamEditorPage /> },

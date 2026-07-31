@@ -1,7 +1,7 @@
 /**
  * GovtExamListPage — List page for Government Exams (Govt Exam).
  * Handles recurring competitive exams like UPSC-CSE, SSC-CGL, RRB-NTPC, etc.
- * Uses the shared entrance exam service with pillar='sarkari-naukri'.
+ * Uses the shared entrance exam service with pillar='government-exam'.
  */
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
@@ -39,13 +39,13 @@ export function GovtExamListPage() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    getCategories("sarkari-naukri").then(setCategories).catch(() => setCategories([]));
+    getCategories("government-exam").then(setCategories).catch(() => setCategories([]));
   }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const opts: { search?: string; categoryId?: string; pillar?: string } = { pillar: "sarkari-naukri" };
+      const opts: { search?: string; categoryId?: string; pillar?: string } = { pillar: "government-exam" };
       if (search) opts.search = search;
       if (categoryId) opts.categoryId = categoryId;
       const data = await getEntranceExams(opts);
@@ -85,7 +85,7 @@ export function GovtExamListPage() {
       </div>
 
       {/* Bulk Import/Export */}
-      <BulkImportExport pillar="sarkari-naukri" pillarLabel="Govt Exams" onImportComplete={load} />
+      <BulkImportExport pillar="government-exam" pillarLabel="Govt Exams" onImportComplete={load} />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 bg-white rounded-lg border border-slate-200 p-3">
@@ -119,7 +119,7 @@ export function GovtExamListPage() {
               className="bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer group relative">
               {/* View on Site + Delete buttons */}
               <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-                <ViewOnSiteButton pillar="sarkari-naukri" category={exam.category} slug={exam.slug} isPublished={exam.isPublished} />
+                <ViewOnSiteButton pillar="government-exam" category={exam.category} slug={exam.slug} isPublished={exam.isPublished} />
                 <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(exam); }}
                   className="p-1.5 rounded text-slate-300 hover:text-red-600 hover:bg-red-50"
                   title="Delete exam">

@@ -4,19 +4,20 @@ import { SITE } from "@/config/site";
 
 /**
  * Maps CMS pillar slugs to the actual frontend route path.
- * CMS pillars don't always match frontend URL structure.
  */
 function getFrontendPillar(cmsPillar: string): string {
   const map: Record<string, string> = {
+    "government-exam": "government-exam",
+    "govt-vacancy": "govt-vacancy",
     "entrance-exam": "entrance-exam",
-    "sarkari-naukri": "sarkari-naukri",
-    "sarkari-bharti": "sarkari-naukri",
-    "government-exam": "sarkari-naukri",
-    "government-jobs": "sarkari-naukri",
     "board-exam": "board-exam",
-    "board-university": "board-exam",
-    "university-exam": "board-exam",
+    "university-exam": "university-exam",
     "news": "news",
+    // Legacy fallbacks (in case old values still exist somewhere)
+    "sarkari-naukri": "government-exam",
+    "sarkari-bharti": "govt-vacancy",
+    "government-jobs": "govt-vacancy",
+    "board-university": "board-exam",
   };
   return map[cmsPillar] ?? cmsPillar;
 }

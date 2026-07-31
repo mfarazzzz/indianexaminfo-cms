@@ -92,11 +92,12 @@ export function EntranceExamEditorPage() {
   // Detect pillar from URL path
   const pillarFromUrl = (() => {
     const path = window.location.pathname;
-    if (path.includes("/govt-exam")) return "sarkari-naukri";
-    if (path.includes("/sarkari-naukri")) return "sarkari-naukri";
-    if (path.includes("/sarkari-bharti")) return "sarkari-bharti";
-    if (path.includes("/board-exams")) return "board-university";
-    if (path.includes("/university-exams")) return "board-university";
+    if (path.includes("/govt-exam")) return "government-exam";
+    if (path.includes("/govt-vacancy")) return "govt-vacancy";
+    if (path.includes("/sarkari-naukri")) return "government-exam";
+    if (path.includes("/sarkari-bharti")) return "govt-vacancy";
+    if (path.includes("/board-exams")) return "board-exam";
+    if (path.includes("/university-exams")) return "university-exam";
     return "entrance-exam";
   })();
 
@@ -104,8 +105,9 @@ export function EntranceExamEditorPage() {
   const listPath = (() => {
     const path = window.location.pathname;
     if (path.includes("/govt-exam")) return "/govt-exam";
+    if (path.includes("/govt-vacancy")) return "/govt-vacancy";
     if (path.includes("/sarkari-naukri")) return "/govt-exam";
-    if (path.includes("/sarkari-bharti")) return "/sarkari-bharti";
+    if (path.includes("/sarkari-bharti")) return "/govt-vacancy";
     if (path.includes("/board-exams")) return "/board-exams";
     if (path.includes("/university-exams")) return "/university-exams";
     return "/entrance-exams";
