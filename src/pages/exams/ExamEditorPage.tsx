@@ -57,7 +57,7 @@ const examSchema = z.object({
   name: z.string().min(1, "Name is required"),
   slug: z.string().min(1, "Slug is required"),
   shortName: z.string().default(""),
-  pillar: z.enum(["sarkari-naukri", "entrance-exam", "board-university"]),
+  pillar: z.string().min(1, "Pillar is required"),
   categoryId: z.string().optional().nullable(),
   subcategoryId: z.string().optional().nullable(),
   entityType: z.enum(["exam", "board", "university", "recruitment"]).default("exam"),
@@ -339,7 +339,7 @@ export function ExamEditorPage() {
           if (g.shortName) form.setValue("shortName", g.shortName, opts);
           if (g.slug) form.setValue("slug", g.slug, opts);
           const pillar = g.pillar ?? d.pillar;
-          if (pillar && ["sarkari-naukri","entrance-exam","board-university"].includes(pillar)) form.setValue("pillar", pillar, opts);
+          if (pillar && pillar.length > 0) form.setValue("pillar", pillar, opts);
           const entityType = g.entityType ?? d.examType ?? d.entityType;
           if (entityType && ["exam","board","university","recruitment"].includes(entityType)) form.setValue("entityType", entityType, opts);
           if (g.conductingBody) form.setValue("conductingBody", g.conductingBody, opts);
