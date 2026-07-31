@@ -46,7 +46,7 @@ const NAV_GROUPS: NavGroup[] = [
     permissions: [P.MANAGE_CATEGORIES, P.MANAGE_MENUS, P.MANAGE_PAGES],
     items: [
       { label: "Categories", to: "/categories", icon: <Tag size={ICON_SIZE} />, permissions: [P.MANAGE_CATEGORIES] },
-      { label: "Navigation", to: "/navigation", icon: <Navigation size={ICON_SIZE} />, permissions: [P.MANAGE_MENUS] },
+      { label: "Taxonomy", to: "/navigation", icon: <Navigation size={ICON_SIZE} />, permissions: [P.MANAGE_MENUS] },
       { label: "Menu Manager", to: "/menus", icon: <Link2 size={ICON_SIZE} />, permissions: [P.MANAGE_MENUS] },
       { label: "Pages", to: "/pages", icon: <FileText size={ICON_SIZE} />, permissions: [P.MANAGE_PAGES] },
     ],
