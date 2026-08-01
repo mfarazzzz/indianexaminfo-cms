@@ -89,6 +89,18 @@ export async function saveModuleContent(
 
   if (writeErr) throw writeErr;
 
+  // Option B sync: keep exam_editions.eligibility in sync with content_modules.eligibility
+  // This ensures the structured columns (used for Key Highlights) stay current
+  if (moduleSlug === "eligibility" && (content.qualification || content.ageLimit || content.nationality)) {
+    await db.from("exam_editions").update({
+      eligibility: {
+        age: (content.ageLimit as string) ?? "",
+        qualification: (content.qualification as string) ?? "",
+        nationality: (content.nationality as string) ?? "",
+      },
+    }).eq("id", editionId);
+  }
+
   // Non-blocking cache revalidation
   revalidateExams().catch(() => {});
 }
