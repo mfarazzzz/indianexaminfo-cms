@@ -206,6 +206,7 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags }: Props) {
               onSync={handleSync}
               onStatusChange={handleStatusChange}
               aiLoading={aiLoadingSlug === mod.slug}
+              forceCollapsed={allCollapsed}
             />
           );
         })}

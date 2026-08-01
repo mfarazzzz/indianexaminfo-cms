@@ -3,7 +3,7 @@
  * Shows: toggle, mode selector, AI Fill, stale indicator, expand/collapse.
  * Renders content based on mode: auto (read-only), hybrid (auto+notes), manual (full editor).
  */
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ChevronDown, ChevronRight, GripVertical, Sparkles, RefreshCw, Loader2 } from "lucide-react";
 import { ModuleContentEditor } from "./ModuleContentEditor";
 import type { ModuleDefinition, ModuleContentData, SaveStatus } from "@/types/modules";
@@ -23,13 +23,28 @@ interface Props {
   onSync: (slug: string) => void;
   onStatusChange?: (slug: string, status: SaveStatus) => void;
   aiLoading?: boolean;
+  /** Controlled collapse state from parent (Collapse All / Expand All) */
+  forceCollapsed?: boolean;
 }
 
 export function ContentModuleCard({
   module, enabled, editionId, content, mode, isStale, autoContent,
-  onToggle, onModeChange, onAIFill, onSync, onStatusChange, aiLoading,
+  onToggle, onModeChange, onAIFill, onSync, onStatusChange, aiLoading, forceCollapsed,
 }: Props) {
   const [expanded, setExpanded] = useState(enabled);
+
+  // Respond to Collapse All / Expand All from parent
+  useEffect(() => {
+    if (forceCollapsed !== undefined) {
+      setExpanded(!forceCollapsed);
+    }
+  }, [forceCollapsed]);
+
+  // Collapse when disabled (e.g. Disable All)
+  useEffect(() => {
+    if (!enabled) setExpanded(false);
+  }, [enabled]);
+
   const isPassThrough = ["important-dates", "news"].includes(module.slug) && mode === "auto";
   const isFaqAuto = module.slug === "faqs" && mode === "auto";
 
@@ -73,31 +88,24 @@ export function ContentModuleCard({
         {/* Controls */}
         {enabled && (
           <div className="flex items-center gap-1 shrink-0">
-            {/* Mode selector */}
             <select value={mode} onChange={(e) => onModeChange(e.target.value as DataMode)}
               className="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 bg-white">
               <option value="auto">Auto</option>
               <option value="hybrid">Hybrid</option>
               <option value="manual">Manual</option>
             </select>
-
-            {/* Sync button (if stale) */}
             {isStale && mode !== "manual" && (
               <button type="button" onClick={() => onSync(module.slug)} title="Sync now"
                 className="p-1 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded">
                 <RefreshCw size={13} />
               </button>
             )}
-
-            {/* AI Fill button */}
             {mode !== "auto" || !["important-dates", "news"].includes(module.slug) ? (
               <button type="button" onClick={() => onAIFill(module.slug)} disabled={aiLoading} title="AI Fill"
                 className="p-1 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded disabled:opacity-50">
                 {aiLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
               </button>
             ) : null}
-
-            {/* Expand/collapse */}
             <button type="button" onClick={() => setExpanded(!expanded)} className="p-1 text-slate-400 hover:text-slate-600">
               {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
             </button>
@@ -108,7 +116,6 @@ export function ContentModuleCard({
       {/* Content area */}
       {enabled && expanded && (
         <div className="px-4 pb-4 border-t border-slate-100">
-          {/* Auto mode: show read-only auto content */}
           {mode === "auto" && autoContent && (
             <div className="py-3">
               {isPassThrough && (
@@ -124,8 +131,6 @@ export function ContentModuleCard({
               <AutoContentDisplay content={autoContent} moduleSlug={module.slug} />
             </div>
           )}
-
-          {/* Hybrid mode: auto content (read-only) + manual notes editor */}
           {mode === "hybrid" && (
             <div className="py-3 space-y-4">
               {autoContent && (
@@ -136,34 +141,20 @@ export function ContentModuleCard({
               )}
               <div>
                 <p className="text-[10px] uppercase text-slate-500 font-semibold mb-2">Additional Notes (Manual)</p>
-                <ModuleContentEditor
-                  editionId={editionId}
-                  moduleSlug={module.slug}
-                  fields={module.fields}
-                  initialContent={content}
-                  onStatusChange={(s) => onStatusChange?.(module.slug, s)}
-                />
+                <ModuleContentEditor editionId={editionId} moduleSlug={module.slug} fields={module.fields}
+                  initialContent={content} onStatusChange={(s) => onStatusChange?.(module.slug, s)} />
               </div>
             </div>
           )}
-
-          {/* Manual mode: full editor */}
           {mode === "manual" && (
-            <ModuleContentEditor
-              editionId={editionId}
-              moduleSlug={module.slug}
-              fields={module.fields}
-              initialContent={content}
-              onStatusChange={(s) => onStatusChange?.(module.slug, s)}
-            />
+            <ModuleContentEditor editionId={editionId} moduleSlug={module.slug} fields={module.fields}
+              initialContent={content} onStatusChange={(s) => onStatusChange?.(module.slug, s)} />
           )}
         </div>
       )}
     </div>
   );
 }
-
-// ── Auto Content Display ───────────────────────────────────────────────────
 
 function AutoContentDisplay({ content, moduleSlug }: { content: Record<string, unknown>; moduleSlug: string }) {
   if (moduleSlug === "important-dates") {
@@ -182,7 +173,6 @@ function AutoContentDisplay({ content, moduleSlug }: { content: Record<string, u
       </div>
     );
   }
-
   if (moduleSlug === "faqs") {
     const items = (content.items as any[]) ?? [];
     if (items.length === 0) return <p className="text-xs text-slate-400 italic">No FAQs available. Add them in the SEO tab.</p>;
@@ -197,7 +187,6 @@ function AutoContentDisplay({ content, moduleSlug }: { content: Record<string, u
       </div>
     );
   }
-
   if (moduleSlug === "overview") {
     const body = content.body as string;
     const summary = content.summary as string;
@@ -209,8 +198,6 @@ function AutoContentDisplay({ content, moduleSlug }: { content: Record<string, u
       </div>
     );
   }
-
-  // Generic: show raw content as key-value pairs
   return (
     <div className="space-y-1 text-sm">
       {Object.entries(content).filter(([k]) => k !== "_meta").map(([key, val]) => (
