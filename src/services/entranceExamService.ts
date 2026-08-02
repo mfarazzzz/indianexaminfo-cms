@@ -400,7 +400,16 @@ export async function updateExamIdentity(
 
   if (input.name !== undefined) updates.name = input.name;
   if (input.shortName !== undefined) updates.short_name = input.shortName;
-  if (input.slug !== undefined) updates.slug = input.slug;
+  if (input.slug !== undefined) {
+    // Always sanitize slug: lowercase, no special chars, no trailing dashes
+    updates.slug = input.slug
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, "")
+      .replace(/[\s_]+/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
   if (input.categoryId !== undefined) updates.category_id = input.categoryId;
   if (input.subcategoryId !== undefined) updates.subcategory_id = input.subcategoryId;
   if (input.conductingBody !== undefined) updates.conducting_body = input.conductingBody;
