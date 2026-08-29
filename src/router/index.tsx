@@ -15,37 +15,65 @@ function Loading() {
   );
 }
 
+/** sessionStorage key used to prevent an infinite reload loop on chunk failures. */
+const CHUNK_RELOAD_KEY = "chunk-reload-attempted";
+
+/**
+ * Detects a failed dynamic import / stale-chunk error. After a redeploy, the
+ * cached index.html can reference old hashed chunk filenames that 404, which
+ * throws one of these errors when React tries to lazy-load a page.
+ */
+function isChunkLoadError(error: Error | null): boolean {
+  if (!error) return false;
+  const msg = `${error.name} ${error.message}`.toLowerCase();
+  return (
+    msg.includes("failed to fetch dynamically imported module") ||
+    msg.includes("error loading dynamically imported module") ||
+    msg.includes("importing a module script failed") ||
+    msg.includes("chunkloaderror") ||
+    msg.includes("unable to preload css")
+  );
+}
+
 /**
  * Error boundary for lazy-loaded page chunks.
- * Handles network errors during code-splitting.
- * First retry: re-attempt the chunk load. Second: full page reload.
+ *
+ * For stale-chunk errors (common right after a deploy), it forces a single
+ * hard reload so the browser fetches a fresh index.html + valid chunk names.
+ * A sessionStorage guard prevents an infinite reload loop if the error is not
+ * actually caused by a stale chunk.
  */
 class LazyErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { hasError: boolean; error: Error | null; retryCount: number }
+  { hasError: boolean; error: Error | null }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null, retryCount: 0 };
+    this.state = { hasError: false, error: null };
   }
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error };
   }
+  componentDidCatch(error: Error) {
+    // Auto-recover from stale-chunk 404s: force one hard reload to pull the
+    // new index.html. Guard against loops in case the reload doesn't fix it.
+    if (isChunkLoadError(error) && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+      sessionStorage.setItem(CHUNK_RELOAD_KEY, "1");
+      window.location.reload();
+    }
+  }
+  private handleReload = () => {
+    // Manual reload always clears the guard so a fresh attempt is made.
+    sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+    window.location.reload();
+  };
   render() {
     if (this.state.hasError) {
       return (
         <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
           <p className="text-sm text-slate-600">Failed to load this page.</p>
           <button
-            onClick={() => {
-              if (this.state.retryCount < 1) {
-                // First retry: just reset the error boundary (React will re-attempt the lazy import)
-                this.setState({ hasError: false, error: null, retryCount: this.state.retryCount + 1 });
-              } else {
-                // Second retry: force reload from server
-                window.location.reload();
-              }
-            }}
+            onClick={this.handleReload}
             className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
             Reload

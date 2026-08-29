@@ -20,6 +20,10 @@ registerCoreBlocks()
 initializeModuleRegistry()
 initializeInspectorRegistry()
 
+// App booted successfully — clear the stale-chunk reload guard so a future
+// deploy can trigger a fresh auto-reload if needed.
+sessionStorage.removeItem("chunk-reload-attempted")
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>
