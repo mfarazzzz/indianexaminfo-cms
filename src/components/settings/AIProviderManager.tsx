@@ -221,7 +221,7 @@ function ProviderFormModal({ editing, onSave, onCancel }: { editing?: AIProvider
   const [provider, setProvider] = useState<AIProviderName>(editing?.provider ?? "groq");
   const [label, setLabel] = useState(editing?.label ?? "");
   const [apiKey, setApiKey] = useState(editing?.apiKey ?? "");
-  const [model, setModel] = useState(editing?.model ?? "llama-3.3-70b-versatile");
+  const [model, setModel] = useState(editing?.model ?? "openai/gpt-oss-120b");
   const [saving, setSaving] = useState(false);
 
   const models = PROVIDER_MODELS[provider] ?? [];

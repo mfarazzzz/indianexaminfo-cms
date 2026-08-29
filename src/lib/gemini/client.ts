@@ -66,7 +66,7 @@ export async function generateWithGemini(
   if (!key) throw new Error("API key not configured. Set it in Settings → AI.");
 
   const provider = detectProvider(key);
-  const finalModel = model || (provider === "groq" ? "llama-3.3-70b-versatile" : "gemini-2.5-flash");
+  const finalModel = model || (provider === "groq" ? "openai/gpt-oss-120b" : "gemini-2.5-flash");
 
   const adapter = provider === "gemini" ? new GeminiAdapter() : new OpenAICompatibleAdapter(provider);
   const response = await adapter.generate({ prompt, apiKey: key, model: finalModel });

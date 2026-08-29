@@ -67,7 +67,7 @@ async function callGemini(prompt: string, maxTokens = 8192): Promise<Record<stri
         "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model: "openai/gpt-oss-120b",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.05,
         max_tokens: maxTokens,
