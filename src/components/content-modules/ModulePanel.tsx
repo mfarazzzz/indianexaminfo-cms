@@ -17,6 +17,7 @@ import type { ModuleDefinition, ModuleConfig, ContentModulesData, ModuleContentD
 import type { ExamIdentity, ExamEdition } from "@/services/entranceExamService";
 import { getErrorMessage } from "@/lib/utils";
 import { hasData, SECTION_BY_SLUG, type HasDataView } from "@/lib/sectionRegistry";
+import { DraggableList } from "@/components/shared/DraggableList";
 import { useSettings } from "@/hooks/useSettings";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -28,6 +29,30 @@ const MODULE_SLUG_TO_SECTION: Record<string, string> = {
   "application-process": "how-to-apply",
   "vacancy-details": "vacancy",
 };
+
+/**
+ * Group classification — MUST match what the frontend actually renders
+ * (EntityDetailPage). Verified against TAB_ONLY_MODULES + ContentModulesBlock:
+ *  - Group C (tab-only): render on their own sub-page, NOT the main page, so no
+ *    main-page order. Matches frontend TAB_ONLY_MODULES.
+ *  - Group B (editable, reorderable): render inside the main-page ContentModulesBlock,
+ *    ordered by _config.moduleOrder — the ONLY genuinely draggable group.
+ * Group A (fixed structure / typed-column tables) is NOT in the module registry;
+ * it's a synthetic list below with deep-links to the tab that edits each.
+ */
+const TAB_ONLY_MODULE_SLUGS = new Set([
+  "application-process", "admit-card", "result", "cut-off", "syllabus", "news", "faqs",
+]);
+
+/** Fixed page sections (not modules). Each links to the tab where it's edited. */
+const FIXED_SECTIONS: { key: string; label: string; sourceTab: string; tabId: string; sectionSlug?: string }[] = [
+  { key: "key-highlights",    label: "Key Highlights",     sourceTab: "auto (Dates/Eligibility/Fee)", tabId: "edition" },
+  { key: "important-dates-t", label: "Important Dates",    sourceTab: "Dates & Status tab", tabId: "edition", sectionSlug: "important-dates" },
+  { key: "eligibility-t",     label: "Eligibility",        sourceTab: "Dates & Status tab", tabId: "edition", sectionSlug: "eligibility" },
+  { key: "application-fee-t", label: "Application Fee",     sourceTab: "Dates & Status tab", tabId: "edition", sectionSlug: "application-fee" },
+  { key: "selection-t",       label: "Selection Process",  sourceTab: "Identity tab",       tabId: "identity", sectionSlug: "selection-process" },
+  { key: "syllabus-t",        label: "Syllabus Highlights", sourceTab: "Identity tab",      tabId: "identity", sectionSlug: "syllabus" },
+];
 
 /** Build the minimal view sectionRegistry.hasData needs from exam + edition. */
 function buildHasDataView(
@@ -59,9 +84,11 @@ interface Props {
   exam?: ExamIdentity | null;
   edition?: ExamEdition | null;
   legacyFlags?: Record<string, boolean>;
+  /** Group A rows deep-link to the tab that edits them (e.g. "edition", "identity"). */
+  onNavigateTab?: (tabId: string) => void;
 }
 
-export function ModulePanel({ editionId, exam, edition, legacyFlags }: Props) {
+export function ModulePanel({ editionId, exam, edition, legacyFlags, onNavigateTab }: Props) {
   const [modules, setModules] = useState<ModuleDefinition[]>([]);
   const [contentModules, setContentModules] = useState<ContentModulesData>({});
   const [config, setConfig] = useState<ModuleConfig>({ moduleOrder: [], enabledModules: [], modes: {}, syncTimestamps: {} });
@@ -192,6 +219,24 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags }: Props) {
     return ordered;
   }, [modules, config.moduleOrder]);
 
+  // Group B = main-page modules (reorderable); Group C = tab-only modules.
+  const groupBModules = orderedModules.filter((m) => !TAB_ONLY_MODULE_SLUGS.has(m.slug));
+  const groupCModules = orderedModules.filter((m) => TAB_ONLY_MODULE_SLUGS.has(m.slug));
+
+  // Real drag: reorder Group B and persist to _config.moduleOrder — the value
+  // the frontend main-page ContentModulesBlock actually renders by. Tab-only
+  // (Group C) slugs keep their existing relative order appended after.
+  const handleReorderGroupB = useCallback((orderedIds: string[]) => {
+    if (!editionId) return;
+    // orderedIds are module slugs (DraggableList item ids). Rebuild moduleOrder:
+    // new Group-B order first, then the untouched tab-only slugs in prior order.
+    const tabOnlyInOrder = config.moduleOrder.filter((s) => TAB_ONLY_MODULE_SLUGS.has(s));
+    const newOrder = [...orderedIds, ...tabOnlyInOrder];
+    const newConfig = { ...config, moduleOrder: newOrder };
+    setConfig(newConfig);
+    saveModuleConfig(editionId, newConfig).catch((e) => toast.error("Reorder save failed: " + getErrorMessage(e)));
+  }, [editionId, config]);
+
   if (loading) {
     return <div className="flex justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" /></div>;
   }
@@ -225,40 +270,100 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags }: Props) {
         }}
       />
       <p className="text-xs text-slate-500 mb-4">
-        Modules auto-populate from Dates, SEO, and Identity data. Switch to Manual for full editing control.
+        Sections are grouped by how they behave on the live page. Only <span className="font-medium">Editable content modules</span> can be reordered — that order is what the page renders.
       </p>
-      <div className="space-y-2">
-        {orderedModules.map((mod) => {
-          const mode = getModuleMode(bindingConfig, mod.slug);
-          const resolved = resolveModuleContent(mod.slug, mode, exam ?? null, edition ?? null, contentModules);
-          // Live-visibility: does this section have content by the SAME rule the
-          // public site uses? Only evaluated for slugs the registry knows about.
-          const sectionSlug = MODULE_SLUG_TO_SECTION[mod.slug] ?? mod.slug;
-          const hasLiveContent = liveView && SECTION_BY_SLUG[sectionSlug]
-            ? hasData(liveView, sectionSlug)
-            : undefined;
+
+      {/* ── Group A: Fixed page sections (not modules, not reorderable) ── */}
+      <GroupHeading title="Fixed page sections" hint="Always in this position — edit content in the linked tab." />
+      <div className="space-y-1.5 mb-5">
+        {FIXED_SECTIONS.map((fs) => {
+          const live = fs.sectionSlug && liveView && SECTION_BY_SLUG[fs.sectionSlug]
+            ? hasData(liveView, fs.sectionSlug) : undefined;
           return (
-            <ContentModuleCard
-              key={mod.slug}
-              module={mod}
-              enabled={config.enabledModules.includes(mod.slug)}
-              editionId={editionId}
-              content={(contentModules[mod.slug] as ModuleContentData) ?? null}
-              mode={mode}
-              isStale={resolved.isStale}
-              autoContent={resolved.autoContent}
-              onToggle={(enabled) => handleToggle(mod.slug, enabled)}
-              onModeChange={(m) => handleModeChange(mod.slug, m)}
-              onAIFill={handleAIFill}
-              onSync={handleSync}
-              onStatusChange={handleStatusChange}
-              aiLoading={aiLoadingSlug === mod.slug}
-              forceCollapsed={allCollapsed}
-              hasLiveContent={hasLiveContent}
-            />
+            <div key={fs.key} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
+              <span className="text-sm text-slate-600 flex-1 min-w-0 truncate">{fs.label}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 font-medium shrink-0">fixed</span>
+              {live === true && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 font-medium shrink-0">Live</span>}
+              {live === false && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium shrink-0">Hidden — no content yet</span>}
+              <button type="button" onClick={() => onNavigateTab?.(fs.tabId)}
+                className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline shrink-0">
+                Edit in {fs.sourceTab} →
+              </button>
+            </div>
           );
         })}
       </div>
+
+      {/* ── Group B: Editable content modules (the ONLY reorderable group) ── */}
+      <GroupHeading title="Editable content modules" hint="Drag to reorder — this order is what the main page renders." />
+      <div className="mb-5">
+        {groupBModules.length === 0 ? (
+          <p className="text-xs text-slate-400 italic px-1 py-2">No editable modules.</p>
+        ) : (
+          <DraggableList
+            items={groupBModules.map((m) => ({ ...m, id: m.slug }))}
+            onReorder={handleReorderGroupB}
+            showDefaultHandle={false}
+            renderItem={(mod, { dragHandleProps, isDragging }) =>
+              renderModuleCard(mod as ModuleDefinition, { dragHandleProps, isDragging })
+            }
+          />
+        )}
+      </div>
+
+      {/* ── Group C: Tab-only modules (sub-page, no main-page order) ── */}
+      {groupCModules.length > 0 && (
+        <>
+          <GroupHeading title="Tab-only modules" hint="Shown on their own content-type page, not the main page." />
+          <div className="space-y-1.5">
+            {groupCModules.map((mod) => renderModuleCard(mod, {}))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  // Shared card renderer — used by Group B (with drag handle) and Group C (without).
+  function renderModuleCard(
+    mod: ModuleDefinition,
+    { dragHandleProps, isDragging }: { dragHandleProps?: any; isDragging?: boolean }
+  ) {
+    const mode = getModuleMode(bindingConfig, mod.slug);
+    const resolved = resolveModuleContent(mod.slug, mode, exam ?? null, edition ?? null, contentModules);
+    const sectionSlug = MODULE_SLUG_TO_SECTION[mod.slug] ?? mod.slug;
+    const hasLiveContent = liveView && SECTION_BY_SLUG[sectionSlug]
+      ? hasData(liveView, sectionSlug)
+      : undefined;
+    return (
+      <ContentModuleCard
+        key={mod.slug}
+        module={mod}
+        enabled={config.enabledModules.includes(mod.slug)}
+        editionId={editionId}
+        content={(contentModules[mod.slug] as ModuleContentData) ?? null}
+        mode={mode}
+        isStale={resolved.isStale}
+        autoContent={resolved.autoContent}
+        onToggle={(enabled) => handleToggle(mod.slug, enabled)}
+        onModeChange={(m) => handleModeChange(mod.slug, m)}
+        onAIFill={handleAIFill}
+        onSync={handleSync}
+        onStatusChange={handleStatusChange}
+        aiLoading={aiLoadingSlug === mod.slug}
+        forceCollapsed={allCollapsed}
+        hasLiveContent={hasLiveContent}
+        dragHandleProps={dragHandleProps}
+        isDragging={isDragging}
+      />
+    );
+  }
+}
+
+function GroupHeading({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="mb-2">
+      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</h4>
+      <p className="text-[11px] text-slate-400">{hint}</p>
     </div>
   );
 }

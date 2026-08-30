@@ -31,7 +31,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <AuthProvider>
           <SettingsProvider>
             <RouterProvider router={router} />
-            <Toaster position="top-right" richColors closeButton />
+            {/* Item 3: bottom-right so toasts never cover Save / AI Fill (top-right header). */}
+            <Toaster position="bottom-right" richColors closeButton />
           </SettingsProvider>
         </AuthProvider>
       </QueryClientProvider>

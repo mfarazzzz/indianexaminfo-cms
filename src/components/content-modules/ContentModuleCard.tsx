@@ -8,6 +8,7 @@ import { ChevronDown, ChevronRight, GripVertical, Sparkles, RefreshCw, Loader2 }
 import { ModuleContentEditor } from "./ModuleContentEditor";
 import type { ModuleDefinition, ModuleContentData, SaveStatus } from "@/types/modules";
 import type { DataMode } from "@/lib/modules/dataBindingService";
+import type { DragHandleProps } from "@/components/shared/DraggableList";
 
 interface Props {
   module: ModuleDefinition;
@@ -32,14 +33,23 @@ interface Props {
    * Undefined = not evaluated (e.g. slug has no registry mapping); no badge.
    */
   hasLiveContent?: boolean;
+  /**
+   * Real drag handle (Group B / reorderable modules only). When absent, NO grip
+   * is shown — the old decorative always-on grip was a lie for non-reorderable
+   * rows. Present handle => this row genuinely reorders _config.moduleOrder.
+   */
+  dragHandleProps?: DragHandleProps;
+  isDragging?: boolean;
 }
 
 export function ContentModuleCard({
   module, enabled, editionId, content, mode, isStale, autoContent,
   onToggle, onModeChange, onAIFill, onSync, onStatusChange, aiLoading, forceCollapsed,
-  hasLiveContent,
+  hasLiveContent, dragHandleProps, isDragging,
 }: Props) {
-  const [expanded, setExpanded] = useState(enabled);
+  // Item 4: collapsed by default — the tab was an enormous scroll with every
+  // module expanded. Name + badges + toggle stay visible; content only on expand.
+  const [expanded, setExpanded] = useState(false);
 
   // Respond to Collapse All / Expand All from parent
   useEffect(() => {
@@ -64,12 +74,19 @@ export function ContentModuleCard({
   };
 
   return (
-    <div className={`border rounded-lg transition-colors ${enabled ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50/50"}`}>
+    <div className={`border rounded-lg transition-colors ${enabled ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50/50"} ${isDragging ? "opacity-60 shadow-lg" : ""}`}>
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2.5">
-        <div className="cursor-grab text-slate-300 hover:text-slate-500 touch-none">
-          <GripVertical size={16} />
-        </div>
+        {/* Real drag handle — ONLY for reorderable (Group B) rows. No handle = not reorderable. */}
+        {dragHandleProps ? (
+          <button type="button" aria-label={`Drag to reorder ${module.name}`}
+            className="cursor-grab text-slate-300 hover:text-slate-500 touch-none shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+            {...dragHandleProps.attributes} {...dragHandleProps.listeners}>
+            <GripVertical size={16} />
+          </button>
+        ) : (
+          <span className="w-1 shrink-0" aria-hidden />
+        )}
 
         {/* Toggle switch */}
         <button type="button" onClick={handleToggle}
@@ -78,9 +95,10 @@ export function ContentModuleCard({
           <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-[16px]" : "translate-x-[2px]"}`} />
         </button>
 
-        {/* Module name + stale indicator */}
+        {/* Module name + stale indicator. Item 1: ml-1 gap so the toggle never
+            clips the first character of the name (")verview", ":ligibility"…). */}
         <button type="button" onClick={() => enabled && setExpanded(!expanded)}
-          className="flex items-center gap-2 flex-1 text-left min-w-0" disabled={!enabled}>
+          className="flex items-center gap-2 flex-1 text-left min-w-0 ml-1" disabled={!enabled}>
           <span className={`text-sm font-medium truncate ${enabled ? "text-slate-700" : "text-slate-400"}`}>{module.name}</span>
           {/* Live-visibility badge: the ONE rule that governs the public site.
               Hidden = this section has no content and will NOT appear on the live
@@ -106,6 +124,7 @@ export function ContentModuleCard({
         {enabled && (
           <div className="flex items-center gap-1 shrink-0">
             <select value={mode} onChange={(e) => onModeChange(e.target.value as DataMode)}
+              title="Auto = content is pulled from the Dates/SEO/Identity tabs (read-only here). Hybrid = auto content plus your own notes. Manual = you edit everything here directly."
               className="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 bg-white">
               <option value="auto">Auto</option>
               <option value="hybrid">Hybrid</option>
@@ -215,9 +234,22 @@ function AutoContentDisplay({ content, moduleSlug }: { content: Record<string, u
       </div>
     );
   }
+  // Item 2: never leak raw JSON like "items: []" into the UI. Skip empty
+  // values and render a calm empty state when nothing meaningful is present.
+  const meaningful = Object.entries(content).filter(([k, v]) => {
+    if (k === "_meta") return false;
+    if (v == null) return false;
+    if (typeof v === "string") return v.trim().length > 0;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === "object") return Object.keys(v).length > 0;
+    return true;
+  });
+  if (meaningful.length === 0) {
+    return <p className="text-xs text-slate-400 italic">No content yet.</p>;
+  }
   return (
     <div className="space-y-1 text-sm">
-      {Object.entries(content).filter(([k]) => k !== "_meta").map(([key, val]) => (
+      {meaningful.map(([key, val]) => (
         <div key={key}>
           <span className="text-xs text-slate-400">{key}: </span>
           <span className="text-slate-600">{typeof val === "string" ? val.slice(0, 100) : JSON.stringify(val).slice(0, 100)}</span>

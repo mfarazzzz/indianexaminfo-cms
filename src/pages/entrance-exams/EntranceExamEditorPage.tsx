@@ -462,7 +462,20 @@ export function EntranceExamEditorPage() {
         }
       }
 
-      toast.success(`AI generated and saved. ${data.importantDates.length} dates extracted.`);
+      // Item 5: don't present a no-op as a success. Count what was actually
+      // extracted; if the AI returned nothing usable, say so plainly.
+      const extractedDates = data.importantDates.filter((d) => d.date && d.date.trim() !== "").length;
+      const gotAnything =
+        extractedDates > 0 ||
+        !!data.seoTitle || !!data.seoDescription ||
+        (data.tags?.length ?? 0) > 0 || (data.faqs?.length ?? 0) > 0 ||
+        !!data.conductingBody || !!data.officialWebsite ||
+        (data.contentModules && Object.keys(data.contentModules).length > 0);
+      if (gotAnything) {
+        toast.success(`AI filled the exam. ${extractedDates} date${extractedDates === 1 ? "" : "s"} extracted.`);
+      } else {
+        toast.warning("AI found nothing to fill — no changes were made.");
+      }
     } catch (err) {
       toast.error("AI generation failed: " + getErrorMessage(err));
     } finally {
@@ -700,9 +713,10 @@ export function EntranceExamEditorPage() {
                 />
               )}
               <button type="button" onClick={() => setShowAIDialog(true)} disabled={aiGenerating}
+                title="Generates content for the WHOLE exam (identity, dates, SEO, modules) in one pass. Per-tab AI buttons fill only that tab."
                 className="flex items-center gap-1.5 rounded border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50">
                 {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                {aiGenerating ? "Generating..." : "🤖 AI Fill All"}
+                {aiGenerating ? "Filling entire exam..." : "🤖 AI: Fill Entire Exam"}
               </button>
               <button type="button" onClick={() => setShowNewEdition(true)}
                 className="flex items-center gap-1.5 rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
@@ -716,9 +730,10 @@ export function EntranceExamEditorPage() {
           )}
           {isNew && (
             <button type="button" onClick={() => setShowAIDialog(true)} disabled={aiGenerating}
+              title="Generates content for the WHOLE exam (identity, dates, SEO, modules) in one pass. Per-tab AI buttons fill only that tab."
               className="flex items-center gap-1.5 rounded border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50">
               {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-              {aiGenerating ? "Generating..." : "🤖 AI Fill All"}
+              {aiGenerating ? "Filling entire exam..." : "🤖 AI: Fill Entire Exam"}
             </button>
           )}
           <button type="submit" disabled={saving}
@@ -755,7 +770,7 @@ export function EntranceExamEditorPage() {
 
         {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} isNew={isNew} />}
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency} />}
-        {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
+        {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
         {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("News saved."); await loadExam(); } }} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSaveModules={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("SEO settings saved."); await loadExam(); } }} />}
         {activeTab === "editions" && <HistoryTab editions={editions}

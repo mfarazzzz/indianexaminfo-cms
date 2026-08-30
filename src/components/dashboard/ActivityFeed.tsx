@@ -3,7 +3,7 @@
  * Shows recent module_filled/module_updated entries. (Req 8.3–8.6)
  */
 import React from 'react'
-import { RefreshCw, Activity } from 'lucide-react'
+import { Activity } from 'lucide-react'
 import { useActivityFeed } from '@/hooks/useActivityFeed'
 import { timeAgo } from '@/lib/utils'
 
@@ -12,7 +12,7 @@ interface ActivityFeedProps {
 }
 
 export function ActivityFeed({ limit = 25 }: ActivityFeedProps) {
-  const { data: entries = [], isLoading, error, refetch } = useActivityFeed(limit)
+  const { data: entries = [], isLoading, error } = useActivityFeed(limit)
 
   if (isLoading) {
     return (
@@ -34,21 +34,11 @@ export function ActivityFeed({ limit = 25 }: ActivityFeedProps) {
     )
   }
 
-  if (error) {
-    return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 space-y-2">
-        <p className="text-sm text-red-700">Failed to load activity feed</p>
-        <button
-          type="button"
-          onClick={() => refetch()}
-          className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-white transition-colors"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Retry
-        </button>
-      </div>
-    )
-  }
+  // Item 7: the feed reads entity_activity_log (parked System B — broken embed +
+  // mismatched action filter). Until System B is removed, fail SILENTLY to the
+  // normal empty state rather than a red "Failed to load" box on every login.
+  // NOTE: do not "fix" the query — the table is being deleted.
+  void error;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
