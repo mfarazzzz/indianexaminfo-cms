@@ -29,7 +29,9 @@ export function CategoriesPage() {
   const { data: pillars = [] } = usePillars();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pillarFilter, setPillarFilter] = useState<string>("recruitment");
+  // Default to the first pillar tab (government-exam). The old default "recruitment"
+  // was not a valid pillar slug, so the page opened on an empty/no-match filter.
+  const [pillarFilter, setPillarFilter] = useState<string>("government-exam");
   const [editing, setEditing] = useState<Category | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
