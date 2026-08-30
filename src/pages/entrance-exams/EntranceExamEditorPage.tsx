@@ -15,7 +15,7 @@ import { RichEditor } from "@/components/shared/RichEditor";
 import { ImageUploader } from "@/components/shared/ImageUploader";
 import { DraggableList } from "@/components/shared/DraggableList";
 import { ModulePanel } from "@/components/content-modules/ModulePanel";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, normalizeUrl } from "@/lib/utils";
 import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
 import { aiFillIdentityTab, aiFillDatesTab, aiFillSEOTab, aiFillNewsTab, aiFillModulesTab } from "@/lib/gemini/tabAI";
 import { AIFillButton } from "@/components/shared/AIFillButton";
@@ -205,6 +205,15 @@ export function EntranceExamEditorPage() {
   useEffect(() => { loadExam(); }, [loadExam]);
 
   const handleSave = async (data: FormData) => {
+    // Reject a website value that can't normalise to a single valid URL, rather
+    // than silently storing "" (which would destroy the editor's input without
+    // warning). Empty is fine; only non-empty-in / empty-out is an error. The
+    // form keeps the original text so nothing is lost — the editor just fixes it.
+    if (data.officialWebsite.trim() && !normalizeUrl(data.officialWebsite)) {
+      toast.error("Official Website must be a single URL — remove the extra URL or whitespace.");
+      return;
+    }
+
     setSaving(true);
     try {
       if (isNew) {
