@@ -12,5 +12,8 @@ export function useActivityFeed(limit = 25) {
     queryKey: activityFeedKeys.recent(limit),
     queryFn: () => listRecentActivity(limit),
     staleTime: 30_000,
+    // A malformed/permission query fails deterministically; retrying 3x (the
+    // default) just multiplied the console errors. One attempt is enough.
+    retry: false,
   })
 }

@@ -14,16 +14,26 @@ const REVALIDATE_TOKEN = import.meta.env.VITE_REVALIDATE_TOKEN || "";
  * succeeded — these messages must reassure, not alarm, and tell a
  * non-technical editor what to do next.
  */
-function reportRevalidationFailure(kind: "no-token" | "config" | "transient", status?: number): void {
+function reportRevalidationFailure(kind: "no-token" | "config" | "cors" | "transient", status?: number): void {
   if (kind === "no-token") {
     toast.error("Content saved. The live site refresh isn't set up yet — your changes are safe; tell the admin.");
   } else if (kind === "config") {
     // 401/403 — token mismatch/misconfig. Will recur on every save until an admin fixes it.
     toast.error(`Content saved. The live site didn't refresh (error ${status}) — your changes are safe; tell the admin (this needs a config fix).`);
+  } else if (kind === "cors") {
+    // "Failed to fetch" = browser blocked the request (CORS/preflight). NOT transient —
+    // it fails on every save until an admin fixes the server config. Do NOT tell the editor to retry.
+    toast.error("Content saved. The live site didn't refresh (blocked by browser security) — your changes are safe; tell the admin (this needs a config fix, retrying won't help).");
   } else {
-    // 5xx / network — likely temporary.
+    // 5xx / genuine network error — likely temporary.
     toast.error("Content saved. The live site didn't refresh (temporary issue) — your changes are safe; try again in a minute or tell the admin.");
   }
+}
+
+/** A thrown fetch error caused by CORS/preflight surfaces as a TypeError "Failed to fetch". */
+function isCorsOrBlockedError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  return msg.includes("failed to fetch") || msg.includes("load failed") || msg.includes("networkerror when attempting");
 }
 
 /**
@@ -54,8 +64,8 @@ export async function revalidateTag(tag: string): Promise<void> {
       reportRevalidationFailure(res.status === 401 || res.status === 403 ? "config" : "transient", res.status);
     }
   } catch (err) {
-    console.error("[revalidate] Network error revalidating tag:", tag, err);
-    reportRevalidationFailure("transient");
+    console.error("[revalidate] Request failed revalidating tag:", tag, err);
+    reportRevalidationFailure(isCorsOrBlockedError(err) ? "cors" : "transient");
   }
 }
 
@@ -83,15 +93,26 @@ export async function revalidatePath(path: string): Promise<void> {
       reportRevalidationFailure(res.status === 401 || res.status === 403 ? "config" : "transient", res.status);
     }
   } catch (err) {
-    console.error("[revalidate] Network error revalidating path:", path, err);
-    reportRevalidationFailure("transient");
+    console.error("[revalidate] Request failed revalidating path:", path, err);
+    reportRevalidationFailure(isCorsOrBlockedError(err) ? "cors" : "transient");
   }
 }
 
 /**
  * Convenience: revalidate all exam-related caches.
  * Call after any exam create/update/publish/delete operation.
+ *
+ * DEDUPED: a single editor Save writes both the exam identity AND the edition
+ * (two separate service calls), each of which calls this — which fired two
+ * identical revalidation POSTs (and two toasts) per save. A short debounce
+ * collapses rapid calls into ONE request. Does not change save semantics.
  */
+let _examsRevalidateTimer: ReturnType<typeof setTimeout> | null = null;
+
 export async function revalidateExams(): Promise<void> {
-  await revalidateTag("exams");
+  if (_examsRevalidateTimer) clearTimeout(_examsRevalidateTimer);
+  _examsRevalidateTimer = setTimeout(() => {
+    _examsRevalidateTimer = null;
+    void revalidateTag("exams");
+  }, 400);
 }

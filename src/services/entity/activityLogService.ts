@@ -35,12 +35,15 @@ export async function logModuleActivity(
 export async function listRecentActivity(
   limit = 25
 ): Promise<DashboardActivityEntry[]> {
+  // NOTE: actor_id FKs to auth.users, which PostgREST cannot embed (not in the
+  // exposed `public` schema, and has no `name` column) — embedding it returned
+  // HTTP 400 and killed the whole query. Resolve the actor name separately from
+  // public.user_profiles instead. entity_id → public.entity embeds fine.
   const { data, error } = await db
     .from('entity_activity_log')
     .select(`
       id, entity_id, module_id, actor_id, action, target_type, created_at,
-      entity:entity_id ( name ),
-      actor:actor_id ( name )
+      entity:entity_id ( name )
     `)
     .in('action', ['module_filled', 'module_updated'])
     .order('created_at', { ascending: false })
@@ -48,14 +51,27 @@ export async function listRecentActivity(
 
   if (error) throw error
 
-  return (data ?? []).map((row: Record<string, unknown>) => ({
+  const rows = data ?? []
+
+  // Resolve actor names from user_profiles (public schema, embeddable-free lookup)
+  const actorIds = [...new Set(rows.map((r: Record<string, unknown>) => r.actor_id as string).filter(Boolean))]
+  const actorNames = new Map<string, string>()
+  if (actorIds.length > 0) {
+    const { data: profiles } = await db
+      .from('user_profiles')
+      .select('id, name')
+      .in('id', actorIds)
+    for (const p of profiles ?? []) actorNames.set((p as any).id, (p as any).name)
+  }
+
+  return rows.map((row: Record<string, unknown>) => ({
     id: row.id as string,
     entityId: row.entity_id as string,
     entityName: (row as any).entity?.name ?? 'Unknown',
     moduleId: row.module_id as string | null,
     moduleType: row.target_type as string,
     actorId: row.actor_id as string,
-    actorName: (row as any).actor?.name ?? 'Unknown',
+    actorName: actorNames.get(row.actor_id as string) ?? 'Unknown',
     action: row.action as 'module_filled' | 'module_updated',
     createdAt: row.created_at as string,
   }))
