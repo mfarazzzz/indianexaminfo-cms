@@ -102,10 +102,16 @@ export async function revalidatePath(path: string): Promise<void> {
  * Convenience: revalidate all exam-related caches.
  * Call after any exam create/update/publish/delete operation.
  *
- * DEDUPED: a single editor Save writes both the exam identity AND the edition
- * (two separate service calls), each of which calls this — which fired two
- * identical revalidation POSTs (and two toasts) per save. A short debounce
- * collapses rapid calls into ONE request. Does not change save semantics.
+ * ⚠️ TEMPORARY WORKAROUND (debounce), not the real fix.
+ * Root cause: handleSave() performs TWO writes — updateExamIdentity() AND
+ * updateEdition() — and each service fn independently calls revalidateExams(),
+ * firing two identical revalidation POSTs (and two toasts) per save. This 400ms
+ * debounce collapses them into one, but it is timing-based and WILL fail on a
+ * slow connection (if the two calls land >400ms apart, the duplicate returns).
+ *
+ * Proper fix (deferred — Part C): remove revalidateExams() from the individual
+ * service functions and call it ONCE in handleSave after BOTH writes complete.
+ * Then this debounce can be deleted.
  */
 let _examsRevalidateTimer: ReturnType<typeof setTimeout> | null = null;
 
