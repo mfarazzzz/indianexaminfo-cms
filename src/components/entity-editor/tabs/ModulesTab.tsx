@@ -6,7 +6,6 @@
 import React, { useState } from 'react'
 import { Plus, RefreshCw } from 'lucide-react'
 import { useModulesTab } from '@/hooks/useModulesTab'
-import { DraggableList } from '@/components/shared/DraggableList'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ModuleCard } from '@/components/entity-editor/modules/ModuleCard'
 import { FormField, inputCls } from '@/components/shared/form/FormField'
@@ -25,7 +24,7 @@ export function ModulesTab({ entityId }: ModulesTabProps) {
   const {
     modules, isLoading, error, refetch,
     isCreating, startCreate, cancelCreate, createModule, createError,
-    deleteModule, duplicateModule, reorderModules, publishModule,
+    deleteModule, duplicateModule, publishModule,
     expandedId, setExpandedId,
     pendingDeleteId, confirmDelete, cancelDelete,
   } = useModulesTab(entityId)
@@ -114,14 +113,14 @@ export function ModulesTab({ entityId }: ModulesTabProps) {
         </div>
       )}
 
-      {/* Module list */}
+      {/* Module list — drag-to-reorder removed: it wrote entity_module.display_order,
+          which the frontend never reads (CONSISTENCY_AUDIT Phase 1 Q2). Order is not
+          user-controllable here today; the reorder service/table remain parked. */}
       {modules.length > 0 && (
-        <DraggableList
-          items={modules}
-          onReorder={reorderModules}
-          showDefaultHandle={false}
-          renderItem={(module, { dragHandleProps, isDragging }) => (
+        <div className="space-y-3">
+          {modules.map((module) => (
             <ModuleCard
+              key={module.id}
               module={module}
               isExpanded={expandedId === module.id}
               onExpand={() => setExpandedId(module.id)}
@@ -129,11 +128,9 @@ export function ModulesTab({ entityId }: ModulesTabProps) {
               onDelete={() => deleteModule(module.id)}
               onDuplicate={() => duplicateModule(module.id)}
               onPublish={publishModule}
-              dragHandleProps={dragHandleProps}
-              isDragging={isDragging}
             />
-          )}
-        />
+          ))}
+        </div>
       )}
 
       {/* Delete confirm */}

@@ -22,8 +22,11 @@ interface ModuleCardProps {
   onDelete: () => void
   onDuplicate: () => void
   onPublish: (moduleId: string, userId: string) => Promise<void>
-  dragHandleProps: DragHandleProps
-  isDragging: boolean
+  // Drag was removed (System B reorder wrote to entity_module.display_order, a
+  // column the frontend never reads — see CONSISTENCY_AUDIT Phase 1 Q2). Kept
+  // optional so the card renders without a handle; the service/table stay parked.
+  dragHandleProps?: DragHandleProps
+  isDragging?: boolean
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -46,7 +49,8 @@ export function ModuleCard({
     <div className={cn('rounded-lg border border-slate-200 bg-white', isDragging && 'opacity-60 shadow-lg')}>
       {/* Header — always visible */}
       <div className="flex items-center gap-3 px-4 py-3">
-        {/* Drag handle */}
+        {/* Drag handle — only when a handle is supplied (drag disabled by default) */}
+        {dragHandleProps && (
         <button type="button" aria-label="Drag to reorder module"
           className="cursor-grab text-slate-300 hover:text-slate-500 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
           {...dragHandleProps.attributes} {...dragHandleProps.listeners}>
@@ -56,6 +60,7 @@ export function ModuleCard({
             <circle cx="5" cy="12" r="1.2"/><circle cx="11" cy="12" r="1.2"/>
           </svg>
         </button>
+        )}
 
         {/* Module info */}
         <div className="flex-1 min-w-0">

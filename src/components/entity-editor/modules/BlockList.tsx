@@ -1,15 +1,15 @@
 /**
- * BlockList — Thin DraggableList wrapper for block cards.
- * No business logic. showDefaultHandle={false} — BlockCard owns its drag handle.
+ * BlockList — plain list of block cards.
+ * Drag-to-reorder was removed: block reorder wrote entity_module_block.display_order,
+ * part of System B which the frontend never reads (CONSISTENCY_AUDIT Phase 1 Q2).
+ * The reorderBlocks service and column remain parked.
  */
 import React from 'react'
-import { DraggableList, type DragHandleProps } from '@/components/shared/DraggableList'
 import type { ModuleBlock } from '@/types/entity'
 import { BlockCard } from './BlockCard'
 
 interface BlockListProps {
   blocks: ModuleBlock[]
-  onReorder: (orderedIds: string[]) => void
   expandedId: string | null
   onExpand: (id: string) => void
   onCollapse: () => void
@@ -20,16 +20,13 @@ interface BlockListProps {
 }
 
 export function BlockList({
-  blocks, onReorder, expandedId, onExpand, onCollapse,
+  blocks, expandedId, onExpand, onCollapse,
   onDelete, onDuplicate, onToggleVisibility, onUpdate,
 }: BlockListProps) {
   if (blocks.length === 0) return null
   return (
-    <DraggableList
-      items={blocks}
-      onReorder={onReorder}
-      showDefaultHandle={false}
-      renderItem={(block, { dragHandleProps, isDragging }) => (
+    <div className="space-y-2">
+      {blocks.map((block) => (
         <BlockCard
           key={block.id}
           block={block}
@@ -40,10 +37,8 @@ export function BlockList({
           onDuplicate={() => onDuplicate(block.id)}
           onToggleVisibility={(v) => onToggleVisibility(block.id, v)}
           onUpdate={(content) => onUpdate(block.id, content)}
-          dragHandleProps={dragHandleProps}
-          isDragging={isDragging}
         />
-      )}
-    />
+      ))}
+    </div>
   )
 }

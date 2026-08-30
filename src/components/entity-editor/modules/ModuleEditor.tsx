@@ -29,7 +29,7 @@ export function ModuleEditor({ moduleId, onRequestClose, onPublish }: ModuleEdit
   const userId = 'current-user'
   const {
     blocks, isLoading, createBlock, updateBlock, deleteBlock,
-    duplicateBlock, reorderBlocks, toggleBlockVisibility,
+    duplicateBlock, toggleBlockVisibility,
     expandedId, setExpandedId, pendingDeleteId, confirmDelete, cancelDelete,
   } = useModuleEditor(moduleId)
 
@@ -121,7 +121,6 @@ export function ModuleEditor({ moduleId, onRequestClose, onPublish }: ModuleEdit
         ) : (
           <BlockList
             blocks={blocks}
-            onReorder={reorderBlocks}
             expandedId={expandedId}
             onExpand={setExpandedId}
             onCollapse={() => setExpandedId(null)}

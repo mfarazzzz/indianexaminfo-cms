@@ -21,8 +21,10 @@ interface BlockCardProps {
   onDuplicate: () => void
   onToggleVisibility: (isVisible: boolean) => void
   onUpdate: (content: Record<string, unknown>) => Promise<ModuleBlock>
-  dragHandleProps: DragHandleProps
-  isDragging: boolean
+  // Drag removed (dead reorder — see CONSISTENCY_AUDIT Phase 1 Q2). Optional so
+  // the card renders without a handle; block reorder service/table stay parked.
+  dragHandleProps?: DragHandleProps
+  isDragging?: boolean
 }
 
 export function BlockCard({
@@ -88,6 +90,7 @@ export function BlockCard({
     <div className={cn('rounded-lg border border-slate-200 bg-white', isDragging && 'opacity-60 shadow-lg')}>
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2.5">
+        {dragHandleProps && (
         <button type="button" aria-label="Drag to reorder block"
           className="cursor-grab text-slate-300 hover:text-slate-500 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
           {...dragHandleProps.attributes} {...dragHandleProps.listeners}>
@@ -97,6 +100,7 @@ export function BlockCard({
             <circle cx="5" cy="12" r="1.2"/><circle cx="11" cy="12" r="1.2"/>
           </svg>
         </button>
+        )}
         <span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-600 shrink-0">{block.blockType}</span>
         <p className="flex-1 min-w-0 text-sm text-slate-600 truncate">{summary}</p>
         {/* Autosave indicators */}
