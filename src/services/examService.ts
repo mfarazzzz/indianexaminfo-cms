@@ -5,7 +5,7 @@
  */
 import { db } from "@/lib/supabase/client";
 import { revalidateExams } from "@/lib/revalidate";
-import { normalizeUrl } from "@/lib/utils";
+import { normalizeUrlOrThrow } from "@/lib/utils";
 import type { ExamEntity, ExamStatus, Pillar } from "@/types/exam";
 
 // ── Row mapper: Supabase snake_case → camelCase ────────────────────────────
@@ -140,7 +140,7 @@ export async function createExam(input: ExamCreateInput): Promise<ExamEntity> {
       subcategory_id: input.subcategoryId || null,
       entity_type: input.entityType,
       conducting_body: input.conductingBody,
-      official_website: normalizeUrl(input.officialWebsite) || null,
+      official_website: normalizeUrlOrThrow(input.officialWebsite) || null,
       status: input.status ?? "upcoming",
       is_featured: input.isFeatured ?? false,
       created_by: input.createdBy || null,
@@ -254,8 +254,9 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
       let value = (input as any)[key];
       // Convert empty strings to null for UUID FK columns
       if (UUID_FIELDS.has(col) && value === "") value = null;
-      // Normalise the website to a valid absolute URL (Finding #3)
-      if (col === "official_website") value = normalizeUrl(value) || null;
+      // Normalise the website to a valid absolute URL; throw (not silently
+      // blank) if a non-empty value can't be reduced to one URL (Finding #3).
+      if (col === "official_website") value = normalizeUrlOrThrow(value) || null;
       updates[col] = value;
     }
   }

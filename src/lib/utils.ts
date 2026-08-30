@@ -110,6 +110,24 @@ export function normalizeUrl(raw: string | null | undefined): string {
   }
 }
 
+/**
+ * Normalise a website for STORAGE, throwing if a non-empty value can't be
+ * reduced to a single valid URL — so no writer (AI auto-save, bulk import,
+ * pillarService, future callers) can silently blank the field. Empty in →
+ * empty out (no throw). The interactive editor catches this earlier with a
+ * friendly toast; this throw is the floor for every non-interactive path.
+ */
+export function normalizeUrlOrThrow(raw: string | null | undefined): string {
+  if (raw === null || raw === undefined) return "";
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const normalised = normalizeUrl(trimmed);
+  if (!normalised) {
+    throw new Error("Official Website must be a single valid URL (remove extra URLs or whitespace).");
+  }
+  return normalised;
+}
+
 /** Validate file type against allowed MIME types */
 export const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"] as const;
 export const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB

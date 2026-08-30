@@ -10,7 +10,7 @@
  */
 import { db } from "@/lib/supabase/client";
 import { revalidateExams } from "@/lib/revalidate";
-import { normalizeUrl } from "@/lib/utils";
+import { normalizeUrlOrThrow } from "@/lib/utils";
 import type { Pillar } from "@/types/exam";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -340,7 +340,7 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
       subcategory_id: input.subcategoryId || null,
       entity_type: "exam",
       conducting_body: input.conductingBody,
-      official_website: normalizeUrl(input.officialWebsite),
+      official_website: normalizeUrlOrThrow(input.officialWebsite),
       cycle_frequency: input.cycleFrequency ?? "annual",
       status: "upcoming",
       is_featured: false,
@@ -414,7 +414,7 @@ export async function updateExamIdentity(
   if (input.categoryId !== undefined) updates.category_id = input.categoryId;
   if (input.subcategoryId !== undefined) updates.subcategory_id = input.subcategoryId;
   if (input.conductingBody !== undefined) updates.conducting_body = input.conductingBody;
-  if (input.officialWebsite !== undefined) updates.official_website = normalizeUrl(input.officialWebsite);
+  if (input.officialWebsite !== undefined) updates.official_website = normalizeUrlOrThrow(input.officialWebsite);
   if (input.cycleFrequency !== undefined) updates.cycle_frequency = input.cycleFrequency;
   if (input.selectionProcess !== undefined) updates.selection_process = input.selectionProcess;
   if (input.syllabusHighlights !== undefined) updates.syllabus_highlights = input.syllabusHighlights;
