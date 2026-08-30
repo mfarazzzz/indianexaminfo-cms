@@ -54,6 +54,7 @@ function mapIdentity(row: any): ExamIdentity {
     seoDescription: row.seo_description ?? null,
     isFeatured: row.is_featured ?? false,
     isPublished: row.is_published ?? false,
+    isVerified: row.is_verified ?? false,
     faqs: row.faqs ?? [],
     currentEditionId: row.current_edition_id ?? null,
     createdAt: row.created_at,

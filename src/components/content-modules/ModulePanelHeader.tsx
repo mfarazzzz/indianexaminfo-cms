@@ -14,14 +14,24 @@ interface Props {
   onAddCustomModule?: () => void;
   onEnableAll?: () => void;
   onDisableAll?: () => void;
+  /** When false, this exam's facts are AI-seeded / not human-checked. Warn the editor. */
+  isVerified?: boolean;
 }
 
-export function ModulePanelHeader({ aggregateStatus, lastSavedAt, staleCount, allCollapsed, onToggleCollapse, onEnableAll, onDisableAll }: Props) {
+export function ModulePanelHeader({ aggregateStatus, lastSavedAt, staleCount, allCollapsed, onToggleCollapse, onEnableAll, onDisableAll, isVerified }: Props) {
   return (
     <div className="flex items-center justify-between mb-4">
       <div className="flex items-center gap-3">
         <h3 className="text-sm font-semibold text-slate-700">Content Modules</h3>
         <StatusIndicator status={aggregateStatus} lastSavedAt={lastSavedAt} />
+        {isVerified === false && (
+          <span
+            className="text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium"
+            title="This exam's content has not been human-verified. Facts (dates, eligibility, fee) may be AI-seeded and wrong. Verify against the official notification before relying on it."
+          >
+            Unverified
+          </span>
+        )}
         {(staleCount ?? 0) > 0 && (
           <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
             {staleCount} stale

@@ -87,6 +87,7 @@ export interface ExamIdentity {
   seoDescription: string | null;
   isFeatured: boolean;
   isPublished: boolean;
+  isVerified: boolean;
   faqs: { question: string; answer: string }[];
   currentEditionId: string | null;
   createdAt: string;
@@ -199,6 +200,7 @@ function mapExamIdentityRow(row: Record<string, unknown>): ExamIdentity {
     seoDescription: (row.seo_description as string) ?? null,
     isFeatured: (row.is_featured as boolean) ?? false,
     isPublished: (row.is_published as boolean) ?? false,
+    isVerified: (row.is_verified as boolean) ?? false,
     faqs: (row.faqs as { question: string; answer: string }[]) ?? [],
     currentEditionId: (row.current_edition_id as string) ?? null,
     createdAt: row.created_at as string,

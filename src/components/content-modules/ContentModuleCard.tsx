@@ -25,11 +25,19 @@ interface Props {
   aiLoading?: boolean;
   /** Controlled collapse state from parent (Collapse All / Expand All) */
   forceCollapsed?: boolean;
+  /**
+   * Whether this section has renderable content by the shared frontend rule
+   * (sectionRegistry.hasData). When false, the section is HIDDEN on the live
+   * site regardless of the enable toggle — presence of data is the only switch.
+   * Undefined = not evaluated (e.g. slug has no registry mapping); no badge.
+   */
+  hasLiveContent?: boolean;
 }
 
 export function ContentModuleCard({
   module, enabled, editionId, content, mode, isStale, autoContent,
   onToggle, onModeChange, onAIFill, onSync, onStatusChange, aiLoading, forceCollapsed,
+  hasLiveContent,
 }: Props) {
   const [expanded, setExpanded] = useState(enabled);
 
@@ -74,6 +82,15 @@ export function ContentModuleCard({
         <button type="button" onClick={() => enabled && setExpanded(!expanded)}
           className="flex items-center gap-2 flex-1 text-left min-w-0" disabled={!enabled}>
           <span className={`text-sm font-medium truncate ${enabled ? "text-slate-700" : "text-slate-400"}`}>{module.name}</span>
+          {/* Live-visibility badge: the ONE rule that governs the public site.
+              Hidden = this section has no content and will NOT appear on the live
+              page (no tab, no sitemap entry, sub-page 404s) until it is filled. */}
+          {hasLiveContent === true && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 font-medium shrink-0" title="This section has content and is visible on the live site">Live</span>
+          )}
+          {hasLiveContent === false && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium shrink-0" title="Hidden on the live site — this section has no content yet. Fill it to make the tab, page and sitemap entry appear.">Hidden — no content yet</span>
+          )}
           {isStale && enabled && mode !== "manual" && (
             <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title="Content may be stale" />
           )}

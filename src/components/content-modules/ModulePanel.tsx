@@ -16,8 +16,43 @@ import { aiGenerateForModule } from "@/lib/modules/moduleAI";
 import type { ModuleDefinition, ModuleConfig, ContentModulesData, ModuleContentData, SaveStatus } from "@/types/modules";
 import type { ExamIdentity, ExamEdition } from "@/services/entranceExamService";
 import { getErrorMessage } from "@/lib/utils";
+import { hasData, SECTION_BY_SLUG, type HasDataView } from "@/lib/sectionRegistry";
 import { useSettings } from "@/hooks/useSettings";
 import { useAuth } from "@/hooks/useAuth";
+
+/**
+ * Map a CMS module-registry slug to the frontend section slug that governs its
+ * live visibility. Most match 1:1; a few module slugs differ from section slugs.
+ */
+const MODULE_SLUG_TO_SECTION: Record<string, string> = {
+  "application-process": "how-to-apply",
+  "vacancy-details": "vacancy",
+};
+
+/** Build the minimal view sectionRegistry.hasData needs from exam + edition. */
+function buildHasDataView(
+  exam: ExamIdentity | null | undefined,
+  edition: ExamEdition | null | undefined,
+  contentModules: ContentModulesData,
+): HasDataView | null {
+  if (!exam) return null;
+  const elig = (edition?.eligibility ?? {}) as Record<string, unknown>;
+  return {
+    pillar: exam.pillar,
+    dates: edition?.importantDates ?? [],
+    eligibility: {
+      qualification: (elig.qualification as string) ?? "",
+      age: (elig.age as string) ?? "",
+      nationality: (elig.nationality as string) ?? "",
+    },
+    vacancy: edition?.vacancy ?? null,
+    applicationFee: (edition?.applicationFee ?? {}) as Record<string, number | undefined>,
+    selectionProcess: exam.selectionProcess ?? [],
+    syllabusHighlights: exam.syllabusHighlights ?? [],
+    faqs: exam.faqs ?? edition?.faqs ?? [],
+    contentModules: contentModules as Record<string, unknown>,
+  };
+}
 
 interface Props {
   editionId: string | null;
@@ -43,6 +78,11 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags }: Props) {
   };
 
   const staleCount = countStaleModules(bindingConfig, exam ?? null, edition ?? null);
+
+  // Snapshot used for the "Live / Hidden — no content yet" badge on each module.
+  // Same predicate the public site uses (sectionRegistry.hasData), so the badge
+  // reflects exactly what a visitor will and won't see.
+  const liveView = buildHasDataView(exam, edition, contentModules);
 
   const aggregateStatus: SaveStatus = Object.values(statuses).includes("saving")
     ? "saving" : Object.values(statuses).includes("error")
@@ -165,6 +205,7 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags }: Props) {
         aggregateStatus={aggregateStatus}
         lastSavedAt={null}
         staleCount={staleCount}
+        isVerified={exam?.isVerified}
         allCollapsed={allCollapsed}
         onToggleCollapse={() => setAllCollapsed(!allCollapsed)}
         onEnableAll={async () => {
@@ -190,6 +231,12 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags }: Props) {
         {orderedModules.map((mod) => {
           const mode = getModuleMode(bindingConfig, mod.slug);
           const resolved = resolveModuleContent(mod.slug, mode, exam ?? null, edition ?? null, contentModules);
+          // Live-visibility: does this section have content by the SAME rule the
+          // public site uses? Only evaluated for slugs the registry knows about.
+          const sectionSlug = MODULE_SLUG_TO_SECTION[mod.slug] ?? mod.slug;
+          const hasLiveContent = liveView && SECTION_BY_SLUG[sectionSlug]
+            ? hasData(liveView, sectionSlug)
+            : undefined;
           return (
             <ContentModuleCard
               key={mod.slug}
@@ -207,6 +254,7 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags }: Props) {
               onStatusChange={handleStatusChange}
               aiLoading={aiLoadingSlug === mod.slug}
               forceCollapsed={allCollapsed}
+              hasLiveContent={hasLiveContent}
             />
           );
         })}
