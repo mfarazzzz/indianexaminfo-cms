@@ -11,6 +11,7 @@
  */
 import { db } from "@/lib/supabase/client";
 import { revalidateExams } from "@/lib/revalidate";
+import { normalizeUrl } from "@/lib/utils";
 import type { Pillar } from "@/types/exam";
 import type { ExamIdentity, ExamEdition, EntranceExamListItem, EditionStatus, CycleFrequency, CycleSession } from "@/services/entranceExamService";
 
@@ -153,7 +154,7 @@ export function createPillarService(pillar: Pillar) {
         slug, name: input.name, short_name: input.shortName,
         pillar: pillar, category_id: input.categoryId || null,
         entity_type: "exam", conducting_body: input.conductingBody,
-        official_website: input.officialWebsite ?? "", cycle_frequency: input.cycleFrequency ?? "annual",
+        official_website: normalizeUrl(input.officialWebsite), cycle_frequency: input.cycleFrequency ?? "annual",
         status: "upcoming", is_featured: false, is_published: true,
       }).select(DETAIL_SELECT).single();
       if (examErr) throw examErr;
@@ -175,7 +176,7 @@ export function createPillarService(pillar: Pillar) {
       if (input.slug !== undefined) updates.slug = input.slug;
       if (input.categoryId !== undefined) updates.category_id = input.categoryId || null;
       if (input.conductingBody !== undefined) updates.conducting_body = input.conductingBody;
-      if (input.officialWebsite !== undefined) updates.official_website = input.officialWebsite;
+      if (input.officialWebsite !== undefined) updates.official_website = normalizeUrl(input.officialWebsite);
       if (input.cycleFrequency !== undefined) updates.cycle_frequency = input.cycleFrequency;
       if (input.isFeatured !== undefined) updates.is_featured = input.isFeatured;
       if (input.seoTitle !== undefined) updates.seo_title = input.seoTitle;

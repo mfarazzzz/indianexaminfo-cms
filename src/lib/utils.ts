@@ -88,6 +88,28 @@ export function isSafeUrl(url: string): boolean {
   return true;
 }
 
+/**
+ * Normalise a website value into a valid absolute URL.
+ * Prepends "https://" when no protocol is present; returns "" if the result
+ * doesn't parse. Multi-URL values (e.g. "https://a, https://b") fail new URL()
+ * and return "" by design — fixed by hand, not parsed here.
+ *
+ * ⚠️ MUST STAY IDENTICAL to indianexaminfo-frontend/lib/utils.ts `normalizeUrl`.
+ * The two repos don't share a package; keep both copies in sync. The DB CHECK
+ * constraint on exams.official_website is the backstop if they ever drift.
+ */
+export function normalizeUrl(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    return new URL(withProto).toString();
+  } catch {
+    return "";
+  }
+}
+
 /** Validate file type against allowed MIME types */
 export const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"] as const;
 export const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
