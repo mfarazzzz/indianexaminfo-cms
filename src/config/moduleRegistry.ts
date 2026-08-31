@@ -18,6 +18,29 @@
 import type { ContentType } from "@/types/exam";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SELECTION MODEL — Axis 2 (how a candidate is selected)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// THE canonical SelectionModel type. Mirrors the Postgres enum `selection_model`
+// exactly. Import this everywhere — do NOT redefine as a separate string union.
+// Entity type (Axis 1) says WHAT the entity is; selection model (Axis 2) says
+// how a candidate progresses, which determines the lifecycle and therefore
+// which modules are structurally applicable.
+
+export type SelectionModel =
+  | "written-exam"
+  | "merit-based"
+  | "interview-based"
+  | "internal-admission";
+
+export const ALL_SELECTION_MODELS: SelectionModel[] = [
+  "written-exam",
+  "merit-based",
+  "interview-based",
+  "internal-admission",
+];
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FIELD TYPES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -68,8 +91,15 @@ export interface ModuleDefinition {
   icon: string;
   /** Short description for editors */
   description: string;
-  /** Which entity types this module applies to */
+  /** Axis 1 — which entity types this module applies to */
   applicableTo: string[];  // ["recruitment", "exam", "board", "university"] or ["*"] for all
+  /**
+   * Axis 2 — which selection models this module applies to.
+   * OMITTED = applies to ALL selection models (backward compatible).
+   * Only set this on modules whose relevance genuinely depends on how the
+   * candidate is selected (e.g. Admit Card exists only for written-exam).
+   */
+  appliesToSelection?: SelectionModel[];
   /** Module capabilities */
   capabilities: {
     supportsAttachments: boolean;
@@ -337,6 +367,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     icon: "🪪",
     description: "Hall ticket release, download, and exam day instructions",
     applicableTo: ["*"],
+    appliesToSelection: ["written-exam"], // hall ticket exists only for a sit-down exam
     category: "lifecycle",
     displayOrder: 3,
     capabilities: {
@@ -363,6 +394,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     icon: "🔑",
     description: "Provisional / final answer key and objection window",
     applicableTo: ["recruitment", "exam"],
+    appliesToSelection: ["written-exam"], // presupposes a question paper
     category: "lifecycle",
     displayOrder: 4,
     capabilities: {
@@ -416,6 +448,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     icon: "📊",
     description: "Category-wise cutoff marks and trends",
     applicableTo: ["recruitment", "exam"],
+    appliesToSelection: ["written-exam", "merit-based"], // exam cutoff AND merit qualifying cutoff
     category: "lifecycle",
     displayOrder: 6,
     capabilities: {
@@ -439,6 +472,8 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     icon: "🤝",
     description: "Counselling rounds, seat allotment, and choice filling",
     applicableTo: ["exam", "university"],
+    // Re-scoped: used by exam/university admission lifecycles; selection-agnostic
+    // (unconstrained) so it serves internal-admission universities too.
     category: "lifecycle",
     displayOrder: 7,
     capabilities: {
@@ -465,6 +500,9 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     icon: "📋",
     description: "Merit list publication and verification",
     applicableTo: ["recruitment", "university"],
+    // Re-scoped: the non-exam outcome document. Exam-based recruitment uses
+    // Result instead, so exclude written-exam to avoid a duplicate outcome.
+    appliesToSelection: ["merit-based", "interview-based", "internal-admission"],
     category: "lifecycle",
     displayOrder: 8,
     capabilities: {
@@ -483,6 +521,102 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     ],
   },
 
+  // ─── NEW: non-exam selection lifecycle modules ─────────────────────────────
+
+  {
+    id: "document-verification",
+    label: "Document Verification",
+    icon: "📑",
+    description: "Document verification schedule, venue, and required documents — the selection gate for merit/interview processes",
+    applicableTo: ["recruitment"],
+    appliesToSelection: ["merit-based", "interview-based"],
+    category: "lifecycle",
+    displayOrder: 9,
+    capabilities: {
+      supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
+      supportsFAQs: true, supportsSEO: true, supportsAI: false,
+      supportsVersionHistory: true, supportsPreview: true, isRepeatable: false,
+    },
+    fields: [
+      { key: "startDate", label: "DV Start Date", type: "date", priority: "essential", required: true },
+      { key: "endDate", label: "DV End Date", type: "date", priority: "essential" },
+      { key: "venue", label: "Venue / Reporting Centre", type: "textarea", priority: "essential", placeholder: "Where candidates report for verification" },
+      { key: "callLetterUrl", label: "DV Call Letter URL", type: "url", priority: "essential", placeholder: "https://…/dv-call-letter" },
+      { key: "documentsRequired", label: "Documents to Bring", type: "repeatable", priority: "essential",
+        columns: [{ key: "document", label: "Document", type: "text", placeholder: "e.g. Original 10th marksheet" }, { key: "notes", label: "Notes", type: "text", placeholder: "e.g. + 2 photocopies" }] },
+      { key: "instructions", label: "Instructions", type: "textarea", priority: "advanced", placeholder: "What to expect, dress code, timings" },
+    ],
+  },
+
+  {
+    id: "interview-schedule",
+    label: "Interview Schedule",
+    icon: "🗣️",
+    description: "Interview / personality-test dates, venue, and panel details",
+    applicableTo: ["recruitment", "exam", "university"],
+    appliesToSelection: ["interview-based"],
+    category: "lifecycle",
+    displayOrder: 9.5,
+    capabilities: {
+      supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
+      supportsFAQs: true, supportsSEO: true, supportsAI: false,
+      supportsVersionHistory: true, supportsPreview: true, isRepeatable: true,
+    },
+    fields: [
+      { key: "callLetterDate", label: "Call Letter Release Date", type: "date", priority: "essential" },
+      { key: "callLetterUrl", label: "Interview Call Letter URL", type: "url", priority: "essential", placeholder: "https://…/interview-call-letter" },
+      { key: "rounds", label: "Interview Rounds", type: "repeatable", priority: "essential",
+        columns: [{ key: "round", label: "Round", type: "text", placeholder: "e.g. Technical / HR / GD" }, { key: "date", label: "Date", type: "date" }, { key: "venue", label: "Venue", type: "text", placeholder: "City / online" }] },
+      { key: "marksWeightage", label: "Interview Weightage", type: "text", priority: "advanced", placeholder: "e.g. 100 marks / 25% of total" },
+      { key: "instructions", label: "Instructions", type: "textarea", priority: "advanced", placeholder: "Documents to carry, reporting time" },
+    ],
+  },
+
+  {
+    id: "final-selection",
+    label: "Final Selection",
+    icon: "✅",
+    description: "Final selected list / appointment where there is no exam scorecard",
+    applicableTo: ["recruitment"],
+    appliesToSelection: ["merit-based", "interview-based"],
+    category: "lifecycle",
+    displayOrder: 9.7,
+    capabilities: {
+      supportsAttachments: true, supportsTimeline: false, supportsDownloads: true,
+      supportsFAQs: false, supportsSEO: true, supportsAI: false,
+      supportsVersionHistory: true, supportsPreview: true, isRepeatable: true,
+    },
+    fields: [
+      { key: "releaseDate", label: "Final List Date", type: "date", priority: "essential", required: true },
+      { key: "finalListUrl", label: "Final Selection List URL / PDF", type: "url", priority: "essential", required: true, placeholder: "https://…/final-selection.pdf" },
+      { key: "totalSelected", label: "Total Selected", type: "number", priority: "essential", placeholder: "e.g. 1200" },
+      { key: "joiningDetails", label: "Joining / Appointment Details", type: "textarea", priority: "advanced", placeholder: "Reporting date, posting, next steps" },
+    ],
+  },
+
+  {
+    id: "seat-allotment",
+    label: "Seat Allotment",
+    icon: "🎟️",
+    description: "Round-wise seat allotment and acceptance — the admission analogue of a result",
+    applicableTo: ["university"],
+    appliesToSelection: ["internal-admission"],
+    category: "lifecycle",
+    displayOrder: 9.9,
+    capabilities: {
+      supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
+      supportsFAQs: true, supportsSEO: true, supportsAI: false,
+      supportsVersionHistory: true, supportsPreview: true, isRepeatable: true,
+    },
+    fields: [
+      { key: "rounds", label: "Allotment Rounds", type: "repeatable", priority: "essential",
+        columns: [{ key: "round", label: "Round", type: "text", placeholder: "e.g. Round 1" }, { key: "allotmentDate", label: "Allotment Date", type: "date" }, { key: "reportingLastDate", label: "Reporting Last Date", type: "date" }] },
+      { key: "allotmentResultUrl", label: "Allotment Result URL", type: "url", priority: "essential", placeholder: "https://…/seat-allotment" },
+      { key: "seatMatrixUrl", label: "Seat Matrix URL", type: "url", priority: "advanced", placeholder: "https://…/seat-matrix" },
+      { key: "acceptanceProcess", label: "Acceptance / Reporting Process", type: "textarea", priority: "essential", placeholder: "How to accept a seat, freeze/float, fee payment" },
+    ],
+  },
+
   // ─── ACADEMIC MODULES ──────────────────────────────────────────────────────
 
   {
@@ -491,6 +625,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     icon: "📐",
     description: "Exam structure, papers, marking scheme",
     applicableTo: ["recruitment", "exam"],
+    appliesToSelection: ["written-exam"], // structure of a paper — only where a paper exists
     category: "academic",
     displayOrder: 10,
     capabilities: {
@@ -615,6 +750,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     icon: "📄",
     description: "Year-wise previous question papers and solutions",
     applicableTo: ["recruitment", "exam", "board"],
+    appliesToSelection: ["written-exam"], // past question papers presuppose a paper
     category: "resource",
     displayOrder: 20,
     capabilities: {
@@ -638,6 +774,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     icon: "🧪",
     description: "Free and paid mock test series",
     applicableTo: ["recruitment", "exam"],
+    appliesToSelection: ["written-exam"], // practice tests presuppose a test
     category: "resource",
     displayOrder: 21,
     capabilities: {
@@ -784,22 +921,59 @@ export function getModule(id: string): ModuleDefinition | undefined {
   return MODULE_REGISTRY.find((m) => m.id === id);
 }
 
-/** Get all modules applicable to an entity type */
-export function getModulesForEntityType(entityType: string): ModuleDefinition[] {
+/**
+ * Get all modules structurally applicable to an entity type and (optionally)
+ * a selection model. This is THE single authority for applicability.
+ *
+ * Two axes, both must pass:
+ *   Axis 1 (entityType):     module.applicableTo includes "*" or the entityType
+ *   Axis 2 (selectionModel): module.appliesToSelection is omitted (→ all models)
+ *                            or includes the given selectionModel
+ *
+ * BACKWARD COMPATIBLE: when `selectionModel` is omitted, Axis 2 is not applied
+ * at all, so the result is identical to the pre-selection-model behaviour.
+ */
+export function getModulesForEntityType(
+  entityType: string,
+  selectionModel?: SelectionModel,
+): ModuleDefinition[] {
   return MODULE_REGISTRY
     .filter((m) => m.applicableTo.includes("*") || m.applicableTo.includes(entityType))
+    .filter((m) =>
+      !selectionModel                    // omitted arg → no selection filtering
+      || !m.appliesToSelection           // omitted field → applies to all models
+      || m.appliesToSelection.includes(selectionModel)
+    )
     .sort((a, b) => a.displayOrder - b.displayOrder);
 }
 
-/** Get modules grouped by category for an entity type */
-export function getModulesGrouped(entityType: string): Record<string, ModuleDefinition[]> {
-  const modules = getModulesForEntityType(entityType);
+/** Get modules grouped by category for an entity type (+ optional selection model). */
+export function getModulesGrouped(
+  entityType: string,
+  selectionModel?: SelectionModel,
+): Record<string, ModuleDefinition[]> {
+  const modules = getModulesForEntityType(entityType, selectionModel);
   const grouped: Record<string, ModuleDefinition[]> = {};
   for (const m of modules) {
     if (!grouped[m.category]) grouped[m.category] = [];
     grouped[m.category].push(m);
   }
   return grouped;
+}
+
+/**
+ * STRUCTURAL applicability check — "can this module exist for this record?"
+ * This is separate from hasData ("is it filled in?"). Never use hasData as a
+ * proxy for applicability: a non-applicable module must not exist at all (no
+ * CMS tab, no frontend section/route/sitemap entry), whereas an applicable-but-
+ * empty module is a legitimate add-content state.
+ */
+export function isModuleApplicable(
+  moduleId: string,
+  entityType: string,
+  selectionModel?: SelectionModel,
+): boolean {
+  return getModulesForEntityType(entityType, selectionModel).some((m) => m.id === moduleId);
 }
 
 /** Get the entity type profile */

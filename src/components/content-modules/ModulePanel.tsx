@@ -26,7 +26,8 @@ import { useAuth } from "@/hooks/useAuth";
  * live visibility. Most match 1:1; a few module slugs differ from section slugs.
  */
 const MODULE_SLUG_TO_SECTION: Record<string, string> = {
-  "application-process": "how-to-apply",
+  // application-process is now a registry section slug in its own right (was
+  // renamed from how-to-apply); only vacancy-details still differs.
   "vacancy-details": "vacancy",
 };
 
