@@ -175,6 +175,22 @@ function moduleObj(exam: HasDataView, slug: string): Record<string, unknown> | n
 function editorialHasData(exam: HasDataView, slug: string): boolean {
   const d = moduleObj(exam, slug);
   if (!d) return false;
+  // Respect the CMS enabledModules toggle. If _config exists with an explicit
+  // enabledModules array and this slug is absent, the editor intentionally turned
+  // this section off — treat as no data regardless of content presence.
+  // Only applied when _config is present with a non-empty enabledModules list
+  // (empty list = freshly created record, no modules enabled yet — that's a
+  // different state from "editor disabled this one specifically").
+  const config = exam.contentModules?._config as
+    | { enabledModules?: string[] }
+    | undefined;
+  if (
+    config?.enabledModules !== undefined &&
+    config.enabledModules.length > 0 &&
+    !config.enabledModules.includes(slug)
+  ) {
+    return false;
+  }
   switch (slug) {
     case "overview":
     case "application-process":
@@ -273,7 +289,9 @@ const CONTENT_TYPE_TO_SECTION: Record<string, string> = {
   "answer-key": "answer-key",
   syllabus: "syllabus",
   cutoff: "cut-off",
-  "date-sheet": "admit-card", // date-sheet has no dedicated section; treat as editorial admit-card-class (rare; board only)
+  // "date-sheet" intentionally absent: board/university concept only.
+  // Must NOT fall through to "admit-card" — that caused recruitment exams with
+  // admit-card content to show a Date Sheet tab.
   "previous-papers": "previous-papers",
   "study-material": "study-material",
   faqs: "faqs",

@@ -162,17 +162,20 @@ function isEmptyDateRow(row: ExamDateEntry): boolean {
 /**
  * Prepare `dates` for persistence.
  *
- * 1. Drops rows with no date. Seeded-but-unfilled standard rows must never reach
- *    `exams.important_dates`, because the public frontend renders every row it finds
- *    (`ImportantDatesTable`, `HomeSidebar`, and the per-content-type timeline tables
- *    all map over the array) and would show blank timeline entries.
- * 2. Fills a missing label from the standard type, so a typed row can never publish
- *    with an empty event name — the frontend displays `d.label` directly.
+ * 1. Drops rows with no date.
+ * 2. Fills a missing label from the standard type.
+ * 3. Deduplication / uniqueness rules (discussed in CMS_REDESIGN.md §2):
+ *    - Byte-identical rows (same label AND same date) are collapsed to one.
+ *      These are always accidental — no exam has an event at the exact same
+ *      millisecond with the exact same name.
+ *    - Rows with the same label but different dates are ALLOWED. This covers the
+ *      multi-shift case (e.g. two "Exam Date" rows for different test windows).
+ *      The frontend keys by label+index so React handles them safely.
  */
 export function prepareDatesForSave(
   dates: ExamDateEntry[] | undefined
 ): Array<ExamDateEntry & { isUrgent: boolean }> {
-  return (dates ?? [])
+  const normalised = (dates ?? [])
     .filter(row => !isEmptyDateRow(row))
     .map(row => {
       const isStandard = !!row.type && row.type !== 'custom'
@@ -181,11 +184,20 @@ export function prepareDatesForSave(
         : isStandard
           ? EXAM_STANDARD_DATE_LABELS[row.type as ExamStandardDateType]
           : ''
-      // isUrgent is normalised so the persisted shape always matches what the
-      // frontend and the form schema expect.
       return { ...row, label, isUrgent: row.isUrgent ?? false }
     })
     .filter(row => row.label !== '')
+
+  // Remove byte-identical duplicates (same label + same date). Preserve order
+  // of first occurrence. Rows with same label but different dates are kept — they
+  // represent legitimate multi-shift / multi-window events.
+  const seen = new Set<string>()
+  return normalised.filter(row => {
+    const key = `${row.label.trim().toLowerCase()}|${row.date.trim()}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 /** Default label for a type, used when the editor switches a row's type. */

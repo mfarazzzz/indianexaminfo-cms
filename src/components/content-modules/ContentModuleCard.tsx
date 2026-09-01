@@ -101,12 +101,25 @@ export function ContentModuleCard({
           className="flex items-center gap-2 flex-1 text-left min-w-0 ml-1" disabled={!enabled}>
           <span className={`text-sm font-medium truncate ${enabled ? "text-slate-700" : "text-slate-400"}`}>{module.name}</span>
           {/* Three-state badge:
-              Off           = module is disabled — not rendered regardless of content.
-              Live          = enabled + has content — visible on site.
-              Hidden        = enabled + no content — not visible yet (fill it to publish). */}
-          {!enabled && (
+              Off (no content)  = disabled, nothing to show anyway.
+              Off (has content) = disabled, but content exists — turning it on
+                                  would immediately make it Live. Amber to signal
+                                  this is hiding something.
+              Live              = enabled + has content — visible on site.
+              Hidden            = enabled + no content — fill it to publish.
+              When hasLiveContent is undefined (no registry mapping), Off always
+              shows when disabled; no Live/Hidden badge when enabled. */}
+          {!enabled && hasLiveContent !== true && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 font-medium shrink-0"
-              title="Module is off — will not render on the site. Enable it to make it available.">Off</span>
+              title="Module is off — will not render on the site even if it has content. Enable it to make it available.">
+              Off
+            </span>
+          )}
+          {!enabled && hasLiveContent === true && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium shrink-0"
+              title="Module is off but has content — enable it to make this section visible on the site.">
+              Off — has content
+            </span>
           )}
           {enabled && hasLiveContent === true && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 font-medium shrink-0" title="This section has content and is visible on the live site">Live</span>
