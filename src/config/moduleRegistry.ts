@@ -16,29 +16,12 @@
  */
 
 import type { ContentType } from "@/types/exam";
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SELECTION MODEL — Axis 2 (how a candidate is selected)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//
-// THE canonical SelectionModel type. Mirrors the Postgres enum `selection_model`
-// exactly. Import this everywhere — do NOT redefine as a separate string union.
-// Entity type (Axis 1) says WHAT the entity is; selection model (Axis 2) says
-// how a candidate progresses, which determines the lifecycle and therefore
-// which modules are structurally applicable.
-
-export type SelectionModel =
-  | "written-exam"
-  | "merit-based"
-  | "interview-based"
-  | "internal-admission";
-
-export const ALL_SELECTION_MODELS: SelectionModel[] = [
-  "written-exam",
-  "merit-based",
-  "interview-based",
-  "internal-admission",
-];
+// SelectionModel lives in types/selection.ts — neutral file owned by neither side.
+// Re-exported here so existing `import { SelectionModel } from "@/config/moduleRegistry"`
+// call-sites continue to work without changes.
+export type { SelectionModel } from "@/types/selection";
+export { ALL_SELECTION_MODELS } from "@/types/selection";
+import type { SelectionModel } from "@/types/selection";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FIELD TYPES

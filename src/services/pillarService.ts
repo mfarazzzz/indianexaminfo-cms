@@ -12,6 +12,7 @@
 import { db } from "@/lib/supabase/client";
 import { revalidateExams } from "@/lib/revalidate";
 import { normalizeUrlOrThrow } from "@/lib/utils";
+import type { SelectionModel } from "@/types/selection";
 import type { Pillar } from "@/types/exam";
 import type { ExamIdentity, ExamEdition, EntranceExamListItem, EditionStatus, CycleFrequency, CycleSession } from "@/services/entranceExamService";
 
@@ -43,6 +44,7 @@ function mapIdentity(row: any): ExamIdentity {
     categoryId: row.category_id ?? null,
     subcategoryId: row.subcategory_id ?? null,
     entityType: row.entity_type ?? "exam",
+    selectionModel: (row.selection_model as SelectionModel) ?? "written-exam",
     conductingBody: row.conducting_body ?? "",
     officialWebsite: row.official_website ?? "",
     cycleFrequency: row.cycle_frequency ?? "annual",
@@ -145,7 +147,7 @@ export function createPillarService(pillar: Pillar) {
       return { exam, currentEdition, editions };
     },
 
-    async create(input: { name: string; shortName: string; slug?: string; categoryId?: string; conductingBody: string; officialWebsite?: string; cycleFrequency?: CycleFrequency; firstEditionYear: number }) {
+    async create(input: { name: string; shortName: string; slug?: string; categoryId?: string; conductingBody: string; officialWebsite?: string; cycleFrequency?: CycleFrequency; entityType?: string; selectionModel?: SelectionModel; firstEditionYear: number }) {
       const slug = input.slug || input.shortName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 60) || input.name.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 60);
 
       const { data: existing } = await db.from("exams").select("id").eq("slug", slug).maybeSingle();
@@ -154,7 +156,9 @@ export function createPillarService(pillar: Pillar) {
       const { data: examRow, error: examErr } = await db.from("exams").insert({
         slug, name: input.name, short_name: input.shortName,
         pillar: pillar, category_id: input.categoryId || null,
-        entity_type: "exam", conducting_body: input.conductingBody,
+        entity_type: input.entityType ?? "exam",
+        selection_model: input.selectionModel ?? "written-exam",
+        conducting_body: input.conductingBody,
         official_website: normalizeUrlOrThrow(input.officialWebsite), cycle_frequency: input.cycleFrequency ?? "annual",
         status: "upcoming", is_featured: false, is_published: true,
       }).select(DETAIL_SELECT).single();
@@ -184,6 +188,7 @@ export function createPillarService(pillar: Pillar) {
       if (input.seoDescription !== undefined) updates.seo_description = input.seoDescription;
       if (input.tags !== undefined) updates.tags = input.tags;
       if (input.faqs !== undefined) updates.faqs = input.faqs;
+      if (input.selectionModel !== undefined) updates.selection_model = input.selectionModel;
 
       const { data, error } = await db.from("exams").update(updates).eq("id", examId).select(DETAIL_SELECT).single();
       if (error) throw error;

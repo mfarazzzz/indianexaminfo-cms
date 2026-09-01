@@ -328,7 +328,15 @@ export async function importExamsFromExcel(
           pillar,
           conducting_body: conductingBody,
           official_website: officialWebsite,
-          entity_type: pillar === "sarkari-naukri" ? "recruitment" : "exam",
+          entity_type: (
+            (pillar === "sarkari-naukri" || pillar === "govt-vacancy" || pillar === "government-exam")
+              ? "recruitment"
+              : pillar === "board-exam" || pillar === "board-university"
+              ? "board"
+              : pillar === "university-exam"
+              ? "university"
+              : "exam"
+          ),
           status,
           is_featured: isFeatured,
           is_published: isPublished,

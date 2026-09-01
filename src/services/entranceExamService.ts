@@ -12,6 +12,7 @@ import { db } from "@/lib/supabase/client";
 import { revalidateExams } from "@/lib/revalidate";
 import { normalizeUrlOrThrow } from "@/lib/utils";
 import type { Pillar } from "@/types/exam";
+import type { SelectionModel } from "@/types/selection";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -76,6 +77,7 @@ export interface ExamIdentity {
   categoryId: string | null;
   subcategoryId: string | null;
   entityType: string;
+  selectionModel: SelectionModel;
   conductingBody: string;
   officialWebsite: string;
   cycleFrequency: CycleFrequency;
@@ -135,6 +137,10 @@ export interface NewExamInput {
   conductingBody: string;
   officialWebsite?: string;
   cycleFrequency?: CycleFrequency;
+  /** Entity type (Axis 1). Defaults to "exam" if omitted for backward compat. */
+  entityType?: string;
+  /** Selection model (Axis 2). Defaults to "written-exam" if omitted. */
+  selectionModel?: SelectionModel;
   firstEditionYear: number;
 }
 
@@ -189,6 +195,7 @@ function mapExamIdentityRow(row: Record<string, unknown>): ExamIdentity {
     categoryId: (row.category_id as string) ?? null,
     subcategoryId: (row.subcategory_id as string) ?? null,
     entityType: (row.entity_type as string) ?? "exam",
+    selectionModel: ((row.selection_model as SelectionModel) ?? "written-exam"),
     conductingBody: (row.conducting_body as string) ?? "",
     officialWebsite: (row.official_website as string) ?? "",
     cycleFrequency: (row.cycle_frequency as CycleFrequency) ?? "annual",
@@ -340,7 +347,8 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
       pillar: (input as any).pillar ?? "entrance-exam" as Pillar,
       category_id: input.categoryId || null,
       subcategory_id: input.subcategoryId || null,
-      entity_type: "exam",
+      entity_type: input.entityType ?? "exam",
+      selection_model: input.selectionModel ?? "written-exam",
       conducting_body: input.conductingBody,
       official_website: normalizeUrlOrThrow(input.officialWebsite),
       cycle_frequency: input.cycleFrequency ?? "annual",
@@ -397,6 +405,7 @@ export async function updateExamIdentity(
     seoDescription: string;
     isFeatured: boolean;
     faqs: { question: string; answer: string }[];
+    selectionModel: SelectionModel;
   }>
 ): Promise<ExamIdentity> {
   const updates: Record<string, unknown> = {};
@@ -426,6 +435,7 @@ export async function updateExamIdentity(
   if (input.seoDescription !== undefined) updates.seo_description = input.seoDescription;
   if (input.isFeatured !== undefined) updates.is_featured = input.isFeatured;
   if (input.faqs !== undefined) updates.faqs = input.faqs;
+  if (input.selectionModel !== undefined) updates.selection_model = input.selectionModel;
 
   const { data, error } = await db
     .from("exams")

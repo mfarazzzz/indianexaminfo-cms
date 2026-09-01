@@ -16,6 +16,8 @@ import { ImageUploader } from "@/components/shared/ImageUploader";
 import { DraggableList } from "@/components/shared/DraggableList";
 import { ModulePanel } from "@/components/content-modules/ModulePanel";
 import { getErrorMessage, normalizeUrl } from "@/lib/utils";
+import { ALL_SELECTION_MODELS, SELECTION_MODEL_LABELS, SELECTION_MODEL_HINTS, type SelectionModel } from "@/types/selection";
+import { getModulesForEntityType } from "@/config/moduleRegistry";
 import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
 import { aiFillIdentityTab, aiFillDatesTab, aiFillSEOTab, aiFillNewsTab, aiFillModulesTab } from "@/lib/gemini/tabAI";
 import { AIFillButton } from "@/components/shared/AIFillButton";
@@ -59,6 +61,8 @@ type FormData = {
   conductingBody: string;
   officialWebsite: string;
   cycleFrequency: CycleFrequency;
+  entityType: string;
+  selectionModel: SelectionModel;
   isFeatured: boolean;
   // Edition
   editionYear: number;
@@ -135,6 +139,14 @@ export function EntranceExamEditorPage() {
     defaultValues: {
       name: "", shortName: "", slug: "", categoryId: "", subcategoryId: "",
       conductingBody: "", officialWebsite: "", cycleFrequency: "annual",
+      // entityType defaults per pillar — user can override in the Identity tab
+      entityType: (
+        pillarFromUrl === "board-exam" ? "board" :
+        pillarFromUrl === "university-exam" ? "university" :
+        pillarFromUrl === "entrance-exam" ? "exam" :
+        "recruitment" // government-exam, govt-vacancy, sarkari-*
+      ),
+      selectionModel: "written-exam",
       isFeatured: false, editionYear: new Date().getFullYear(), editionSession: "main",
       editionStatus: "upcoming", notificationDate: "", vacancy: "",
       importantDates: [], hasNotification: false, hasApplication: false,
@@ -148,6 +160,8 @@ export function EntranceExamEditorPage() {
   const { fields: faqFields, append: appendFaq, remove: removeFaq, replace: replaceFaqs } = useFieldArray({ control: form.control, name: "faqs" });
 
   const watchFrequency = form.watch("cycleFrequency");
+  const watchedEntityType = form.watch("entityType");
+  const watchedSelectionModel = form.watch("selectionModel") as SelectionModel;
 
   useEffect(() => {
     getCategories(pillarFromUrl).then(setCategories).catch(() => {});
@@ -172,6 +186,8 @@ export function EntranceExamEditorPage() {
         conductingBody: data.exam.conductingBody,
         officialWebsite: data.exam.officialWebsite,
         cycleFrequency: data.exam.cycleFrequency,
+        entityType: data.exam.entityType ?? "exam",
+        selectionModel: (data.exam.selectionModel ?? "written-exam") as SelectionModel,
         isFeatured: data.exam.isFeatured,
         seoTitle: data.exam.seoTitle ?? "",
         seoDescription: data.exam.seoDescription ?? "",
@@ -227,6 +243,8 @@ export function EntranceExamEditorPage() {
           conductingBody: data.conductingBody,
           officialWebsite: data.officialWebsite,
           cycleFrequency: data.cycleFrequency,
+          entityType: data.entityType,
+          selectionModel: data.selectionModel,
           firstEditionYear: data.editionYear,
         });
         toast.success(`"${data.name}" created.`);
@@ -247,6 +265,7 @@ export function EntranceExamEditorPage() {
         officialWebsite: data.officialWebsite,
         cycleFrequency: data.cycleFrequency,
         isFeatured: data.isFeatured,
+        selectionModel: data.selectionModel,
         seoTitle: data.seoTitle || undefined,
         seoDescription: data.seoDescription || undefined,
         tags: data.tags ? data.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
@@ -768,9 +787,9 @@ export function EntranceExamEditorPage() {
           </div>
         )}
 
-        {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} isNew={isNew} />}
+        {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} watchedSelectionModel={watchedSelectionModel} isNew={isNew} />}
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency} />}
-        {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
+        {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} entityType={watchedEntityType} selectionModel={watchedSelectionModel} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
         {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("News saved."); await loadExam(); } }} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSaveModules={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("SEO settings saved."); await loadExam(); } }} />}
         {activeTab === "editions" && <HistoryTab editions={editions}
@@ -830,7 +849,7 @@ export function EntranceExamEditorPage() {
 
 // ── Tab Components ─────────────────────────────────────────────────────────
 
-function IdentityTab({ form, categories, watchFrequency, isNew }: { form: any; categories: Category[]; watchFrequency: CycleFrequency; isNew: boolean }) {
+function IdentityTab({ form, categories, watchFrequency, watchedSelectionModel, isNew }: { form: any; categories: Category[]; watchFrequency: CycleFrequency; watchedSelectionModel: SelectionModel; isNew: boolean }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <Field label="Exam Name *" name="name" form={form} placeholder="Common Admission Test (CAT)" />
@@ -850,6 +869,27 @@ function IdentityTab({ form, categories, watchFrequency, isNew }: { form: any; c
         <select {...form.register("cycleFrequency")} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
           {CYCLE_FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
+      </div>
+      {/* Entity Type — Axis 1: what this entity is */}
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Entity Type</label>
+        <select {...form.register("entityType")} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
+          <option value="recruitment">🏛️ Government Recruitment</option>
+          <option value="exam">📝 Entrance / Competitive Exam</option>
+          <option value="board">🏫 Board Exam</option>
+          <option value="university">🎓 University Admission</option>
+        </select>
+        <p className="text-xs text-slate-400 mt-0.5">What this entity is</p>
+      </div>
+      {/* Selection Model — Axis 2: how candidates are selected */}
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Selection Model</label>
+        <select {...form.register("selectionModel")} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
+          {ALL_SELECTION_MODELS.map((m) => (
+            <option key={m} value={m}>{SELECTION_MODEL_LABELS[m]}</option>
+          ))}
+        </select>
+        <p className="text-xs text-slate-400 mt-0.5">{SELECTION_MODEL_HINTS[watchedSelectionModel]}</p>
       </div>
       <div className="flex items-center gap-2 pt-5">
         <input type="checkbox" {...form.register("isFeatured")} id="isFeatured" className="rounded" />

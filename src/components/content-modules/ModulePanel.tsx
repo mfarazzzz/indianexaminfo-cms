@@ -15,6 +15,8 @@ import { resolveModuleContent, getModuleMode, setModuleMode, getDefaultBindingCo
 import { aiGenerateForModule } from "@/lib/modules/moduleAI";
 import type { ModuleDefinition, ModuleConfig, ContentModulesData, ModuleContentData, SaveStatus } from "@/types/modules";
 import type { ExamIdentity, ExamEdition } from "@/services/entranceExamService";
+import type { SelectionModel } from "@/types/selection";
+import { isModuleApplicable } from "@/config/moduleRegistry";
 import { getErrorMessage } from "@/lib/utils";
 import { hasData, SECTION_BY_SLUG, type HasDataView } from "@/lib/sectionRegistry";
 import { DraggableList } from "@/components/shared/DraggableList";
@@ -85,11 +87,15 @@ interface Props {
   exam?: ExamIdentity | null;
   edition?: ExamEdition | null;
   legacyFlags?: Record<string, boolean>;
+  /** Axis 1 — entity type for applicability filtering. Omit = no filtering. */
+  entityType?: string;
+  /** Axis 2 — selection model for applicability filtering. Omit = no filtering. */
+  selectionModel?: SelectionModel;
   /** Group A rows deep-link to the tab that edits them (e.g. "edition", "identity"). */
   onNavigateTab?: (tabId: string) => void;
 }
 
-export function ModulePanel({ editionId, exam, edition, legacyFlags, onNavigateTab }: Props) {
+export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType, selectionModel, onNavigateTab }: Props) {
   const [modules, setModules] = useState<ModuleDefinition[]>([]);
   const [contentModules, setContentModules] = useState<ContentModulesData>({});
   const [config, setConfig] = useState<ModuleConfig>({ moduleOrder: [], enabledModules: [], modes: {}, syncTimestamps: {} });
@@ -123,6 +129,12 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, onNavigateT
     try {
       let registry: ModuleDefinition[];
       try { registry = await getModuleRegistry(exam?.pillar); } catch { registry = BUILT_IN_MODULES; }
+      // Filter to modules that are structurally applicable given the two-axis model.
+      // When entityType/selectionModel aren't supplied (e.g. older call sites) the
+      // filter is a no-op and the full registry is shown — backward compatible.
+      if (entityType) {
+        registry = registry.filter((m) => isModuleApplicable(m.slug, entityType, selectionModel));
+      }
       setModules(registry);
 
       if (editionId) {
