@@ -100,13 +100,18 @@ export function ContentModuleCard({
         <button type="button" onClick={() => enabled && setExpanded(!expanded)}
           className="flex items-center gap-2 flex-1 text-left min-w-0 ml-1" disabled={!enabled}>
           <span className={`text-sm font-medium truncate ${enabled ? "text-slate-700" : "text-slate-400"}`}>{module.name}</span>
-          {/* Live-visibility badge: the ONE rule that governs the public site.
-              Hidden = this section has no content and will NOT appear on the live
-              page (no tab, no sitemap entry, sub-page 404s) until it is filled. */}
-          {hasLiveContent === true && (
+          {/* Three-state badge:
+              Off           = module is disabled — not rendered regardless of content.
+              Live          = enabled + has content — visible on site.
+              Hidden        = enabled + no content — not visible yet (fill it to publish). */}
+          {!enabled && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 font-medium shrink-0"
+              title="Module is off — will not render on the site. Enable it to make it available.">Off</span>
+          )}
+          {enabled && hasLiveContent === true && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 font-medium shrink-0" title="This section has content and is visible on the live site">Live</span>
           )}
-          {hasLiveContent === false && (
+          {enabled && hasLiveContent === false && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium shrink-0" title="Hidden on the live site — this section has no content yet. Fill it to make the tab, page and sitemap entry appear.">Hidden — no content yet</span>
           )}
           {isStale && enabled && mode !== "manual" && (
