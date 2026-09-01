@@ -16,7 +16,7 @@ import { aiGenerateForModule } from "@/lib/modules/moduleAI";
 import type { ModuleDefinition, ModuleConfig, ContentModulesData, ModuleContentData, SaveStatus } from "@/types/modules";
 import type { ExamIdentity, ExamEdition } from "@/services/entranceExamService";
 import type { SelectionModel } from "@/types/selection";
-import { isModuleApplicable } from "@/config/moduleRegistry";
+import { isModuleApplicable, MODULE_REGISTRY } from "@/config/moduleRegistry";
 import { getErrorMessage } from "@/lib/utils";
 import { hasData, SECTION_BY_SLUG, type HasDataView } from "@/lib/sectionRegistry";
 import { DraggableList } from "@/components/shared/DraggableList";
@@ -130,10 +130,17 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
       let registry: ModuleDefinition[];
       try { registry = await getModuleRegistry(exam?.pillar); } catch { registry = BUILT_IN_MODULES; }
       // Filter to modules that are structurally applicable given the two-axis model.
-      // When entityType/selectionModel aren't supplied (e.g. older call sites) the
-      // filter is a no-op and the full registry is shown — backward compatible.
+      // FAIL-OPEN: if a slug has no entry in moduleRegistry.ts (vocabulary mismatch
+      // between the DB table and the TS config — resolved in 2C), treat it as
+      // unconstrained and show it. Unknown ≠ hidden; hiding is only safe when the
+      // rule is known. This preserves all existing content access until 2C reconciles
+      // the two slug vocabularies.
       if (entityType) {
-        registry = registry.filter((m) => isModuleApplicable(m.slug, entityType, selectionModel));
+        registry = registry.filter((m) => {
+          const knownInConfig = MODULE_REGISTRY.some((cm) => cm.id === m.slug);
+          if (!knownInConfig) return true; // unknown slug → unconstrained → show
+          return isModuleApplicable(m.slug, entityType, selectionModel);
+        });
       }
       setModules(registry);
 
