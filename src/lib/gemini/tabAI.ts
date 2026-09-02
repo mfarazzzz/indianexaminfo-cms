@@ -86,7 +86,15 @@ Return ONLY the JSON. No markdown, no explanation.`;
 // ── Dates & Status Tab ──────────────────────────────────────────────────────
 
 export interface DatesAIData {
-  importantDates: { label: string; date: string; isUrgent: boolean }[];
+  importantDates: {
+    label: string;
+    date: string;
+    isUrgent: boolean;
+    type: string;
+    stage_label: string;
+    state: 'confirmed' | 'expected';
+    verified: boolean;
+  }[];
   status: string;
   vacancy: number | null;
   notificationDate: string;
@@ -146,13 +154,40 @@ Return ONLY the JSON.`;
   const raw = await generateWithGemini(prompt, apiKey, model);
   const data = cleanJSON(raw) as any;
 
-  // Post-process: validate and fix all dates deterministically
+  // Deterministic label → type map. These labels are the hardcoded ones in the
+  // prompt above — no AI needed to infer the type, it's a lookup.
+  const LABEL_TO_TYPE: Record<string, { type: string; stage_label: string }> = {
+    "Notification Release":          { type: 'notification',       stage_label: '' },
+    "Registration Opens":            { type: 'application_start',  stage_label: '' },
+    "Registration Closes":           { type: 'application_end',    stage_label: '' },
+    "Application Correction Window": { type: 'correction_window',  stage_label: '' },
+    "Admit Card Release":            { type: 'admit_card',         stage_label: '' },
+    "Exam Date":                     { type: 'exam_written',       stage_label: '' },
+    "Answer Key Release":            { type: 'answer_key',         stage_label: '' },
+    "Result Declaration":            { type: 'result',             stage_label: '' },
+    "Counselling Starts":            { type: 'counselling',        stage_label: '' },
+    "Cutoff Release":                { type: 'result',             stage_label: '' },
+  };
+
+  // Tentative signal — label or source text implies date is not confirmed
+  const TENTATIVE = /tentative|expected|approximate|provisional|likely|tba|to be announced/i;
+
+  // Post-process: validate dates, add type/state/verified
   const importantDates = Array.isArray(data.importantDates)
-    ? data.importantDates.map((d: any) => ({
-        label: d.label ?? "",
-        date: validateAndFixDate(d.date ?? ""),
-        isUrgent: d.isUrgent ?? false,
-      }))
+    ? data.importantDates.map((d: any) => {
+        const label = d.label ?? "";
+        const typeInfo = LABEL_TO_TYPE[label] ?? { type: 'other', stage_label: '' };
+        const state = TENTATIVE.test(label) ? 'expected' : 'confirmed';
+        return {
+          label,
+          date:        validateAndFixDate(d.date ?? ""),
+          isUrgent:    d.isUrgent ?? false,
+          type:        typeInfo.type,
+          stage_label: typeInfo.stage_label,
+          state,
+          verified:    false,   // AI-extracted — never pre-verified
+        };
+      })
     : [];
 
   return {
