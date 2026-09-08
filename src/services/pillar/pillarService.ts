@@ -41,7 +41,8 @@ export async function listPillars(includeInactive = false): Promise<Pillar[]> {
       return []
     }
     return (data ?? []).map(mapRow)
-  } catch {
+  } catch (err) {
+    console.error('[pillarService] listPillars threw:', err)
     return []
   }
 }
@@ -53,7 +54,10 @@ export async function getPillarBySlug(slug: string): Promise<Pillar | null> {
     .eq('slug', slug)
     .is('deleted_at', null)
     .single()
-  if (error || !data) return null
+  if (error || !data) {
+    if (error) console.error(`[pillarService] getPillarBySlug(${slug}) failed:`, error)
+    return null
+  }
   return mapRow(data as Record<string, unknown>)
 }
 

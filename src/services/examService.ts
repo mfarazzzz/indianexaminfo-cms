@@ -57,7 +57,6 @@ function mapRow(row: Record<string, unknown>): ExamEntity {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     createdBy: row.created_by as string | undefined,
-    typeFields: (row.type_fields as Record<string, unknown>) ?? {},
   };
 }
 
@@ -107,7 +106,10 @@ export async function getExamById(id: string): Promise<ExamEntity | null> {
     .select(LIST_SELECT)
     .eq("id", id)
     .single();
-  if (error) return null;
+  if (error) {
+    if (error.code !== "PGRST116") console.error(`[examService] getExamById(${id}) failed:`, error);
+    return null;
+  }
   return mapRow(data as Record<string, unknown>);
 }
 
@@ -243,7 +245,6 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
     seoTitle: "seo_title",
     seoDescription: "seo_description",
     faqs: "faqs",
-    typeFields: "type_fields",
   };
 
   // UUID fields that must be null instead of empty string

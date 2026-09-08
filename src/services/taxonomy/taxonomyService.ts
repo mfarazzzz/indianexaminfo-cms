@@ -59,7 +59,10 @@ export async function getTaxonomyBySlug<T extends TaxonomyBase>(
     .eq('slug', slug)
     .is('deleted_at', null)
     .single()
-  if (error || !data) return null
+  if (error || !data) {
+    if (error && error.code !== 'PGRST116') console.error(`[taxonomyService] getTaxonomyBySlug(${table}/${slug}) failed:`, error)
+    return null
+  }
   return mapRow<T>(data as Record<string, unknown>)
 }
 

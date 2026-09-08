@@ -129,7 +129,10 @@ export async function getEntityById(id: string): Promise<Entity | null> {
     db.from('entity_snapshot').select('snapshot').eq('entity_id', id).single(),
   ])
 
-  if (entityResult.error || entityResult.data == null) return null
+  if (entityResult.error || entityResult.data == null) {
+    if (entityResult.error && entityResult.error.code !== 'PGRST116') console.error(`[entityService] getEntityById(${id}) failed:`, entityResult.error)
+    return null
+  }
 
   const entity = mapRow(entityResult.data as Record<string, unknown>)
 

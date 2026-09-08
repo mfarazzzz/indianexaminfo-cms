@@ -73,7 +73,10 @@ export async function getTemplateById(id: string): Promise<LifecycleTemplate | n
     .eq('id', id)
     .is('deleted_at', null)
     .single()
-  if (error || !data) return null
+  if (error || !data) {
+    if (error && error.code !== 'PGRST116') console.error(`[templateService] getTemplate(${id}) failed:`, error)
+    return null
+  }
   return mapTemplateRow(data as Record<string, unknown>)
 }
 
@@ -122,7 +125,10 @@ export async function getActiveTemplateVersion(
     .eq('template_id', templateId)
     .eq('is_active', true)
     .single()
-  if (error || !data) return null
+  if (error || !data) {
+    if (error && error.code !== 'PGRST116') console.error(`[templateService] getActiveTemplateVersion(${templateId}) failed:`, error)
+    return null
+  }
   return mapVersionRow(data as Record<string, unknown>)
 }
 

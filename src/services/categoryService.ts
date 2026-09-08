@@ -47,13 +47,19 @@ export async function getCategories(pillar?: string): Promise<Category[]> {
 
 export async function getCategoryById(id: string): Promise<Category | null> {
   const { data, error } = await db.from("categories").select("*").eq("id", id).single();
-  if (error) return null;
+  if (error) {
+    if (error.code !== "PGRST116") console.error(`[categoryService] getCategoryById(${id}) failed:`, error);
+    return null;
+  }
   return mapRow(data);
 }
 
 export async function getCategoryBySlug(slug: string): Promise<Category | null> {
   const { data, error } = await db.from("categories").select("*").eq("slug", slug).single();
-  if (error) return null;
+  if (error) {
+    if (error.code !== "PGRST116") console.error(`[categoryService] getCategoryBySlug(${slug}) failed:`, error);
+    return null;
+  }
   return mapRow(data);
 }
 

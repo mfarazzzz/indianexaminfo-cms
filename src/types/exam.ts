@@ -78,7 +78,10 @@ export type ExamEntity = {
   faqs?: { question: string; answer: string }[];
 
   // Entity-type-specific fields (examDuration, totalMarks, etc.)
-  typeFields: Record<string, unknown>;
+  // DEPRECATED: backing column exams.type_fields was dropped (0/403 populated,
+  // writes were already silently discarded). Kept optional so the editor form
+  // still typechecks; full removal is part of the CMS redesign redundancy sweep.
+  typeFields?: Record<string, unknown>;
 
   // Publish gate — must be true for the frontend to display it
   isPublished: boolean;

@@ -136,7 +136,10 @@ export async function getEducationNewsById(id: string): Promise<CmsEducationNews
     .select('*')
     .eq('id', id)
     .single()
-  if (error || !data) return null
+  if (error || !data) {
+    if (error && error.code !== 'PGRST116') console.error(`[educationNewsService] getEducationNewsById(${id}) failed:`, error)
+    return null
+  }
   return mapRow(data as Record<string, unknown>)
 }
 
@@ -148,7 +151,10 @@ export async function getEducationNewsBySlug(slug: string): Promise<CmsEducation
     .select('*')
     .eq('slug', slug)
     .maybeSingle()
-  if (error || !data) return null
+  if (error || !data) {
+    if (error) console.error(`[educationNewsService] getEducationNewsBySlug(${slug}) failed:`, error)
+    return null
+  }
   return mapRow(data as Record<string, unknown>)
 }
 

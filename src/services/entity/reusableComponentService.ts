@@ -69,7 +69,10 @@ export async function getComponentById(id: string): Promise<ReusableComponent | 
     .eq('id', id)
     .is('deleted_at', null)
     .single()
-  if (error || !data) return null
+  if (error || !data) {
+    if (error && error.code !== 'PGRST116') console.error(`[reusableComponentService] getComponent(${id}) failed:`, error)
+    return null
+  }
   return mapRow(data as Record<string, unknown>)
 }
 

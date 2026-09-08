@@ -18,7 +18,10 @@ export async function getPages(): Promise<Page[]> {
 
 export async function getPageById(id: string): Promise<Page | null> {
   const { data, error } = await db.from("pages").select("*").eq("id", id).single();
-  if (error) return null;
+  if (error) {
+    if (error.code !== "PGRST116") console.error(`[pageService] getPageById(${id}) failed:`, error);
+    return null;
+  }
   return mapRow(data);
 }
 

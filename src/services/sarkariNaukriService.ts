@@ -256,7 +256,10 @@ export async function getSarkariNaukriById(id: string): Promise<SarkariNaukri | 
     .select('*')
     .eq('id', id)
     .single()
-  if (error || !data) return null
+  if (error || !data) {
+    if (error && error.code !== 'PGRST116') console.error(`[sarkariNaukriService] getSarkariNaukriById(${id}) failed:`, error)
+    return null
+  }
   return mapRow(data as Record<string, unknown>)
 }
 
@@ -268,7 +271,10 @@ export async function getSarkariNaukriBySlug(slug: string): Promise<SarkariNaukr
     .select('*')
     .eq('slug', slug)
     .maybeSingle()
-  if (error || !data) return null
+  if (error || !data) {
+    if (error) console.error(`[sarkariNaukriService] getSarkariNaukriBySlug(${slug}) failed:`, error)
+    return null
+  }
   return mapRow(data as Record<string, unknown>)
 }
 

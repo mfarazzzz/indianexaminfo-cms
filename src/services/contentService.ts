@@ -55,7 +55,11 @@ export async function getContentPosts(opts?: {
 
 export async function getContentPostById(id: string): Promise<ContentPost | null> {
   const { data, error } = await db.from("content_posts").select("*").eq("id", id).single();
-  if (error) return null;
+  if (error) {
+    // PGRST116 = no rows (legitimate not-found); anything else is a real failure worth logging.
+    if (error.code !== "PGRST116") console.error(`[contentService] getContentPostById(${id}) failed:`, error);
+    return null;
+  }
   return mapRow(data as Record<string, unknown>);
 }
 

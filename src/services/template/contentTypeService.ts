@@ -49,7 +49,10 @@ export async function getContentTypeById(id: string): Promise<ContentType | null
     .eq('id', id)
     .is('deleted_at', null)
     .single()
-  if (error || !data) return null
+  if (error || !data) {
+    if (error && error.code !== 'PGRST116') console.error(`[contentTypeService] getContentType(${id}) failed:`, error)
+    return null
+  }
   return mapRow(data as Record<string, unknown>)
 }
 
@@ -60,7 +63,10 @@ export async function getContentTypeBySlug(slug: string): Promise<ContentType | 
     .eq('slug', slug)
     .is('deleted_at', null)
     .single()
-  if (error || !data) return null
+  if (error || !data) {
+    if (error && error.code !== 'PGRST116') console.error(`[contentTypeService] getContentTypeBySlug(${slug}) failed:`, error)
+    return null
+  }
   return mapRow(data as Record<string, unknown>)
 }
 

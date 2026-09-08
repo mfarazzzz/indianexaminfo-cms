@@ -36,7 +36,10 @@ export async function listModules(entityId: string): Promise<EntityModule[]> {
 export async function getModuleById(id: string): Promise<EntityModule | null> {
   const { data, error } = await db
     .from('entity_module').select('*').eq('id', id).is('deleted_at', null).single()
-  if (error || data == null) return null
+  if (error || data == null) {
+    if (error && error.code !== 'PGRST116') console.error(`[moduleService] getModule(${id}) failed:`, error)
+    return null
+  }
   return mapRow(data as Record<string, unknown>)
 }
 

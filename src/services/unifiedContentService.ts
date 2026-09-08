@@ -153,7 +153,10 @@ export async function getUnifiedContentList(opts?: UnifiedContentListOpts): Prom
 
 export async function getUnifiedContentById(id: string): Promise<UnifiedContent | null> {
   const { data, error } = await db.from("content_posts").select("*").eq("id", id).single();
-  if (error) return null;
+  if (error) {
+    if (error.code !== "PGRST116") console.error(`[unifiedContentService] getUnifiedContentById(${id}) failed:`, error);
+    return null;
+  }
   return mapRow(data as Record<string, unknown>);
 }
 

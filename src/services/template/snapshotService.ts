@@ -46,7 +46,10 @@ export async function getSnapshot(entityId: string): Promise<TemplateConfigurati
     .eq('entity_id', entityId)
     .single()
 
-  if (error || !data) return null
+  if (error || !data) {
+    if (error && error.code !== 'PGRST116') console.error(`[snapshotService] getSnapshot(${entityId}) failed:`, error)
+    return null
+  }
   return data.snapshot as TemplateConfiguration
 }
 
@@ -65,7 +68,10 @@ export async function getActiveVersion(templateId: string): Promise<{
     .eq('is_active', true)
     .single()
 
-  if (error || !data) return null
+  if (error || !data) {
+    if (error && error.code !== 'PGRST116') console.error(`[snapshotService] getActiveVersion(${templateId}) failed:`, error)
+    return null
+  }
   return {
     id:            data.id as string,
     configuration: data.configuration as TemplateConfiguration,

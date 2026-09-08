@@ -15,7 +15,10 @@ export async function listRevisions(entityId: string): Promise<RevisionSummary[]
 
 export async function getRevisionSnapshot(revisionId: string): Promise<EntityRevision | null> {
   const { data, error } = await db.from('entity_revision').select('*').eq('id', revisionId).single()
-  if (error) return null
+  if (error) {
+    if (error.code !== 'PGRST116') console.error(`[revisionService] getRevisionSnapshot(${revisionId}) failed:`, error)
+    return null
+  }
   const r = data as Record<string, unknown>
   return {
     id: r.id as string, entityId: r.entity_id as string,

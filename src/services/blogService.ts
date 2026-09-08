@@ -40,7 +40,10 @@ export async function getAuthors(): Promise<BlogAuthor[]> {
 
 export async function getAuthorById(id: string): Promise<BlogAuthor | null> {
   const { data, error } = await db.from("blog_authors").select("*").eq("id", id).single();
-  if (error) return null;
+  if (error) {
+    if (error.code !== "PGRST116") console.error(`[blogService] getAuthorById(${id}) failed:`, error);
+    return null;
+  }
   return mapAuthor(data);
 }
 
@@ -95,7 +98,10 @@ export async function getBlogPosts(opts?: {
 
 export async function getBlogPostById(id: string): Promise<BlogPost | null> {
   const { data, error } = await db.from("blog_posts").select("*, blog_authors(*)").eq("id", id).single();
-  if (error) return null;
+  if (error) {
+    if (error.code !== "PGRST116") console.error(`[blogService] getBlogPostById(${id}) failed:`, error);
+    return null;
+  }
   return mapPost(data);
 }
 

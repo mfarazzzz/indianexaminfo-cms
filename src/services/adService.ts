@@ -96,7 +96,10 @@ export async function getCampaignById(id: string): Promise<AdCampaign | null> {
     .select("*, advertisers(name)")
     .eq("id", id)
     .single();
-  if (error) return null;
+  if (error) {
+    if (error.code !== "PGRST116") console.error(`[adService] getCampaignById(${id}) failed:`, error);
+    return null;
+  }
   const r = data as any;
   return {
     id: r.id, advertiserId: r.advertiser_id, advertiserName: r.advertisers?.name,
