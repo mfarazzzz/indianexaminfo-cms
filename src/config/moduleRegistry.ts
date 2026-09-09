@@ -23,6 +23,13 @@ export type { SelectionModel } from "@/types/selection";
 export { ALL_SELECTION_MODELS } from "@/types/selection";
 import type { SelectionModel } from "@/types/selection";
 
+// Axis 1 vocabulary — mirrors the Postgres `entity_type` enum exactly.
+// The exhaustiveness guard asserts every module covers all of these (or "*")
+// or explicitly opts out. Adding a value here fails the test for any module
+// that neither includes nor opts out of it — forcing a conscious decision.
+export type EntityType = "exam" | "board" | "university" | "recruitment";
+export const ALL_ENTITY_TYPES: EntityType[] = ["exam", "board", "university", "recruitment"];
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FIELD TYPES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -83,6 +90,15 @@ export interface ModuleDefinition {
    * candidate is selected (e.g. Admit Card exists only for written-exam).
    */
   appliesToSelection?: SelectionModel[];
+  /**
+   * Explicit opt-outs for the exhaustiveness guard (moduleRegistry.coverage.test.ts).
+   * A module must, for each axis, either COVER every defined value or list the
+   * omitted values here with a reason. This makes "a new SelectionModel / entity
+   * type was added and a module was forgotten" a TEST FAILURE, not a silent gap.
+   * Omit these when the module already covers the whole axis (or uses "*").
+   */
+  selectionOptOut?: { value: SelectionModel; reason: string }[];
+  entityOptOut?: { value: EntityType; reason: string }[];
   /** Module capabilities */
   capabilities: {
     supportsAttachments: boolean;
@@ -351,6 +367,11 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Hall ticket release, download, and exam day instructions",
     applicableTo: ["*"],
     appliesToSelection: ["written-exam"], // hall ticket exists only for a sit-down exam
+    selectionOptOut: [
+      { value: "merit-based", reason: "No sit-down exam → no hall ticket" },
+      { value: "interview-based", reason: "No sit-down exam → no hall ticket" },
+      { value: "internal-admission", reason: "No sit-down exam → no hall ticket" },
+    ],
     category: "lifecycle",
     displayOrder: 3,
     capabilities: {
@@ -376,8 +397,14 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Answer Key",
     icon: "🔑",
     description: "Provisional / final answer key and objection window",
-    applicableTo: ["recruitment", "exam"],
-    appliesToSelection: ["written-exam"], // presupposes a question paper
+    applicableTo: ["recruitment", "exam", "university"],
+    appliesToSelection: ["written-exam"], // gate is the WRITTEN PAPER (selectionModel), not entity type — a written-exam university (VITEEE) publishes one
+    selectionOptOut: [
+      { value: "merit-based", reason: "No question paper → no answer key" },
+      { value: "interview-based", reason: "No question paper → no answer key" },
+      { value: "internal-admission", reason: "No question paper → no answer key" },
+    ],
+    entityOptOut: [{ value: "board", reason: "Boards publish results, not challengeable answer keys" }],
     category: "lifecycle",
     displayOrder: 4,
     capabilities: {
@@ -430,8 +457,11 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Cut Off",
     icon: "📊",
     description: "Category-wise cutoff marks and trends",
-    applicableTo: ["recruitment", "exam"],
-    appliesToSelection: ["written-exam", "merit-based"], // exam cutoff AND merit qualifying cutoff
+    applicableTo: ["recruitment", "exam", "university"],
+    // Cutoffs apply across ALL selection models: written-exam scores, merit lists,
+    // interview panels, and internal-admission counselling all publish cutoffs.
+    appliesToSelection: ["written-exam", "merit-based", "interview-based", "internal-admission"],
+    entityOptOut: [{ value: "board", reason: "Boards report pass/division, not competitive cutoffs" }],
     category: "lifecycle",
     displayOrder: 6,
     capabilities: {
@@ -457,6 +487,10 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     applicableTo: ["exam", "university"],
     // Re-scoped: used by exam/university admission lifecycles; selection-agnostic
     // (unconstrained) so it serves internal-admission universities too.
+    entityOptOut: [
+      { value: "recruitment", reason: "Jobs use document-verification/final-selection, not counselling" },
+      { value: "board", reason: "Boards have no seat counselling" },
+    ],
     category: "lifecycle",
     displayOrder: 7,
     capabilities: {
@@ -486,6 +520,11 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     // Re-scoped: the non-exam outcome document. Exam-based recruitment uses
     // Result instead, so exclude written-exam to avoid a duplicate outcome.
     appliesToSelection: ["merit-based", "interview-based", "internal-admission"],
+    selectionOptOut: [{ value: "written-exam", reason: "Written exams publish Result (scorecard), not a merit list" }],
+    entityOptOut: [
+      { value: "exam", reason: "Entrance exams publish Result, not a merit list" },
+      { value: "board", reason: "Boards publish Result, not a merit list" },
+    ],
     category: "lifecycle",
     displayOrder: 8,
     capabilities: {
@@ -513,6 +552,15 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Document verification schedule, venue, and required documents — the selection gate for merit/interview processes",
     applicableTo: ["recruitment"],
     appliesToSelection: ["merit-based", "interview-based"],
+    selectionOptOut: [
+      { value: "written-exam", reason: "Written-exam DV is folded into result/joining, not a standalone gate" },
+      { value: "internal-admission", reason: "University verification happens at counselling/seat-allotment" },
+    ],
+    entityOptOut: [
+      { value: "exam", reason: "Entrance exams verify at counselling, not a recruitment DV gate" },
+      { value: "board", reason: "Boards have no DV stage" },
+      { value: "university", reason: "Universities verify at counselling/seat-allotment" },
+    ],
     category: "lifecycle",
     displayOrder: 9,
     capabilities: {
@@ -538,6 +586,12 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Interview / personality-test dates, venue, and panel details",
     applicableTo: ["recruitment", "exam", "university"],
     appliesToSelection: ["interview-based"],
+    selectionOptOut: [
+      { value: "written-exam", reason: "Written selection has no interview round" },
+      { value: "merit-based", reason: "Merit selection has no interview round" },
+      { value: "internal-admission", reason: "Admission is by allotment, not interview" },
+    ],
+    entityOptOut: [{ value: "board", reason: "Boards have no interview" }],
     category: "lifecycle",
     displayOrder: 9.5,
     capabilities: {
@@ -562,6 +616,15 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Final selected list / appointment where there is no exam scorecard",
     applicableTo: ["recruitment"],
     appliesToSelection: ["merit-based", "interview-based"],
+    selectionOptOut: [
+      { value: "written-exam", reason: "Written exams publish Result, not a separate final-selection list" },
+      { value: "internal-admission", reason: "Universities allot seats, not appoint" },
+    ],
+    entityOptOut: [
+      { value: "exam", reason: "Entrance exams publish Result" },
+      { value: "board", reason: "Boards publish Result" },
+      { value: "university", reason: "Universities use seat-allotment" },
+    ],
     category: "lifecycle",
     displayOrder: 9.7,
     capabilities: {
@@ -584,6 +647,16 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Round-wise seat allotment and acceptance — the admission analogue of a result",
     applicableTo: ["university"],
     appliesToSelection: ["internal-admission"],
+    selectionOptOut: [
+      { value: "written-exam", reason: "Seat allotment is an admission outcome, not an exam outcome" },
+      { value: "merit-based", reason: "Recruitment merit uses final-selection, not seat allotment" },
+      { value: "interview-based", reason: "Recruitment interview uses final-selection, not seat allotment" },
+    ],
+    entityOptOut: [
+      { value: "recruitment", reason: "Jobs appoint via final-selection" },
+      { value: "exam", reason: "Entrance exams route to counselling, not per-exam seat allotment" },
+      { value: "board", reason: "Boards have no seat allotment" },
+    ],
     category: "lifecycle",
     displayOrder: 9.9,
     capabilities: {
@@ -607,8 +680,14 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Exam Pattern",
     icon: "📐",
     description: "Exam structure, papers, marking scheme",
-    applicableTo: ["recruitment", "exam"],
-    appliesToSelection: ["written-exam"], // structure of a paper — only where a paper exists
+    applicableTo: ["recruitment", "exam", "university"],
+    appliesToSelection: ["written-exam"], // gate is the WRITTEN PAPER (selectionModel), not entity type — a written-exam university has a paper structure
+    selectionOptOut: [
+      { value: "merit-based", reason: "No paper → no pattern" },
+      { value: "interview-based", reason: "No paper → no pattern" },
+      { value: "internal-admission", reason: "No paper → no pattern" },
+    ],
+    entityOptOut: [{ value: "board", reason: "Boards use date-sheet + syllabus, not a competitive exam pattern" }],
     category: "academic",
     displayOrder: 10,
     capabilities: {
@@ -659,6 +738,12 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     icon: "📅",
     description: "Exam timetable / date sheet",
     applicableTo: ["board", "university"],
+    // Multi-subject scheduled timetable — boards/universities. Borderline: a
+    // multi-paper written exam arguably has one too (flagged in NORMALIZATION_AUDIT).
+    entityOptOut: [
+      { value: "recruitment", reason: "Jobs use a single exam date, not a subject-wise date sheet" },
+      { value: "exam", reason: "Entrance exams use a single exam date; multi-subject schedule is board/university" },
+    ],
     category: "academic",
     displayOrder: 12,
     capabilities: {
@@ -682,6 +767,13 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     icon: "👥",
     description: "Post-wise and category-wise vacancy breakdown",
     applicableTo: ["recruitment"],
+    // Post-wise vacancy breakdown is a jobs concept. Universities admit to seats
+    // (seat-allotment), entrance exams and boards have no vacancy count.
+    entityOptOut: [
+      { value: "exam", reason: "Entrance exams have no vacancies (admission, not hiring)" },
+      { value: "board", reason: "Boards have no vacancies" },
+      { value: "university", reason: "Universities admit to seats (seat-allotment), not vacancies" },
+    ],
     category: "academic",
     displayOrder: 13,
     capabilities: {
@@ -732,8 +824,13 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Previous Papers",
     icon: "📄",
     description: "Year-wise previous question papers and solutions",
-    applicableTo: ["recruitment", "exam", "board"],
-    appliesToSelection: ["written-exam"], // past question papers presuppose a paper
+    applicableTo: ["recruitment", "exam", "board", "university"],
+    appliesToSelection: ["written-exam"], // gate is the WRITTEN PAPER (selectionModel), not entity type
+    selectionOptOut: [
+      { value: "merit-based", reason: "No past papers without a paper" },
+      { value: "interview-based", reason: "No past papers without a paper" },
+      { value: "internal-admission", reason: "No past papers without a paper" },
+    ],
     category: "resource",
     displayOrder: 20,
     capabilities: {
@@ -756,8 +853,14 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Mock Test",
     icon: "🧪",
     description: "Free and paid mock test series",
-    applicableTo: ["recruitment", "exam"],
-    appliesToSelection: ["written-exam"], // practice tests presuppose a test
+    applicableTo: ["recruitment", "exam", "university"],
+    appliesToSelection: ["written-exam"], // gate is the WRITTEN TEST (selectionModel), not entity type
+    selectionOptOut: [
+      { value: "merit-based", reason: "No test to mock" },
+      { value: "interview-based", reason: "No test to mock" },
+      { value: "internal-admission", reason: "No test to mock" },
+    ],
+    entityOptOut: [{ value: "board", reason: "Boards use sample papers, not competitive mock tests" }],
     category: "resource",
     displayOrder: 21,
     capabilities: {
