@@ -70,8 +70,8 @@ type FormData = {
   editionStatus: EditionStatus;
   notificationDate: string;
   vacancy: string;
-  // Dates
-  importantDates: { label: string; date: string; isUrgent: boolean }[];
+  // Dates — full DateRow so state/verified/stage_label/type survive the round-trip.
+  importantDates: DateRow[];
   // Modules
   hasNotification: boolean;
   hasApplication: boolean;
@@ -386,7 +386,7 @@ export function EntranceExamEditorPage() {
       // Fill edition fields — merge AI dates into existing standard date rows
       if (data.importantDates.length > 0) {
         // Get current form dates (the standard pre-defined rows)
-        const currentDates = form.getValues("importantDates") as { label: string; date: string; isUrgent: boolean }[];
+        const currentDates = form.getValues("importantDates") as DateRow[];
 
         // Merge: for each AI date, try to match an existing row by similar label, else append
         const merged = [...currentDates];
@@ -547,7 +547,7 @@ export function EntranceExamEditorPage() {
       const { apiKey, model } = getAICredentials();
       const data = await aiFillDatesTab(examName, year, rawContent, apiKey, model);
       if (data.importantDates.length > 0) {
-        const current = form.getValues("importantDates") as { label: string; date: string; isUrgent: boolean }[];
+        const current = form.getValues("importantDates") as DateRow[];
         const merged = [...current];
         for (const ai of data.importantDates) {
           if (!ai.date || !ai.label) continue;
@@ -899,57 +899,97 @@ function IdentityTab({ form, categories, watchFrequency, watchedSelectionModel, 
   );
 }
 
-// Standard date fields that every entrance exam typically has
-const STANDARD_DATE_LABELS = [
-  { label: "Notification Release", isUrgent: false },
-  { label: "Registration Opens", isUrgent: true },
-  { label: "Registration Closes", isUrgent: true },
-  { label: "Application Correction Window", isUrgent: false },
-  { label: "Admit Card Release", isUrgent: false },
-  { label: "Exam Date", isUrgent: true },
-  { label: "Answer Key Release", isUrgent: false },
-  { label: "Result Declaration", isUrgent: false },
-  { label: "Counselling Starts", isUrgent: false },
-  { label: "Cutoff Release", isUrgent: false },
+/**
+ * A persisted important-dates row. The editor only *edits* label/date/isUrgent,
+ * but the persisted row also carries fields the frontend + exam_derived_status
+ * VIEW depend on: `type` (frontend vocabulary), `state`
+ * (confirmed|expected|cancelled|postponed), `verified`, `stage_label`.
+ *
+ * DATA-INTEGRITY CONTRACT: these extra fields are OPAQUE PASS-THROUGH. The editor
+ * must never rebuild a row as an object literal (that silently drops them — the
+ * bug that erased CTET's cancelled / NEET-UG's expected on every save). Always
+ * spread the original row and overlay only the edited fields. `[key: string]`
+ * makes any future persisted field ride along untouched too.
+ */
+type DateRow = {
+  label: string;
+  date: string;
+  isUrgent: boolean;
+  type?: string;
+  state?: string;
+  verified?: boolean;
+  stage_label?: string;
+  [key: string]: unknown;
+};
+
+// Standard date fields that every entrance exam typically has.
+// `type` is the PERSISTED/frontend vocabulary (what exam_derived_status reads) —
+// used to match a DB row to its standard slot by type first, label second.
+// We never rewrite a persisted row's type; this is match-only metadata.
+const STANDARD_DATE_LABELS: { label: string; isUrgent: boolean; type?: string }[] = [
+  { label: "Notification Release", isUrgent: false, type: "notification" },
+  { label: "Registration Opens", isUrgent: true, type: "application_start" },
+  { label: "Registration Closes", isUrgent: true, type: "application_end" },
+  { label: "Application Correction Window", isUrgent: false, type: "application_correction" },
+  { label: "Admit Card Release", isUrgent: false, type: "admit_card" },
+  { label: "Exam Date", isUrgent: true, type: "exam_written" },
+  { label: "Answer Key Release", isUrgent: false, type: "answer_key" },
+  { label: "Result Declaration", isUrgent: false, type: "result" },
+  { label: "Counselling Starts", isUrgent: false, type: "counselling" },
+  { label: "Cutoff Release", isUrgent: false, type: "cutoff" },
 ];
 
-/** Merge DB dates with standard rows so all standard rows are always visible */
-function mergeWithStandardDates(rawDates: unknown): { label: string; date: string; isUrgent: boolean }[] {
-  // Ensure input is always an array
-  const dbDates: { label: string; date: string; isUrgent: boolean }[] = Array.isArray(rawDates) ? rawDates : [];
+/**
+ * Merge DB dates with standard rows so all standard rows are always visible.
+ *
+ * Preserves EVERY field on a matched DB row (state/verified/stage_label/type/…)
+ * by spreading the original and only overlaying the standard label. Matching is
+ * by `type` first (reliable, survives label renames), falling back to label
+ * prefix for legacy untyped rows.
+ */
+function mergeWithStandardDates(rawDates: unknown): DateRow[] {
+  const dbDates: DateRow[] = Array.isArray(rawDates) ? (rawDates as DateRow[]) : [];
   const usedDbIndices = new Set<number>();
 
-  const merged = STANDARD_DATE_LABELS.map((std) => {
-    const stdNorm = std.label.toLowerCase().replace(/[^a-z]/g, "");
-    // Find the best match — prefer exact match, then longer prefix (min 12 chars)
-    let bestMatchIdx = -1;
-    let bestScore = 0;
-    dbDates.forEach((d, idx) => {
-      if (usedDbIndices.has(idx)) return;
-      const dNorm = d.label.toLowerCase().replace(/[^a-z]/g, "");
-      // Compute overlap score using longest common prefix
-      let score = 0;
-      for (let i = 0; i < Math.min(stdNorm.length, dNorm.length); i++) {
-        if (stdNorm[i] === dNorm[i]) score++;
-        else break;
-      }
-      // Only match if prefix ≥ 12 chars (avoids "registra" ambiguity)
-      if (score >= 12 && score > bestScore) {
-        bestScore = score;
-        bestMatchIdx = idx;
-      }
-    });
-    if (bestMatchIdx >= 0) {
-      usedDbIndices.add(bestMatchIdx);
-      const d = dbDates[bestMatchIdx];
-      return { label: std.label, date: d.date, isUrgent: d.isUrgent };
+  const merged: DateRow[] = STANDARD_DATE_LABELS.map((std) => {
+    // 1) Match by type first — the stable key. Never orphaned by a label rename.
+    let matchIdx = std.type
+      ? dbDates.findIndex((d, idx) => !usedDbIndices.has(idx) && d.type === std.type)
+      : -1;
+
+    // 2) Fall back to label-prefix match for legacy rows that carry no type.
+    if (matchIdx < 0) {
+      const stdNorm = std.label.toLowerCase().replace(/[^a-z]/g, "");
+      let bestScore = 0;
+      dbDates.forEach((d, idx) => {
+        if (usedDbIndices.has(idx) || (d.type && d.type !== std.type)) return;
+        const dNorm = (d.label ?? "").toLowerCase().replace(/[^a-z]/g, "");
+        let score = 0;
+        for (let i = 0; i < Math.min(stdNorm.length, dNorm.length); i++) {
+          if (stdNorm[i] === dNorm[i]) score++;
+          else break;
+        }
+        if (score >= 12 && score > bestScore) {
+          bestScore = score;
+          matchIdx = idx;
+        }
+      });
     }
-    return { label: std.label, date: "", isUrgent: std.isUrgent };
+
+    if (matchIdx >= 0) {
+      usedDbIndices.add(matchIdx);
+      // PRESERVE the whole persisted row; only ensure a stable standard label +
+      // carry the standard type when the legacy row had none. Never drop fields.
+      const d = dbDates[matchIdx];
+      return { ...d, label: std.label, type: d.type ?? std.type };
+    }
+    // No DB row for this slot — an empty standard row (stripped on save if left blank).
+    return { label: std.label, date: "", isUrgent: std.isUrgent, type: std.type };
   });
 
-  // Append any custom dates from DB that weren't matched
+  // Append any custom DB rows that weren't matched — spread whole, drop nothing.
   dbDates.forEach((d, idx) => {
-    if (!usedDbIndices.has(idx)) merged.push(d);
+    if (!usedDbIndices.has(idx)) merged.push({ ...d });
   });
 
   return merged;
@@ -966,7 +1006,7 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
       didInit.current = true;
       const currentDates = form.getValues("importantDates") as any[];
       if (!currentDates || currentDates.length === 0) {
-        replaceDates(STANDARD_DATE_LABELS.map((d) => ({ label: d.label, date: "", isUrgent: d.isUrgent })));
+        replaceDates(STANDARD_DATE_LABELS.map((d) => ({ label: d.label, date: "", isUrgent: d.isUrgent, type: d.type })));
       }
     }, 100);
     return () => clearTimeout(timer);
@@ -974,7 +1014,7 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
 
   // Drag reorder handler
   const handleReorder = (orderedIds: string[]) => {
-    const currentDates = form.getValues("importantDates") as { label: string; date: string; isUrgent: boolean }[];
+    const currentDates = form.getValues("importantDates") as DateRow[];
     const reordered = orderedIds.map((id) => {
       const idx = dateFields.findIndex((f) => f.id === id);
       return currentDates[idx];
