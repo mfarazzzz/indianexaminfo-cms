@@ -411,6 +411,16 @@ export interface DateStateChange {
   toState: string;                    // 'confirmed' unless a state column / label signals otherwise
 }
 
+/** Summary of what an existing edition contains — used for the "leaves the live page" line. */
+export interface EditionContentSummary {
+  year: number | null;
+  dateCount: number;
+  expectedStateCount: number;  // dates carrying a non-confirmed state (expected/cancelled/postponed)
+  vacancy: number | null;
+  hasEligibility: boolean;
+  hasFee: boolean;
+}
+
 export interface PreviewRow {
   row: number;
   name: string;
@@ -420,20 +430,27 @@ export interface PreviewRow {
   existingEditionYear?: number | null;
   rowYear?: number | null;
   fieldsCleared: string[];             // existing values this row would blank (destructive)
+  // Point 1: important_dates wipe gets its OWN signal, not buried in fieldsCleared.
+  importantDatesWipe?: { existingCount: number; statefulCount: number }; // row has NO dates → all deleted
   dateStateChanges: DateStateChange[]; // date rows whose state changes (destructive/visible)
   droppedDateTypes: string[];          // existing edition date types NOT in the 7 columns → dropped
+  // Point 2: for new-edition rows, what the archived (current) edition holds.
+  archivedContent?: EditionContentSummary;
   guardGaps: string[];
   destructive: boolean;                // this row does something requiring CONFIRM
 }
 
 export interface ImportPreview {
   totalRows: number;
-  // Change 1: new editions are their OWN top block, with names, before everything else.
-  newEditions: { row: number; name: string; slug: string; fromYear: number | null; toYear: number | null }[];
+  // Change 1: new editions are their OWN top block, with names + archived-content summary.
+  newEditions: {
+    row: number; name: string; slug: string;
+    fromYear: number | null; toYear: number | null;
+    archivedContent: EditionContentSummary;
+  }[];
   createExam: number;
   updateEdition: number;
   skip: number;
-  // Change 2: ANY destructive change requires CONFIRM, regardless of count.
   requiresConfirm: boolean;
   destructiveRowCount: number;
   rows: PreviewRow[];
@@ -443,6 +460,7 @@ export interface ImportPreview {
     editionsArchived: number;
     rowsClearingFields: number;
     rowsChangingDateState: number;
+    editionsWithAllDatesDeleted: number;  // point 1: rows that wipe important_dates entirely
   };
 }
 
@@ -481,7 +499,7 @@ export async function previewImportFromExcel(
     rows: [],
     guardSummary: {
       datesLosingTypeState: 0, urlsNotNormalized: 0, editionsArchived: 0,
-      rowsClearingFields: 0, rowsChangingDateState: 0,
+      rowsClearingFields: 0, rowsChangingDateState: 0, editionsWithAllDatesDeleted: 0,
     },
   };
 
@@ -537,15 +555,29 @@ export async function previewImportFromExcel(
       preview.createExam++; preview.rows.push(pr); continue;
     }
 
-    // Fetch current edition + its existing dates.
+    // Fetch current edition + its existing cycle content (for wipe + archive summaries).
     let existingYear: number | null = null;
     let existingDates: any[] = [];
+    let editionSummary: EditionContentSummary | null = null;
     if (existing.current_edition_id) {
       const { data: ed } = await db
-        .from("exam_editions").select("year, important_dates")
+        .from("exam_editions")
+        .select("year, important_dates, vacancy, eligibility, application_fee")
         .eq("id", existing.current_edition_id).maybeSingle();
       existingYear = (ed?.year as number) ?? null;
       existingDates = Array.isArray(ed?.important_dates) ? (ed!.important_dates as any[]) : [];
+      const elig = ed?.eligibility as Record<string, unknown> | null | undefined;
+      const fee = ed?.application_fee as Record<string, unknown> | null | undefined;
+      editionSummary = {
+        year: existingYear,
+        dateCount: existingDates.length,
+        expectedStateCount: existingDates.filter(
+          (d) => d?.state && d.state !== "confirmed"
+        ).length,
+        vacancy: (ed?.vacancy as number) ?? null,
+        hasEligibility: !!elig && Object.values(elig).some((v) => v !== null && String(v).trim() !== ""),
+        hasFee: !!fee && Object.values(fee).some((v) => typeof v === "number" && v > 0),
+      };
     }
     pr.existingEditionYear = existingYear;
 
@@ -572,6 +604,16 @@ export async function previewImportFromExcel(
       preview.guardSummary.datesLosingTypeState++;
     }
 
+    // Point 1: the catastrophic wipe — row has NO date cells but the current edition
+    // HAS dates. Import writes important_dates = [], deleting all of them. Its OWN line.
+    if (!rowHasDates && existing.current_edition_id && existingDates.length > 0) {
+      pr.importantDatesWipe = {
+        existingCount: existingDates.length,
+        statefulCount: existingDates.filter((d) => d?.state && d.state !== "confirmed").length,
+      };
+      preview.guardSummary.editionsWithAllDatesDeleted++;
+    }
+
     // Field-clear detection: a blank cell overwrites an existing value with blank.
     const existingRow = existing as Record<string, any>;
     const clearChecks: { field: string; cell: any }[] = [
@@ -595,22 +637,28 @@ export async function previewImportFromExcel(
       pr.reason = "Existing exam has no current edition to update — skipped (needs New Edition)";
       preview.skip++;
     } else if (rowYear !== null && existingYear !== null && rowYear !== existingYear) {
-      // Change 1: new edition = its own block, listed with names.
+      // Change 1: new edition = its own block, with an archived-content summary (point 2).
       pr.action = "new-edition";
-      pr.reason = `Year ${rowYear} != current edition ${existingYear} — ARCHIVES the current cycle (disappears from the live page) and creates a new one`;
-      preview.newEditions.push({ row: rowNum, name, slug, fromYear: existingYear, toYear: rowYear });
+      const summary: EditionContentSummary = editionSummary ?? {
+        year: existingYear, dateCount: 0, expectedStateCount: 0, vacancy: null, hasEligibility: false, hasFee: false,
+      };
+      pr.archivedContent = summary;
+      pr.reason = `Year ${rowYear} != current edition ${existingYear} — ARCHIVES the current cycle (its content leaves the live page) and creates a new one`;
+      preview.newEditions.push({ row: rowNum, name, slug, fromYear: existingYear, toYear: rowYear, archivedContent: summary });
       preview.guardSummary.editionsArchived++;
     } else {
       pr.action = "update-edition";
       preview.updateEdition++;
     }
 
-    // Change 2: destructive = new-edition OR field-clear OR date-state change OR dropped types.
+    // Change 2: destructive = new-edition OR field-clear OR date-state change OR dropped
+    // types OR the all-dates wipe (point 1).
     pr.destructive =
       pr.action === "new-edition" ||
       pr.fieldsCleared.length > 0 ||
       pr.dateStateChanges.length > 0 ||
-      pr.droppedDateTypes.length > 0;
+      pr.droppedDateTypes.length > 0 ||
+      !!pr.importantDatesWipe;
 
     if (pr.fieldsCleared.length > 0) preview.guardSummary.rowsClearingFields++;
     if (pr.dateStateChanges.length > 0) preview.guardSummary.rowsChangingDateState++;

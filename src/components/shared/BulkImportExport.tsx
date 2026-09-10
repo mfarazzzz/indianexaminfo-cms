@@ -175,10 +175,41 @@ export function BulkImportExport({ pillar, pillarLabel, onImportComplete }: Bulk
                 <Archive size={15} />
                 {preview.newEditions.length} row{preview.newEditions.length === 1 ? "" : "s"} will create NEW EDITIONS — the current edition of each will be ARCHIVED and disappear from the live page
               </div>
+              <ul className="space-y-1.5 text-red-700">
+                {preview.newEditions.map((ne) => {
+                  const c = ne.archivedContent;
+                  const parts: string[] = [];
+                  if (c.dateCount > 0) parts.push(`${c.dateCount} date${c.dateCount === 1 ? "" : "s"}${c.expectedStateCount > 0 ? ` (${c.expectedStateCount} with expected/cancelled state)` : ""}`);
+                  if (c.vacancy != null && c.vacancy > 0) parts.push(`vacancy ${c.vacancy.toLocaleString("en-IN")}`);
+                  if (c.hasEligibility) parts.push("eligibility");
+                  if (c.hasFee) parts.push("fee");
+                  return (
+                    <li key={ne.slug}>
+                      • <span className="font-medium">{ne.name} {ne.fromYear ?? "?"}</span> will be archived
+                      {parts.length > 0 && <> ({parts.join(", ")})</>} — this content leaves the live page; new cycle {ne.toYear ?? "?"} starts empty
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="mt-2 text-xs text-red-600">
+                Archived editions are not shown on the site yet — until that ships, archiving means the content disappears entirely, not just moves.
+              </p>
+            </div>
+          )}
+
+          {/* Point 1: all-dates wipe — the single most destructive per-row event, its OWN
+              callout, above the general destructive list so an editor can't skim past it. */}
+          {preview.rows.some((r) => r.importantDatesWipe) && (
+            <div className="rounded border border-red-300 bg-red-50 p-3">
+              <div className="flex items-center gap-2 font-semibold text-red-800 mb-2">
+                <AlertTriangle size={15} /> Important dates will be DELETED
+              </div>
               <ul className="space-y-1 text-red-700">
-                {preview.newEditions.map((ne) => (
-                  <li key={ne.slug}>
-                    • <span className="font-medium">{ne.name}</span> — current cycle {ne.fromYear ?? "?"} archived, new cycle {ne.toYear ?? "?"} created
+                {preview.rows.filter((r) => r.importantDatesWipe).map((r) => (
+                  <li key={`${r.slug}-wipe`}>
+                    • <span className="font-medium">{r.name}</span> — ALL {r.importantDatesWipe!.existingCount} IMPORTANT DATES WILL BE DELETED
+                    {r.importantDatesWipe!.statefulCount > 0 && <> ({r.importantDatesWipe!.statefulCount} with expected/cancelled state)</>}
+                    <span className="text-red-600"> — the spreadsheet row has no date columns filled</span>
                   </li>
                 ))}
               </ul>
