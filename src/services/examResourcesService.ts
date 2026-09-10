@@ -179,8 +179,29 @@ export async function updateResource(id: string, input: Partial<ResourceInput>):
   return mapRow(data as Record<string, unknown>);
 }
 
-/** Soft delete — sets deleted_at so it drops out of every read (public + CMS). */
+/**
+ * Soft delete — sets deleted_at so it drops out of every read (public + CMS).
+ *
+ * GUARD (not silent SET NULL): if any edition references this resource as its syllabus
+ * PDF, the delete is BLOCKED and this throws an error naming those editions. The editor
+ * unlinks/replaces deliberately — the destructive case is made visible, never automatic.
+ */
 export async function deleteResource(id: string): Promise<void> {
+  // Check for editions referencing this resource before deleting.
+  const { data: refs, error: refErr } = await db
+    .from("exam_editions")
+    .select("id, year, edition_label, exam:exams!exam_id(name)")
+    .eq("syllabus_resource_id", id);
+  if (refErr) throw refErr;
+  if (refs && refs.length > 0) {
+    const list = refs
+      .map((r: any) => `${r.exam?.name ?? "?"} ${r.year ?? r.edition_label ?? ""}`.trim())
+      .join(", ");
+    throw new Error(
+      `Can't delete — this syllabus PDF is linked by ${refs.length} edition(s): ${list}. ` +
+      `Unlink or replace it on those editions first.`
+    );
+  }
   const { error } = await db
     .from("exam_resources")
     .update({ deleted_at: new Date().toISOString() })
