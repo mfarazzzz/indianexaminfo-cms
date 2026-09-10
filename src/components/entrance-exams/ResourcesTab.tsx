@@ -109,11 +109,20 @@ export function ResourcesTab({ examId }: ResourcesTabProps) {
     );
   }
 
+  // Plural kind labels for group headings (singular RESOURCE_KIND_LABELS stays for the
+  // add-form dropdown, where you're picking ONE). Heading pluralizes by count.
+  const KIND_PLURAL: Record<ResourceKind, string> = {
+    "previous-paper": "Previous Year Papers",
+    "study-material": "Study Materials",
+    "mock-test": "Mock Tests",
+    "sample-paper": "Sample Papers",
+    "syllabus-pdf": "Syllabus PDFs",
+  };
   // Group by kind for display.
-  const byKind = RESOURCE_KINDS.map((k) => ({
-    kind: k, label: RESOURCE_KIND_LABELS[k],
-    items: resources.filter((r) => r.kind === k),
-  })).filter((g) => g.items.length > 0);
+  const byKind = RESOURCE_KINDS.map((k) => {
+    const items = resources.filter((r) => r.kind === k);
+    return { kind: k, label: items.length === 1 ? RESOURCE_KIND_LABELS[k] : KIND_PLURAL[k], items };
+  }).filter((g) => g.items.length > 0);
 
   return (
     <div className="space-y-5">
