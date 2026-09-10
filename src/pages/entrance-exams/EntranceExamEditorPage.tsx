@@ -23,6 +23,7 @@ import { aiFillIdentityTab, aiFillDatesTab, aiFillSEOTab, aiFillNewsTab, aiFillM
 import { AIFillButton } from "@/components/shared/AIFillButton";
 import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { ResourcesTab } from "@/components/entrance-exams/ResourcesTab";
+import { SyllabusResourcePicker } from "@/components/entrance-exams/SyllabusResourcePicker";
 import { useSettings } from "@/hooks/useSettings";
 
 const EDITION_STATUSES: { value: EditionStatus; label: string }[] = [
@@ -792,7 +793,21 @@ export function EntranceExamEditorPage() {
 
         {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} watchedSelectionModel={watchedSelectionModel} isNew={isNew} />}
         {activeTab === "resources" && <ResourcesTab examId={exam?.id ?? null} />}
-        {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency} />}
+        {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency}
+          examId={exam?.id ?? null}
+          editionId={currentEdition?.id ?? null}
+          syllabusResourceId={currentEdition?.syllabusResourceId ?? null}
+          onLinkSyllabus={async (resourceId) => {
+            if (!currentEdition) return;
+            try {
+              await updateEdition(currentEdition.id, { syllabusResourceId: resourceId });
+              await loadExam();
+              toast.success(resourceId ? "Syllabus PDF linked to this edition." : "Syllabus PDF unlinked.");
+            } catch (err) {
+              toast.error("Failed to link syllabus: " + getErrorMessage(err));
+            }
+          }}
+        />}
         {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} entityType={watchedEntityType} selectionModel={watchedSelectionModel} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
         {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("News saved."); await loadExam(); } }} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSaveModules={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("SEO settings saved."); await loadExam(); } }} />}
@@ -999,7 +1014,7 @@ function mergeWithStandardDates(rawDates: unknown): DateRow[] {
   return merged;
 }
 
-function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, watchFrequency }: { form: any; dateFields: any[]; appendDate: (v: any) => void; removeDate: (i: number) => void; replaceDates: (v: any[]) => void; watchFrequency: CycleFrequency }) {
+function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, watchFrequency, examId, editionId, syllabusResourceId, onLinkSyllabus }: { form: any; dateFields: any[]; appendDate: (v: any) => void; removeDate: (i: number) => void; replaceDates: (v: any[]) => void; watchFrequency: CycleFrequency; examId: string | null; editionId: string | null; syllabusResourceId: string | null; onLinkSyllabus: (resourceId: string | null) => void }) {
   // On first render, ensure standard date fields exist ONLY if truly empty
   // Use a small delay to allow form.reset() from loadExam to propagate first
   const didInit = React.useRef(false);
@@ -1046,6 +1061,19 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
           </select>
         </div>
       </div>
+
+      {/* Syllabus PDF for THIS cycle — references the shared library (Option A). */}
+      {editionId && (
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Syllabus PDF (this cycle)</label>
+          <SyllabusResourcePicker
+            examId={examId}
+            editionYear={Number(form.getValues("editionYear")) || null}
+            value={syllabusResourceId}
+            onChange={onLinkSyllabus}
+          />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Notification Date" name="notificationDate" form={form} type="date" />

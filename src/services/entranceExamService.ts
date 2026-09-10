@@ -57,6 +57,8 @@ export interface ExamEdition {
   seoDescription: string | null;
   resultSummary: Record<string, unknown> | null;
   counsellingData: Record<string, unknown> | null;
+  /** Reference to the library's syllabus-pdf row for this cycle (Option A: one file, one row). */
+  syllabusResourceId: string | null;
   contentModules: Record<string, unknown>;
   faqs: { question: string; answer: string }[];
   startedAt: string;
@@ -173,6 +175,7 @@ function mapEditionRow(row: Record<string, unknown>): ExamEdition {
     seoDescription: (row.seo_description as string) ?? null,
     resultSummary: (row.result_summary as Record<string, unknown>) ?? null,
     counsellingData: (row.counselling_data as Record<string, unknown>) ?? null,
+    syllabusResourceId: (row.syllabus_resource_id as string) ?? null,
     contentModules: (row.content_modules as Record<string, unknown>) ?? {},
     faqs: (row.faqs as { question: string; answer: string }[]) ?? [],
     startedAt: row.started_at as string,
@@ -475,6 +478,7 @@ export async function updateEdition(
     seoDescription: string | null;
     resultSummary: Record<string, unknown> | null;
     counsellingData: Record<string, unknown> | null;
+    syllabusResourceId: string | null;
     contentModules: Record<string, unknown>;
     faqs: { question: string; answer: string }[];
   }>
@@ -500,6 +504,7 @@ export async function updateEdition(
   if (input.seoDescription !== undefined) updates.seo_description = input.seoDescription;
   if (input.resultSummary !== undefined) updates.result_summary = input.resultSummary;
   if (input.counsellingData !== undefined) updates.counselling_data = input.counsellingData;
+  if (input.syllabusResourceId !== undefined) updates.syllabus_resource_id = input.syllabusResourceId;
   if (input.contentModules !== undefined) updates.content_modules = input.contentModules;
   if (input.faqs !== undefined) updates.faqs = input.faqs;
 

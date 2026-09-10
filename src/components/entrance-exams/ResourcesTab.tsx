@@ -232,8 +232,14 @@ export function ResourcesTab({ examId }: ResourcesTabProps) {
             <div className="text-sm font-semibold text-slate-700">{group.label}</div>
             <div className="space-y-1.5">
               {group.items.map((r) => (
-                <div key={r.id} className={`flex items-center gap-3 rounded border px-3 py-2 text-sm ${r.isPublished ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-70"}`}>
+                <div key={r.id} className={`flex items-center gap-3 rounded border px-3 py-2 text-sm ${r.isPublished ? "border-slate-200 bg-white" : "border-amber-200 bg-amber-50/40"}`}>
                   <span className="font-mono text-xs text-slate-400 w-12">{r.year ?? "—"}</span>
+                  {/* Live/Hidden badge — same language as the rest of the CMS (PillarListPage). */}
+                  {r.isPublished ? (
+                    <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">● Live</span>
+                  ) : (
+                    <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">○ Hidden</span>
+                  )}
                   <span className="flex-1 text-slate-700">{r.title}
                     {r.language && <span className="text-slate-400"> · {r.language}</span>}
                     {r.stageLabel && <span className="text-slate-400"> · {r.stageLabel}</span>}

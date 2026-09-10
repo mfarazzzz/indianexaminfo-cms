@@ -109,6 +109,22 @@ export async function listResources(examId: string): Promise<ExamResource[]> {
   return (data ?? []).map((r: any) => mapRow(r));
 }
 
+/** Syllabus-PDF resources for an exam (for the edition's syllabus picker). */
+export async function listSyllabusPdfs(examId: string): Promise<ExamResource[]> {
+  const { data, error } = await db
+    .from("exam_resources")
+    .select("*")
+    .eq("exam_id", examId)
+    .eq("kind", "syllabus-pdf")
+    .is("deleted_at", null)
+    .order("year", { ascending: false, nullsFirst: false });
+  if (error) {
+    console.error(`[examResourcesService] listSyllabusPdfs(${examId}) failed:`, error);
+    return [];
+  }
+  return (data ?? []).map((r: any) => mapRow(r));
+}
+
 export async function createResource(examId: string, input: ResourceInput): Promise<ExamResource> {
   const { data, error } = await db
     .from("exam_resources")

@@ -91,6 +91,7 @@ function mapEdition(row: any): ExamEdition {
     seoDescription: row.seo_description ?? null,
     resultSummary: row.result_summary ?? null,
     counsellingData: row.counselling_data ?? null,
+    syllabusResourceId: row.syllabus_resource_id ?? null,
     contentModules: row.content_modules ?? {},
     faqs: row.faqs ?? [],
     startedAt: row.started_at,
@@ -215,6 +216,7 @@ export function createPillarService(pillar: Pillar) {
       if (input.faqs !== undefined) updates.faqs = input.faqs;
       if (input.eligibility !== undefined) updates.eligibility = input.eligibility;
       if (input.applicationFee !== undefined) updates.application_fee = input.applicationFee;
+      if (input.syllabusResourceId !== undefined) updates.syllabus_resource_id = input.syllabusResourceId;
 
       const { data, error } = await db.from("exam_editions").update(updates).eq("id", editionId).select("*").single();
       if (error) throw error;
