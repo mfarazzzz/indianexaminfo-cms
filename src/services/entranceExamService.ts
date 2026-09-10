@@ -352,7 +352,7 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
       conducting_body: input.conductingBody,
       official_website: normalizeUrlOrThrow(input.officialWebsite),
       cycle_frequency: input.cycleFrequency ?? "annual",
-      status: "upcoming",
+      // status DROPPED from exams (step 4) — set on the edition insert below.
       is_featured: false,
       is_published: true,
     })

@@ -160,7 +160,8 @@ export function createPillarService(pillar: Pillar) {
         selection_model: input.selectionModel ?? "written-exam",
         conducting_body: input.conductingBody,
         official_website: normalizeUrlOrThrow(input.officialWebsite), cycle_frequency: input.cycleFrequency ?? "annual",
-        status: "upcoming", is_featured: false, is_published: true,
+        // status DROPPED from exams (step 4) — set on the edition insert below.
+        is_featured: false, is_published: true,
       }).select(DETAIL_SELECT).single();
       if (examErr) throw examErr;
 

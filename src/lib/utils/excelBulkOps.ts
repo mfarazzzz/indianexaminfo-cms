@@ -293,7 +293,8 @@ export async function importExamsFromExcel(
         .maybeSingle();
 
       if (existing) {
-        // Update existing exam
+        // Update existing exam — identity fields only. status/cycle data go to the
+        // edition below (exams.status was dropped in step 4).
         await db.from("exams").update({
           name,
           short_name: shortName,
@@ -337,7 +338,7 @@ export async function importExamsFromExcel(
               ? "university"
               : "exam"
           ),
-          status,
+          // status DROPPED from exams (step 4) — written to the edition insert below.
           is_featured: isFeatured,
           is_published: isPublished,
           seo_title: seoTitle || null,

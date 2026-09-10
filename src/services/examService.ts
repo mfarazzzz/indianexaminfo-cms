@@ -84,7 +84,9 @@ export async function getExams(opts?: ExamListOpts): Promise<{ data: ExamEntity[
 
   if (opts?.pillar) q = q.eq("pillar", opts.pillar);
   if (opts?.categoryId) q = q.eq("category_id", opts.categoryId);
-  if (opts?.status) q = q.eq("status", opts.status);
+  // status filter removed — exams.status was dropped (step 4); status lives on
+  // exam_editions / the derived VIEW. The list page's status filter is a no-op
+  // here until re-implemented against the edition (tracked for the CMS redesign).
   if (opts?.isFeatured !== undefined) q = q.eq("is_featured", opts.isFeatured);
   if (opts?.search) {
     const escaped = opts.search.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_").trim();
@@ -143,7 +145,7 @@ export async function createExam(input: ExamCreateInput): Promise<ExamEntity> {
       entity_type: input.entityType,
       conducting_body: input.conductingBody,
       official_website: normalizeUrlOrThrow(input.officialWebsite) || null,
-      status: input.status ?? "upcoming",
+      // status was DROPPED from `exams` (step 4) — it lives on exam_editions now.
       is_featured: input.isFeatured ?? false,
       created_by: input.createdBy || null,
     })
@@ -217,22 +219,12 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
     entityType: "entity_type",
     conductingBody: "conducting_body",
     officialWebsite: "official_website",
-    status: "status",
-    hasAdmitCard: "has_admit_card",
-    hasResult: "has_result",
-    hasAnswerKey: "has_answer_key",
-    hasSyllabus: "has_syllabus",
-    hasDateSheet: "has_date_sheet",
-    hasMockTest: "has_mock_test",
-    hasPreviousPapers: "has_previous_papers",
-    hasStudyMaterial: "has_study_material",
-    hasApplication: "has_application",
-    hasNotification: "has_notification",
-    hasCutoff: "has_cutoff",
-    dates: "important_dates",
-    eligibility: "eligibility",
-    vacancy: "vacancy",
-    applicationFee: "application_fee",
+    // Cycle/status/has_* columns were DROPPED from `exams` (step 4). They live on
+    // exam_editions and are written via entranceExamService/pillarService.updateEdition.
+    // This generic exams updater must NOT write them — doing so would 500 (column
+    // gone) and, before the drop, recreated the parent/edition divergence.
+    // Intentionally omitted: status, has_*, dates(important_dates), eligibility,
+    // vacancy, applicationFee, lastUpdated.
     selectionProcess: "selection_process",
     syllabusHighlights: "syllabus_highlights",
     academicYear: "academic_year",
@@ -241,7 +233,6 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
     tags: "tags",
     searchKeywords: "search_keywords",
     isFeatured: "is_featured",
-    lastUpdated: "last_updated",
     seoTitle: "seo_title",
     seoDescription: "seo_description",
     faqs: "faqs",
@@ -262,17 +253,8 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
     }
   }
 
-  // Auto-update last_updated ONLY if content meaningfully changed (not just a minor save)
-  // Google penalizes artificial "freshness" signals — only bump when real data changes
-  const MEANINGFUL_FIELDS = new Set([
-    "name", "status", "vacancy", "dates", "eligibility", "applicationFee",
-    "seoTitle", "seoDescription", "faqs", "hasAdmitCard", "hasResult",
-    "hasAnswerKey", "hasApplication", "hasNotification", "hasCutoff",
-  ]);
-  const hasMeaningfulChange = Object.keys(input).some(k => MEANINGFUL_FIELDS.has(k));
-  if (!input.lastUpdated && hasMeaningfulChange) {
-    updates.last_updated = new Date().toISOString().split("T")[0];
-  }
+  // (Removed the last_updated freshness bump — exams.last_updated was dropped in
+  // step 4. updated_at is the real last-write timestamp and is set above.)
 
   const { data, error } = await db
     .from("exams")
