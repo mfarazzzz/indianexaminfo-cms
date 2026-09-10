@@ -61,34 +61,20 @@ export interface Database {
           entity_type: "exam" | "board" | "university" | "recruitment" | null;
           conducting_body: string;
           official_website: string | null;
-          status: "upcoming" | "active" | "registration-open" | "registration-closed" | "result-declared" | "completed" | "ongoing";
-          has_admit_card: boolean;
-          has_result: boolean;
-          has_answer_key: boolean;
-          has_syllabus: boolean;
-          has_date_sheet: boolean;
-          has_mock_test: boolean;
-          has_previous_papers: boolean;
-          has_study_material: boolean;
-          has_application: boolean;
-          has_notification: boolean;
-          has_cutoff: boolean;
-          vacancy: number | null;
+          // status, has_*, important_dates, vacancy, eligibility, application_fee,
+          // last_updated were DROPPED from exams (step 4) — they live on exam_editions
+          // (cycle) or derive from the exam_derived_status VIEW (status).
           academic_year: string | null;
           semester: string | null;
           admission_to: string | null;
-          eligibility: Json;
-          application_fee: Json;
           selection_process: string[];
           syllabus_highlights: string[];
-          important_dates: Json;
           seo_title: string | null;
           seo_description: string | null;
           faqs: Json;
           tags: string[];
           is_featured: boolean;
           search_keywords: string[];
-          last_updated: string;
           created_at: string;
           updated_at: string;
           created_by: string | null;
