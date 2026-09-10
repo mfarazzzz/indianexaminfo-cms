@@ -257,8 +257,13 @@ export async function importExamsFromExcel(
       const editionLabel = String(raw.editionLabel || raw["Edition Label"] || raw.edition_label || editionYear).trim();
       const session = String(raw.session || raw.Session || "main").trim();
       const vacancy = parseInt(raw.vacancy || raw.Vacancy || "0") || null;
-      const isFeatured = parseBool(raw.isFeatured || raw["Is Featured"] || raw.is_featured);
-      const isPublished = parseBool(raw.isPublished || raw["Is Published"] || (raw.is_published ?? true));
+      // Absent cell = PRESERVE existing value (undefined), never default to
+      // false/true — defaulting silently unfeatured or published records on
+      // re-import. Only a present, explicit value changes the flag.
+      const rawFeatured = raw.isFeatured ?? raw["Is Featured"] ?? raw.is_featured;
+      const isFeatured = rawFeatured === undefined || rawFeatured === "" ? undefined : parseBool(rawFeatured);
+      const rawPublished = raw.isPublished ?? raw["Is Published"] ?? raw.is_published;
+      const isPublished = rawPublished === undefined || rawPublished === "" ? undefined : parseBool(rawPublished);
       const seoTitle = String(raw.seoTitle || raw["SEO Title"] || raw.seo_title || "").trim();
       const seoDescription = String(raw.seoDescription || raw["SEO Description"] || raw.seo_description || "").trim();
       const tagsStr = String(raw.tags || raw.Tags || "").trim();
@@ -295,13 +300,15 @@ export async function importExamsFromExcel(
       if (existing) {
         // Update existing exam — identity fields only. status/cycle data go to the
         // edition below (exams.status was dropped in step 4).
+        // is_featured/is_published are only written when the cell was explicitly
+        // present — an absent flag preserves the existing value (no silent flip).
         await db.from("exams").update({
           name,
           short_name: shortName,
           conducting_body: conductingBody,
           official_website: officialWebsite,
-          is_featured: isFeatured,
-          is_published: isPublished,
+          ...(isFeatured !== undefined ? { is_featured: isFeatured } : {}),
+          ...(isPublished !== undefined ? { is_published: isPublished } : {}),
           seo_title: seoTitle || null,
           seo_description: seoDescription || null,
           tags,
@@ -339,8 +346,9 @@ export async function importExamsFromExcel(
               : "exam"
           ),
           // status DROPPED from exams (step 4) — written to the edition insert below.
-          is_featured: isFeatured,
-          is_published: isPublished,
+          // New record: absent flag → sensible default (not featured; published).
+          is_featured: isFeatured ?? false,
+          is_published: isPublished ?? true,
           seo_title: seoTitle || null,
           seo_description: seoDescription || null,
           tags,
