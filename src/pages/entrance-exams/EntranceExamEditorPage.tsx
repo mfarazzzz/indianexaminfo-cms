@@ -22,6 +22,7 @@ import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
 import { aiFillIdentityTab, aiFillDatesTab, aiFillSEOTab, aiFillNewsTab, aiFillModulesTab } from "@/lib/gemini/tabAI";
 import { AIFillButton } from "@/components/shared/AIFillButton";
 import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
+import { ResourcesTab } from "@/components/entrance-exams/ResourcesTab";
 import { useSettings } from "@/hooks/useSettings";
 
 const EDITION_STATUSES: { value: EditionStatus; label: string }[] = [
@@ -661,6 +662,8 @@ export function EntranceExamEditorPage() {
 
   const tabs = [
     { id: "identity", label: "Identity" },
+    // Resources = exam-identity-level library (shared across editions). Beside Identity.
+    ...(!isNew ? [{ id: "resources", label: "Resources" }] : []),
     { id: "edition", label: "Dates & Status" },
     { id: "modules", label: "Modules" },
     { id: "news", label: "News" },
@@ -788,6 +791,7 @@ export function EntranceExamEditorPage() {
         )}
 
         {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} watchedSelectionModel={watchedSelectionModel} isNew={isNew} />}
+        {activeTab === "resources" && <ResourcesTab examId={exam?.id ?? null} />}
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency} />}
         {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} entityType={watchedEntityType} selectionModel={watchedSelectionModel} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
         {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("News saved."); await loadExam(); } }} />}
