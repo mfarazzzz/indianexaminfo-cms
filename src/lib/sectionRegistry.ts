@@ -315,7 +315,7 @@ export function availableTabs(exam: HasDataView): SectionDef[] {
 //
 // A ContentType with no registry section (or whose section has no data) is
 // hidden from tabs, dropped from the sitemap, and 404s on direct hit.
-const CONTENT_TYPE_TO_SECTION: Record<string, string> = {
+export const CONTENT_TYPE_TO_SECTION: Record<string, string> = {
   notification: "overview",
   application: "application-process",
   "admit-card": "admit-card",
