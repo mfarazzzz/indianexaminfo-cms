@@ -30,6 +30,15 @@ import type { SelectionModel } from "@/types/selection";
 export type EntityType = "exam" | "board" | "university" | "recruitment";
 export const ALL_ENTITY_TYPES: EntityType[] = ["exam", "board", "university", "recruitment"];
 
+// Axis 3 — the LEVEL a module's data lives at. Every module must declare one so it's
+// unambiguous where its content belongs and how it survives an edition rollover:
+//   exam-identity     — stable across cycles, lives on the exam (e.g. syllabus, eligibility rules)
+//   edition-cycle     — per-cycle, lives on the current edition's content_modules (dates, result, merit list)
+//   accumulated-library — grows over time, never reset (previous papers, study material — exam_resources)
+// The coverage test asserts every module declares a valid level (no silent omission).
+export type ModuleLevel = "exam-identity" | "edition-cycle" | "accumulated-library";
+export const ALL_MODULE_LEVELS: ModuleLevel[] = ["exam-identity", "edition-cycle", "accumulated-library"];
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FIELD TYPES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -117,6 +126,12 @@ export interface ModuleDefinition {
   displayOrder: number;
   /** Category for grouping in UI */
   category: "lifecycle" | "academic" | "resource" | "media" | "meta";
+  /**
+   * Axis 3 — the level this module's data lives at (exam-identity / edition-cycle /
+   * accumulated-library). REQUIRED: the coverage test asserts every module declares one.
+   * Determines where content belongs and how it survives an edition rollover.
+   */
+  level: ModuleLevel;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -307,6 +322,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Official notification / recruitment advertisement",
     applicableTo: ["*"],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 1,
     capabilities: {
       supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
@@ -338,6 +354,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Application form, fee, documents, and process",
     applicableTo: ["*"],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 2,
     capabilities: {
       supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
@@ -373,6 +390,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       { value: "internal-admission", reason: "No sit-down exam → no hall ticket" },
     ],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 3,
     capabilities: {
       supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
@@ -406,6 +424,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     ],
     entityOptOut: [{ value: "board", reason: "Boards publish results, not challengeable answer keys" }],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 4,
     capabilities: {
       supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
@@ -433,6 +452,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Result declaration, scorecards, and merit lists",
     applicableTo: ["*"],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 5,
     capabilities: {
       supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
@@ -463,6 +483,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     appliesToSelection: ["written-exam", "merit-based", "interview-based", "internal-admission"],
     entityOptOut: [{ value: "board", reason: "Boards report pass/division, not competitive cutoffs" }],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 6,
     capabilities: {
       supportsAttachments: true, supportsTimeline: false, supportsDownloads: true,
@@ -492,6 +513,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       { value: "board", reason: "Boards have no seat counselling" },
     ],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 7,
     capabilities: {
       supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
@@ -526,6 +548,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       { value: "board", reason: "Boards publish Result, not a merit list" },
     ],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 8,
     capabilities: {
       supportsAttachments: true, supportsTimeline: false, supportsDownloads: true,
@@ -562,6 +585,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       { value: "university", reason: "Universities verify at counselling/seat-allotment" },
     ],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 9,
     capabilities: {
       supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
@@ -593,6 +617,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     ],
     entityOptOut: [{ value: "board", reason: "Boards have no interview" }],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 9.5,
     capabilities: {
       supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
@@ -626,6 +651,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       { value: "university", reason: "Universities use seat-allotment" },
     ],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 9.7,
     capabilities: {
       supportsAttachments: true, supportsTimeline: false, supportsDownloads: true,
@@ -658,6 +684,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       { value: "board", reason: "Boards have no seat allotment" },
     ],
     category: "lifecycle",
+    level: "edition-cycle",
     displayOrder: 9.9,
     capabilities: {
       supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
@@ -689,6 +716,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     ],
     entityOptOut: [{ value: "board", reason: "Boards use date-sheet + syllabus, not a competitive exam pattern" }],
     category: "academic",
+    level: "exam-identity",
     displayOrder: 10,
     capabilities: {
       supportsAttachments: false, supportsTimeline: false, supportsDownloads: true,
@@ -716,6 +744,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Subject-wise syllabus and topic breakdown",
     applicableTo: ["*"],
     category: "academic",
+    level: "exam-identity",
     displayOrder: 11,
     capabilities: {
       supportsAttachments: true, supportsTimeline: false, supportsDownloads: true,
@@ -745,6 +774,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       { value: "exam", reason: "Entrance exams use a single exam date; multi-subject schedule is board/university" },
     ],
     category: "academic",
+    level: "edition-cycle",
     displayOrder: 12,
     capabilities: {
       supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
@@ -775,6 +805,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       { value: "university", reason: "Universities admit to seats (seat-allotment), not vacancies" },
     ],
     category: "academic",
+    level: "edition-cycle",
     displayOrder: 13,
     capabilities: {
       supportsAttachments: true, supportsTimeline: false, supportsDownloads: true,
@@ -799,6 +830,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Detailed eligibility criteria and relaxation",
     applicableTo: ["*"],
     category: "academic",
+    level: "exam-identity",
     displayOrder: 14,
     capabilities: {
       supportsAttachments: false, supportsTimeline: false, supportsDownloads: false,
@@ -834,6 +866,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Official and useful links collection",
     applicableTo: ["*"],
     category: "meta",
+    level: "exam-identity",
     displayOrder: 30,
     capabilities: {
       supportsAttachments: false, supportsTimeline: false, supportsDownloads: false,
@@ -853,6 +886,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Downloadable PDFs, forms, and documents",
     applicableTo: ["*"],
     category: "meta",
+    level: "accumulated-library",
     displayOrder: 31,
     capabilities: {
       supportsAttachments: true, supportsTimeline: false, supportsDownloads: true,
@@ -872,6 +906,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Frequently asked questions (JSON-LD schema)",
     applicableTo: ["*"],
     category: "meta",
+    level: "exam-identity",
     displayOrder: 32,
     capabilities: {
       supportsAttachments: false, supportsTimeline: false, supportsDownloads: false,
@@ -892,6 +927,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Image gallery — campus, exam centre, admit card samples",
     applicableTo: ["*"],
     category: "media",
+    level: "accumulated-library",
     displayOrder: 40,
     capabilities: {
       supportsAttachments: true, supportsTimeline: false, supportsDownloads: false,
@@ -911,6 +947,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     description: "Video resources — tutorials, announcements, guides",
     applicableTo: ["*"],
     category: "media",
+    level: "accumulated-library",
     displayOrder: 41,
     capabilities: {
       supportsAttachments: false, supportsTimeline: false, supportsDownloads: false,

@@ -104,6 +104,15 @@ export const SECTION_REGISTRY: SectionDef[] = [
   // previous-papers + study-material RETIRED (2026-09-10) — content moved to the exam_resources
   // library (rendered by ResourceLibrary, not an editorial section). news KEPT (Related News pending).
   { slug: "news",                label: "News & Updates",      source: "editorial", appliesTo: ALL_PILLARS, order: 250, placement: "tab", showAsTab: true },
+
+  // ── Selection-outcome sections (content_modules-backed, 2026-09-11) ─────────
+  // Make merit/interview/DV/final-selection/seat-allotment outcomes visible. Ordered
+  // after result (120), before syllabus (200). Govt pillars only for now (Slice 1 gate).
+  { slug: "merit-list",          label: "Merit List",           source: "editorial", appliesTo: ["government-exam", "govt-vacancy"], order: 122, placement: "both", showAsTab: true },
+  { slug: "document-verification", label: "Document Verification", source: "editorial", appliesTo: ["government-exam", "govt-vacancy"], order: 124, placement: "both", showAsTab: true },
+  { slug: "interview-schedule",  label: "Interview Schedule",   source: "editorial", appliesTo: ["government-exam", "govt-vacancy"], order: 126, placement: "both", showAsTab: true },
+  { slug: "final-selection",     label: "Final Selection",      source: "editorial", appliesTo: ["government-exam", "govt-vacancy"], order: 128, placement: "both", showAsTab: true },
+  { slug: "seat-allotment",      label: "Seat Allotment",       source: "editorial", appliesTo: ["university-exam"], order: 129, placement: "both", showAsTab: true },
 ];
 
 /** Fast lookup by slug. */
@@ -212,6 +221,17 @@ function editorialHasData(exam: HasDataView, slug: string): boolean {
         nonEmptyStr(d.body) || nonEmptyStr(d.content) || nonEmptyStr(d.description) ||
         nonEmptyStr(d.summary) || nonEmptyStr(d.releaseDate) || nonEmptyStr(d.date)
       );
+    // ── Selection-outcome modules: substantive when their key URL/date/rows exist ──
+    case "merit-list":
+      return nonEmptyStr(d.meritListUrl) || nonEmptyStr(d.releaseDate);
+    case "interview-schedule":
+      return nonEmptyStr(d.callLetterUrl) || nonEmptyStr(d.callLetterDate) || nonEmptyArr(d.rounds);
+    case "document-verification":
+      return nonEmptyStr(d.startDate) || nonEmptyStr(d.venue) || nonEmptyStr(d.callLetterUrl) || nonEmptyArr(d.documentsRequired);
+    case "final-selection":
+      return nonEmptyStr(d.finalListUrl) || nonEmptyStr(d.releaseDate);
+    case "seat-allotment":
+      return nonEmptyArr(d.rounds) || nonEmptyStr(d.allotmentResultUrl) || nonEmptyStr(d.acceptanceProcess);
     default:
       return nonEmptyStr(d.body) || nonEmptyStr(d.content) || nonEmptyStr(d.description) || nonEmptyStr(d.summary);
   }
