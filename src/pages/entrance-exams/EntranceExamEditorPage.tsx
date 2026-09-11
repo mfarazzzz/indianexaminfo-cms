@@ -24,6 +24,7 @@ import { AIFillButton } from "@/components/shared/AIFillButton";
 import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { ResourcesTab } from "@/components/entrance-exams/ResourcesTab";
 import { SyllabusResourcePicker } from "@/components/entrance-exams/SyllabusResourcePicker";
+import { SyllabusTab } from "@/components/entrance-exams/SyllabusTab";
 import { useSettings } from "@/hooks/useSettings";
 
 const EDITION_STATUSES: { value: EditionStatus; label: string }[] = [
@@ -663,8 +664,9 @@ export function EntranceExamEditorPage() {
 
   const tabs = [
     { id: "identity", label: "Identity" },
-    // Resources = exam-identity-level library (shared across editions). Beside Identity.
+    // Exam-identity-level tabs (shared across editions), beside Identity.
     ...(!isNew ? [{ id: "resources", label: "Resources" }] : []),
+    ...(!isNew ? [{ id: "syllabus", label: "Syllabus" }] : []),
     { id: "edition", label: "Dates & Status" },
     { id: "modules", label: "Modules" },
     { id: "news", label: "News" },
@@ -793,6 +795,7 @@ export function EntranceExamEditorPage() {
 
         {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} watchedSelectionModel={watchedSelectionModel} isNew={isNew} />}
         {activeTab === "resources" && <ResourcesTab examId={exam?.id ?? null} />}
+        {activeTab === "syllabus" && <SyllabusTab examId={exam?.id ?? null} />}
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency}
           examId={exam?.id ?? null}
           editionId={currentEdition?.id ?? null}
