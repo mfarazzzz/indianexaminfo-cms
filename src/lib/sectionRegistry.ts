@@ -25,14 +25,14 @@ export type Pillar =
   | "govt-vacancy"
   | "entrance-exam"
   | "university-exam"
-  | "board-university";
+  | "board-exam"; // reconciled to the DB pillar value (2026-09-11); was "board-university"
 
 export const ALL_PILLARS: Pillar[] = [
   "government-exam",
   "govt-vacancy",
   "entrance-exam",
   "university-exam",
-  "board-university",
+  "board-exam",
 ];
 
 /**
@@ -113,6 +113,11 @@ export const SECTION_REGISTRY: SectionDef[] = [
   { slug: "interview-schedule",  label: "Interview Schedule",   source: "editorial", appliesTo: ["government-exam", "govt-vacancy"], order: 126, placement: "both", showAsTab: true },
   { slug: "final-selection",     label: "Final Selection",      source: "editorial", appliesTo: ["government-exam", "govt-vacancy"], order: 128, placement: "both", showAsTab: true },
   { slug: "seat-allotment",      label: "Seat Allotment",       source: "editorial", appliesTo: ["university-exam"], order: 129, placement: "both", showAsTab: true },
+
+  // Academic Info (column-backed: academic_year / semester / admission_to). An admission
+  // concept — entrance + university (which degree, session, admission-to). 122/123 entrance
+  // records carry admission_to; rendering it via the ordered path preserves it on widening.
+  { slug: "academic-info",       label: "Academic Information", source: "column",    appliesTo: ["entrance-exam", "university-exam"], order: 145, placement: "both", showAsTab: false },
 ];
 
 /** Fast lookup by slug. */
@@ -159,6 +164,7 @@ export interface HasDataView {
   vacancy?: number | null;
   applicationFee?: Record<string, number | undefined> | null;
   selectionProcess?: string[] | null;
+  academicInfo?: { academicYear?: string | null; semester?: string | null; admissionTo?: string | null } | null;
   /** True when exam_syllabus_subjects has ≥1 row for this exam (structured store,
    *  replaced the dropped syllabus_highlights column 2026-09-11). Drives the Syllabus tab. */
   hasStructuredSyllabus?: boolean;
@@ -278,6 +284,12 @@ export function hasData(exam: HasDataView, slug: string): boolean {
           return nonEmptyArr(exam.selectionProcess);
         case "syllabus":
           return exam.hasStructuredSyllabus === true;
+        case "academic-info":
+          return !!exam.academicInfo && (
+            nonEmptyStr(exam.academicInfo.academicYear) ||
+            nonEmptyStr(exam.academicInfo.semester) ||
+            nonEmptyStr(exam.academicInfo.admissionTo)
+          );
         default:
           return false;
       }
