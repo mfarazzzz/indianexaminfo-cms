@@ -225,7 +225,7 @@ export const ENTITY_TYPE_PROFILES: Record<string, EntityTypeProfile> = {
     description: "CBSE, ICSE, State Boards — class 10/12 examinations",
     icon: "🏫",
     requiredModules: ["date-sheet"],
-    defaultModules: ["date-sheet", "syllabus", "admit-card", "result", "previous-papers"],
+    defaultModules: ["date-sheet", "syllabus", "admit-card", "result"],
     publishChecklist: [
       { label: "Board name filled", check: "typeField:boardName" },
       { label: "Class specified", check: "typeField:className" },
@@ -819,85 +819,11 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
 
   // ─── RESOURCE MODULES ──────────────────────────────────────────────────────
 
-  {
-    id: "previous-papers",
-    label: "Previous Papers",
-    icon: "📄",
-    description: "Year-wise previous question papers and solutions",
-    applicableTo: ["recruitment", "exam", "board", "university"],
-    appliesToSelection: ["written-exam"], // gate is the WRITTEN PAPER (selectionModel), not entity type
-    selectionOptOut: [
-      { value: "merit-based", reason: "No past papers without a paper" },
-      { value: "interview-based", reason: "No past papers without a paper" },
-      { value: "internal-admission", reason: "No past papers without a paper" },
-    ],
-    category: "resource",
-    displayOrder: 20,
-    capabilities: {
-      supportsAttachments: true, supportsTimeline: false, supportsDownloads: true,
-      supportsFAQs: false, supportsSEO: true, supportsAI: false,
-      supportsVersionHistory: false, supportsPreview: true, isRepeatable: false,
-    },
-    fields: [
-      { key: "papers", label: "Previous Papers", type: "repeatable", priority: "essential", required: true,
-        columns: [{ key: "year", label: "Year", type: "text", placeholder: "2024" }, { key: "title", label: "Paper / Set", type: "text", placeholder: "Paper I - Set A" }, { key: "url", label: "PDF URL", type: "url", placeholder: "https://…/paper.pdf" }],
-        hint: "Add each year/set separately for best download UX" },
-      { key: "solutionsAvailable", label: "Solutions Available?", type: "boolean", priority: "advanced" },
-      { key: "solutionsPdfUrl", label: "Solutions PDF URL", type: "url", priority: "advanced", placeholder: "https://…/solutions.pdf" },
-      { key: "analysisNotes", label: "Paper Analysis Notes", type: "textarea", priority: "advanced", placeholder: "Difficulty level, topic distribution" },
-    ],
-  },
-
-  {
-    id: "mock-test",
-    label: "Mock Test",
-    icon: "🧪",
-    description: "Free and paid mock test series",
-    applicableTo: ["recruitment", "exam", "university"],
-    appliesToSelection: ["written-exam"], // gate is the WRITTEN TEST (selectionModel), not entity type
-    selectionOptOut: [
-      { value: "merit-based", reason: "No test to mock" },
-      { value: "interview-based", reason: "No test to mock" },
-      { value: "internal-admission", reason: "No test to mock" },
-    ],
-    entityOptOut: [{ value: "board", reason: "Boards use sample papers, not competitive mock tests" }],
-    category: "resource",
-    displayOrder: 21,
-    capabilities: {
-      supportsAttachments: false, supportsTimeline: false, supportsDownloads: false,
-      supportsFAQs: false, supportsSEO: true, supportsAI: false,
-      supportsVersionHistory: false, supportsPreview: true, isRepeatable: false,
-    },
-    fields: [
-      { key: "testPortalUrl", label: "Mock Test Portal URL", type: "url", priority: "essential", required: true, placeholder: "https://…/mock-test" },
-      { key: "totalTests", label: "Total Tests Available", type: "number", priority: "essential", placeholder: "50" },
-      { key: "freeTests", label: "Free Tests Count", type: "number", priority: "essential" },
-      { key: "isPaid", label: "Paid Tests Available?", type: "boolean", priority: "advanced" },
-      { key: "testPattern", label: "Test Pattern", type: "textarea", priority: "advanced", placeholder: "Duration, questions, marking scheme" },
-      { key: "topicsCovered", label: "Topics Covered", type: "text", priority: "advanced", placeholder: "Quant, Reasoning, English…" },
-    ],
-  },
-
-  {
-    id: "study-material",
-    label: "Study Material",
-    icon: "🗂️",
-    description: "Notes, PDFs, video courses, and resources",
-    applicableTo: ["*"],
-    category: "resource",
-    displayOrder: 22,
-    capabilities: {
-      supportsAttachments: true, supportsTimeline: false, supportsDownloads: true,
-      supportsFAQs: false, supportsSEO: true, supportsAI: false,
-      supportsVersionHistory: false, supportsPreview: true, isRepeatable: false,
-    },
-    fields: [
-      { key: "resources", label: "Study Resources", type: "repeatable", priority: "essential",
-        columns: [{ key: "subject", label: "Subject", type: "text", placeholder: "e.g. Mathematics" }, { key: "title", label: "Resource Title", type: "text", placeholder: "e.g. Complete Notes" }, { key: "url", label: "URL", type: "url", placeholder: "https://…" }, { key: "type", label: "Type", type: "text", placeholder: "PDF/Video/Notes" }] },
-      { key: "isFree", label: "Free Resources?", type: "boolean", priority: "advanced" },
-      { key: "description", label: "Description", type: "textarea", priority: "advanced", placeholder: "What's included, coverage" },
-    ],
-  },
+  // RETIRED (2026-09-10): previous-papers, mock-test, study-material modules removed.
+  // Their content moved to the exam_resources LIBRARY (level 3, year-tagged, shared across
+  // editions). Editors add these via the Resources tab now; keeping the modules would be two
+  // homes for one thing. sample-papers (DB-only row) retired alongside. See NORMALIZATION_AUDIT.
+  // NOT retired: document-verification (real merit/interview stage), syllabus (structured).
 
   // ─── META MODULES ──────────────────────────────────────────────────────────
 
