@@ -113,3 +113,18 @@ export async function deleteSubject(id: string): Promise<void> {
   if (error) throw error;
   revalidateExams().catch(() => {});
 }
+
+/**
+ * Persist a new subject order. Takes the subject ids in their intended order and writes
+ * display_order = index for each. The frontend renders ORDER BY display_order, so this is
+ * the single source of truth for syllabus sequence (Paper I subjects before Paper II, or
+ * the order the paper runs) — not decorative.
+ */
+export async function reorderSubjects(orderedIds: string[]): Promise<void> {
+  await Promise.all(
+    orderedIds.map((id, index) =>
+      db.from("exam_syllabus_subjects").update({ display_order: index }).eq("id", id)
+    )
+  );
+  revalidateExams().catch(() => {});
+}
