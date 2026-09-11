@@ -6,6 +6,9 @@
 
 export type Pillar = "sarkari-naukri" | "entrance-exam" | "board-university";
 
+/** Publish-state single source of truth (exams.workflow_status). is_published is derived. */
+export type ExamWorkflowStatus = "draft" | "published" | "archived";
+
 export type ContentType =
   | "notification"
   | "application"
@@ -63,7 +66,6 @@ export type ExamEntity = {
   vacancy?: number;
   applicationFee?: { general: number; obc: number; sc: number; st: number; ews?: number };
   selectionProcess?: string[];
-  syllabusHighlights?: string[];
   academicYear?: string;
   semester?: string;
   admissionTo?: string;

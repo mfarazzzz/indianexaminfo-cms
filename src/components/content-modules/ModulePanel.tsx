@@ -76,7 +76,10 @@ function buildHasDataView(
     vacancy: edition?.vacancy ?? null,
     applicationFee: (edition?.applicationFee ?? {}) as Record<string, number | undefined>,
     selectionProcess: exam.selectionProcess ?? [],
-    syllabusHighlights: exam.syllabusHighlights ?? [],
+    // Structured syllabus (exam_syllabus_subjects) is edited in the dedicated Syllabus
+    // tab and is authoritative; this preview panel doesn't load it, so the syllabus
+    // hasData signal here is left false (the dropped syllabus_highlights column is gone).
+    hasStructuredSyllabus: false,
     faqs: exam.faqs ?? edition?.faqs ?? [],
     contentModules: contentModules as Record<string, unknown>,
   };

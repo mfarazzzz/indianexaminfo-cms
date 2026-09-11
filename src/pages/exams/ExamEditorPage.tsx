@@ -90,7 +90,6 @@ const examSchema = z.object({
   vacancy: z.number().nullable().optional(),
   applicationFee: z.object({ general: z.number().default(0), obc: z.number().default(0), sc: z.number().default(0), st: z.number().default(0), ews: z.number().optional(), pwd: z.number().optional() }).optional(),
   selectionProcess: z.array(z.string()).default([]),
-  syllabusHighlights: z.array(z.string()).default([]),
   academicYear: z.string().optional().nullable(),
   semester: z.string().optional().nullable(),
   admissionTo: z.string().optional().nullable(),
@@ -182,7 +181,7 @@ export function ExamEditorPage() {
       // Existing exams are NOT reseeded — their rows load untouched. (Track 2, Option B)
       dates: buildSeedDates(), eligibility: { age: "", qualification: "", nationality: "" },
       vacancy: null, applicationFee: { general: 0, obc: 0, sc: 0, st: 0 },
-      selectionProcess: [], syllabusHighlights: [],
+      selectionProcess: [],
       academicYear: null, semester: null, admissionTo: null,
       tags: [], searchKeywords: [], seoTitle: null, seoDescription: null, faqs: [],
       typeFields: {},
@@ -222,7 +221,7 @@ export function ExamEditorPage() {
         hasApplication: data.hasApplication, hasNotification: data.hasNotification, hasCutoff: data.hasCutoff,
         dates: data.dates ?? [], eligibility: data.eligibility ?? { age: "", qualification: "", nationality: "" },
         vacancy: data.vacancy ?? null, applicationFee: data.applicationFee ?? { general: 0, obc: 0, sc: 0, st: 0 },
-        selectionProcess: data.selectionProcess ?? [], syllabusHighlights: data.syllabusHighlights ?? [],
+        selectionProcess: data.selectionProcess ?? [],
         academicYear: data.academicYear ?? null, semester: data.semester ?? null, admissionTo: data.admissionTo ?? null,
         tags: data.tags ?? [], searchKeywords: data.searchKeywords ?? [],
         seoTitle: data.seoTitle ?? null, seoDescription: data.seoDescription ?? null, faqs: data.faqs ?? [],
@@ -382,7 +381,7 @@ export function ExamEditorPage() {
 
           // Selection Process
           if (Array.isArray(d.selectionProcess)) form.setValue("selectionProcess", d.selectionProcess, opts);
-          if (Array.isArray(d.syllabusHighlights)) form.setValue("syllabusHighlights", d.syllabusHighlights, opts);
+
 
           // Dates (array for timeline)
           if (Array.isArray(d.dates)) form.setValue("dates", d.dates, opts);
@@ -468,7 +467,7 @@ export function ExamEditorPage() {
 }
 
 function buildUpdatePayload(data: ExamFormData) {
-  return { hasAdmitCard: data.hasAdmitCard, hasResult: data.hasResult, hasAnswerKey: data.hasAnswerKey, hasSyllabus: data.hasSyllabus, hasDateSheet: data.hasDateSheet, hasMockTest: data.hasMockTest, hasPreviousPapers: data.hasPreviousPapers, hasStudyMaterial: data.hasStudyMaterial, hasApplication: data.hasApplication, hasNotification: data.hasNotification, hasCutoff: data.hasCutoff, dates: prepareDatesForSave(data.dates as ExamDateEntry[]), eligibility: data.eligibility, vacancy: data.vacancy, applicationFee: data.applicationFee, selectionProcess: data.selectionProcess, syllabusHighlights: data.syllabusHighlights, academicYear: data.academicYear, semester: data.semester, admissionTo: data.admissionTo, tags: data.tags, searchKeywords: data.searchKeywords, seoTitle: data.seoTitle, seoDescription: data.seoDescription, faqs: data.faqs, typeFields: data.typeFields };
+  return { hasAdmitCard: data.hasAdmitCard, hasResult: data.hasResult, hasAnswerKey: data.hasAnswerKey, hasSyllabus: data.hasSyllabus, hasDateSheet: data.hasDateSheet, hasMockTest: data.hasMockTest, hasPreviousPapers: data.hasPreviousPapers, hasStudyMaterial: data.hasStudyMaterial, hasApplication: data.hasApplication, hasNotification: data.hasNotification, hasCutoff: data.hasCutoff, dates: prepareDatesForSave(data.dates as ExamDateEntry[]), eligibility: data.eligibility, vacancy: data.vacancy, applicationFee: data.applicationFee, selectionProcess: data.selectionProcess, academicYear: data.academicYear, semester: data.semester, admissionTo: data.admissionTo, tags: data.tags, searchKeywords: data.searchKeywords, seoTitle: data.seoTitle, seoDescription: data.seoDescription, faqs: data.faqs, typeFields: data.typeFields };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -676,7 +675,7 @@ function EligibilityTab({ form, entityProfile }: { form: any; entityProfile: Ent
   const essentialFields = entityProfile?.eligibilityFields.filter((f) => f.priority === "essential") ?? [];
   const advancedFields = entityProfile?.eligibilityFields.filter((f) => f.priority === "advanced") ?? [];
   const selectionStr = (form.watch("selectionProcess") ?? []).join(", ");
-  const syllabusStr = (form.watch("syllabusHighlights") ?? []).join(", ");
+
 
   return (
     <div className="space-y-8">
@@ -696,9 +695,12 @@ function EligibilityTab({ form, entityProfile }: { form: any; entityProfile: Ent
         <input value={selectionStr} onChange={(e) => form.setValue("selectionProcess", e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))} placeholder="Prelims, Mains, Interview" className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
         {(form.watch("selectionProcess") ?? []).length > 0 && <div className="flex flex-wrap gap-1.5 mt-2">{(form.watch("selectionProcess") ?? []).map((s: string, i: number) => <span key={i} className="px-2 py-0.5 text-xs rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">{i + 1}. {s}</span>)}</div>}
       </section>
+      {/* Syllabus Highlights REMOVED (2026-09-11): the flat syllabus_highlights column
+          was dropped. Syllabus is now the structured exam_syllabus_subjects store, edited
+          in the dedicated Syllabus tab (subject + topics + typed weightage). */}
       <section>
-        <h3 className="text-sm font-semibold text-slate-800 mb-1">Syllabus Highlights</h3>
-        <input value={syllabusStr} onChange={(e) => form.setValue("syllabusHighlights", e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))} placeholder="English, Reasoning, Quantitative Aptitude" className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+        <h3 className="text-sm font-semibold text-slate-800 mb-1">Syllabus</h3>
+        <p className="text-xs text-slate-500">Edit the structured syllabus (subjects, topics, weightage) in the <span className="font-medium">Syllabus</span> tab. It is shared across all editions.</p>
       </section>
     </div>
   );

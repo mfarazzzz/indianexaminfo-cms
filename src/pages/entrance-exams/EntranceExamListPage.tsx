@@ -156,10 +156,12 @@ export function EntranceExamListPage() {
                 <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
                   {exam.category.replace(/-/g, " ")}
                 </span>
-                {exam.isPublished ? (
+                {exam.workflowStatus === "published" ? (
                   <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">● Live</span>
-                ) : (
+                ) : exam.workflowStatus === "draft" ? (
                   <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">○ Draft</span>
+                ) : (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">▢ Archived</span>
                 )}
                 {exam.currentEdition && (
                   <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_COLORS[exam.currentEdition.status] ?? "bg-gray-100 text-gray-600"}`}>

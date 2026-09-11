@@ -68,7 +68,6 @@ export interface Database {
           semester: string | null;
           admission_to: string | null;
           selection_process: string[];
-          syllabus_highlights: string[];
           seo_title: string | null;
           seo_description: string | null;
           faqs: Json;

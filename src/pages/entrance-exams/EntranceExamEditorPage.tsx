@@ -9,7 +9,8 @@ import {
   type ExamEdition, type ExamIdentity, type EditionStatus, type CycleFrequency, type CycleSession,
 } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
-import { deleteExam, publishExam, unpublishExam } from "@/services/examService";
+import { deleteExam, setExamWorkflowStatus } from "@/services/examService";
+import type { ExamWorkflowStatus } from "@/types/exam";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { RichEditor } from "@/components/shared/RichEditor";
 import { ImageUploader } from "@/components/shared/ImageUploader";
@@ -135,6 +136,7 @@ export function EntranceExamEditorPage() {
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [tabAiFilling, setTabAiFilling] = useState<string | null>(null);
   const [isPublished, setIsPublished] = useState(true);
+  const [workflowStatus, setWorkflowStatus] = useState<ExamWorkflowStatus>("published");
   const [publishing, setPublishing] = useState(false);
   const { getSetting } = useSettings();
 
@@ -177,6 +179,7 @@ export function EntranceExamEditorPage() {
       const data = await getEntranceExam(id);
       setExam(data.exam);
       setIsPublished(data.exam.isPublished);
+      setWorkflowStatus(data.exam.workflowStatus);
       setCurrentEdition(data.currentEdition);
       setEditions(data.editions);
       // Populate form with exam identity
@@ -701,33 +704,45 @@ export function EntranceExamEditorPage() {
         <div className="flex items-center gap-2">
           {!isNew && (
             <>
-              {/* Publish status badge + toggle */}
-              <button type="button" onClick={async () => {
-                setPublishing(true);
-                try {
-                  if (isPublished) {
-                    await unpublishExam(exam!.id);
-                    setIsPublished(false);
-                    toast.success("Exam unpublished. It won't appear on the frontend.");
-                  } else {
-                    await publishExam(exam!.id);
-                    setIsPublished(true);
-                    toast.success("Exam published! It will appear on the frontend shortly.");
-                  }
-                } catch (err) {
-                  toast.error(getErrorMessage(err));
-                } finally {
-                  setPublishing(false);
-                }
-              }} disabled={publishing}
-                className={`flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  isPublished
-                    ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
-                    : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                } disabled:opacity-50`}>
+              {/* Publish state — workflow_status is the single source of truth
+                  (draft = not on site, published = live, archived = retired).
+                  is_published is derived from this by a DB trigger. */}
+              <div className={`flex items-center gap-1.5 rounded border px-2 py-1 text-xs font-medium ${
+                workflowStatus === "published"
+                  ? "border-green-200 bg-green-50 text-green-700"
+                  : workflowStatus === "draft"
+                  ? "border-amber-200 bg-amber-50 text-amber-700"
+                  : "border-slate-300 bg-slate-100 text-slate-600"
+              }`}>
                 <Globe size={14} />
-                {publishing ? "..." : isPublished ? "Published ✓" : "Draft — Publish"}
-              </button>
+                <select
+                  value={workflowStatus}
+                  disabled={publishing}
+                  onChange={async (e) => {
+                    const next = e.target.value as ExamWorkflowStatus;
+                    setPublishing(true);
+                    try {
+                      await setExamWorkflowStatus(exam!.id, next);
+                      setWorkflowStatus(next);
+                      setIsPublished(next === "published");
+                      toast.success(
+                        next === "published" ? "Published — live on the frontend."
+                        : next === "draft" ? "Set to draft — not on the frontend (404s on direct access)."
+                        : "Archived — retired from the frontend."
+                      );
+                    } catch (err) {
+                      toast.error(getErrorMessage(err));
+                    } finally {
+                      setPublishing(false);
+                    }
+                  }}
+                  className="bg-transparent text-xs font-medium focus:outline-none disabled:opacity-50 cursor-pointer"
+                >
+                  <option value="draft">Draft</option>
+                  <option value="published">Published ✓</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
               {exam?.slug && (
                 <ViewOnSiteButton
                   pillar={exam.pillar}

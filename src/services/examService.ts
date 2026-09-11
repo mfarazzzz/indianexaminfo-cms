@@ -6,7 +6,7 @@
 import { db } from "@/lib/supabase/client";
 import { revalidateExams } from "@/lib/revalidate";
 import { normalizeUrlOrThrow } from "@/lib/utils";
-import type { ExamEntity, ExamStatus, Pillar } from "@/types/exam";
+import type { ExamEntity, ExamStatus, Pillar, ExamWorkflowStatus } from "@/types/exam";
 
 // ── Row mapper: Supabase snake_case → camelCase ────────────────────────────
 
@@ -42,7 +42,6 @@ function mapRow(row: Record<string, unknown>): ExamEntity {
     vacancy: (row.vacancy as number) ?? undefined,
     applicationFee: (row.application_fee as ExamEntity["applicationFee"]) ?? undefined,
     selectionProcess: (row.selection_process as string[]) ?? [],
-    syllabusHighlights: (row.syllabus_highlights as string[]) ?? [],
     academicYear: (row.academic_year as string) ?? undefined,
     semester: (row.semester as string) ?? undefined,
     admissionTo: (row.admission_to as string) ?? undefined,
@@ -186,7 +185,6 @@ export interface ExamUpdateInput {
   vacancy?: number | null;
   applicationFee?: ExamEntity["applicationFee"];
   selectionProcess?: string[];
-  syllabusHighlights?: string[];
   // Academic fields
   academicYear?: string | null;
   semester?: string | null;
@@ -226,7 +224,8 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
     // Intentionally omitted: status, has_*, dates(important_dates), eligibility,
     // vacancy, applicationFee, lastUpdated.
     selectionProcess: "selection_process",
-    syllabusHighlights: "syllabus_highlights",
+    // syllabus_highlights column DROPPED (2026-09-11) — syllabus is now the structured
+    // exam_syllabus_subjects store (see syllabusService). Do NOT write this column.
     academicYear: "academic_year",
     semester: "semester",
     admissionTo: "admission_to",
@@ -275,10 +274,13 @@ export async function deleteExam(id: string): Promise<void> {
 
 // ── Publish / Unpublish ────────────────────────────────────────────────────
 
-export async function publishExam(id: string): Promise<ExamEntity> {
+// Publish state is workflow_status (single source of truth, 2026-09-11). is_published
+// is DERIVED by a DB trigger — writing it directly is a no-op, so these write
+// workflow_status. draft = not on site, published = live, archived = retired.
+export async function setExamWorkflowStatus(id: string, status: ExamWorkflowStatus): Promise<ExamEntity> {
   const { data, error } = await db
     .from("exams")
-    .update({ is_published: true, updated_at: new Date().toISOString() })
+    .update({ workflow_status: status, updated_at: new Date().toISOString() })
     .eq("id", id)
     .select(LIST_SELECT)
     .single();
@@ -287,16 +289,12 @@ export async function publishExam(id: string): Promise<ExamEntity> {
   return mapRow(data as Record<string, unknown>);
 }
 
+export async function publishExam(id: string): Promise<ExamEntity> {
+  return setExamWorkflowStatus(id, "published");
+}
+
 export async function unpublishExam(id: string): Promise<ExamEntity> {
-  const { data, error } = await db
-    .from("exams")
-    .update({ is_published: false, updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .select(LIST_SELECT)
-    .single();
-  if (error) throw error;
-  revalidateExams().catch(() => {});
-  return mapRow(data as Record<string, unknown>);
+  return setExamWorkflowStatus(id, "draft");
 }
 
 // ── Slug check ─────────────────────────────────────────────────────────────

@@ -236,8 +236,7 @@ CRITICAL RULES:
 7. Fill ALL type-specific fields based on the exam type (entrance exam fields for entrance exams, recruitment fields for jobs, etc.)
 8. officialWebsite MUST be a valid URL — infer from conducting body if not directly stated
 9. Fill selectionProcess with all stages (e.g. ["Written Exam", "Interview", "Document Verification"])
-10. Fill syllabusHighlights with key subjects/topics
-11. Fill tags with 8-10 relevant tags
+10. Fill tags with 8-10 relevant tags
 12. Fill searchKeywords with 8-12 keywords students would search for
 13. seoTitle must be under 60 chars, seoDescription under 160 chars — both must include exam name and year
 14. For entrance exams: fill examDuration, totalMarks, totalQuestions, negativeMarking, examMode, examMedium, numberOfAttempts, acceptedBy
@@ -266,7 +265,6 @@ COMPLETE JSON SCHEMA (fill every field possible):
     "general": 0, "obc": 0, "sc": 0, "st": 0, "ews": 0, "pwd": 0
   },
   "selectionProcess": ["Stage 1", "Stage 2", "..."],
-  "syllabusHighlights": ["Subject 1", "Topic 2", "..."],
   "dates": [
     {"label": "Notification Date", "date": "YYYY-MM-DD", "isUrgent": false},
     {"label": "Application Start", "date": "YYYY-MM-DD", "isUrgent": true},

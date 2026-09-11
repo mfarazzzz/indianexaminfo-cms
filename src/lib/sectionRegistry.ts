@@ -150,7 +150,9 @@ export interface HasDataView {
   vacancy?: number | null;
   applicationFee?: Record<string, number | undefined> | null;
   selectionProcess?: string[] | null;
-  syllabusHighlights?: string[] | null;
+  /** True when exam_syllabus_subjects has ≥1 row for this exam (structured store,
+   *  replaced the dropped syllabus_highlights column 2026-09-11). Drives the Syllabus tab. */
+  hasStructuredSyllabus?: boolean;
   faqs?: { question: string; answer: string }[] | null;
   // editorial / module store (exam_editions.content_modules today; editorial_content post-rebuild)
   contentModules?: Record<string, unknown>;
@@ -255,7 +257,7 @@ export function hasData(exam: HasDataView, slug: string): boolean {
         case "selection-process":
           return nonEmptyArr(exam.selectionProcess);
         case "syllabus":
-          return nonEmptyArr(exam.syllabusHighlights);
+          return exam.hasStructuredSyllabus === true;
         default:
           return false;
       }

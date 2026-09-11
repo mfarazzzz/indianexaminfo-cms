@@ -11,7 +11,7 @@
 import { db } from "@/lib/supabase/client";
 import { revalidateExams } from "@/lib/revalidate";
 import { normalizeUrlOrThrow } from "@/lib/utils";
-import type { Pillar } from "@/types/exam";
+import type { Pillar, ExamWorkflowStatus } from "@/types/exam";
 import type { SelectionModel } from "@/types/selection";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -84,12 +84,13 @@ export interface ExamIdentity {
   officialWebsite: string;
   cycleFrequency: CycleFrequency;
   selectionProcess: string[];
-  syllabusHighlights: string[];
   tags: string[];
   searchKeywords: string[];
   seoTitle: string | null;
   seoDescription: string | null;
   isFeatured: boolean;
+  /** Publish state source of truth (draft/published/archived). isPublished is derived from it. */
+  workflowStatus: ExamWorkflowStatus;
   isPublished: boolean;
   isVerified: boolean;
   faqs: { question: string; answer: string }[];
@@ -108,6 +109,7 @@ export interface EntranceExamListItem {
   conductingBody: string;
   cycleFrequency: CycleFrequency;
   isFeatured: boolean;
+  workflowStatus: ExamWorkflowStatus;
   isPublished: boolean;
   currentEdition: {
     id: string;
@@ -203,12 +205,12 @@ function mapExamIdentityRow(row: Record<string, unknown>): ExamIdentity {
     officialWebsite: (row.official_website as string) ?? "",
     cycleFrequency: (row.cycle_frequency as CycleFrequency) ?? "annual",
     selectionProcess: (row.selection_process as string[]) ?? [],
-    syllabusHighlights: (row.syllabus_highlights as string[]) ?? [],
     tags: (row.tags as string[]) ?? [],
     searchKeywords: (row.search_keywords as string[]) ?? [],
     seoTitle: (row.seo_title as string) ?? null,
     seoDescription: (row.seo_description as string) ?? null,
     isFeatured: (row.is_featured as boolean) ?? false,
+    workflowStatus: (row.workflow_status as ExamWorkflowStatus) ?? "published",
     isPublished: (row.is_published as boolean) ?? false,
     isVerified: (row.is_verified as boolean) ?? false,
     faqs: (row.faqs as { question: string; answer: string }[]) ?? [],
@@ -234,6 +236,7 @@ function mapListItem(row: Record<string, unknown>): EntranceExamListItem {
     conductingBody: (row.conducting_body as string) ?? "",
     cycleFrequency: (row.cycle_frequency as CycleFrequency) ?? "annual",
     isFeatured: (row.is_featured as boolean) ?? false,
+    workflowStatus: (row.workflow_status as ExamWorkflowStatus) ?? "published",
     isPublished: (row.is_published as boolean) ?? false,
     currentEdition: edition
       ? {
@@ -251,7 +254,7 @@ function mapListItem(row: Record<string, unknown>): EntranceExamListItem {
 
 const LIST_SELECT = `
   id, slug, name, short_name, category_id, conducting_body,
-  cycle_frequency, is_featured,
+  cycle_frequency, is_featured, workflow_status, is_published,
   cat:categories!category_id(slug),
   current_edition:exam_editions!current_edition_id(
     id, year, edition_label, status, important_dates
@@ -357,7 +360,8 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
       cycle_frequency: input.cycleFrequency ?? "annual",
       // status DROPPED from exams (step 4) — set on the edition insert below.
       is_featured: false,
-      is_published: true,
+      // workflow_status is the publish source of truth; is_published derives from it.
+      workflow_status: "published",
     })
     .select(DETAIL_SELECT)
     .single();
@@ -401,7 +405,6 @@ export async function updateExamIdentity(
     officialWebsite: string;
     cycleFrequency: CycleFrequency;
     selectionProcess: string[];
-    syllabusHighlights: string[];
     tags: string[];
     searchKeywords: string[];
     seoTitle: string;
@@ -431,7 +434,8 @@ export async function updateExamIdentity(
   if (input.officialWebsite !== undefined) updates.official_website = normalizeUrlOrThrow(input.officialWebsite);
   if (input.cycleFrequency !== undefined) updates.cycle_frequency = input.cycleFrequency;
   if (input.selectionProcess !== undefined) updates.selection_process = input.selectionProcess;
-  if (input.syllabusHighlights !== undefined) updates.syllabus_highlights = input.syllabusHighlights;
+  // syllabus_highlights column DROPPED (2026-09-11) — syllabus is the structured
+  // exam_syllabus_subjects store now (syllabusService). Do NOT write this column.
   if (input.tags !== undefined) updates.tags = input.tags;
   if (input.searchKeywords !== undefined) updates.search_keywords = input.searchKeywords;
   if (input.seoTitle !== undefined) updates.seo_title = input.seoTitle;
@@ -558,7 +562,7 @@ export async function startNewEdition(
     if (currentEd) {
       if (input.carryOver.eligibility) initialData.eligibility = currentEd.eligibility;
       if (input.carryOver.fees) initialData.application_fee = currentEd.application_fee;
-      // Syllabus is on the exam identity (syllabus_highlights), not edition — no-op here
+      // Syllabus is exam-identity-level (structured exam_syllabus_subjects), not edition — no-op here
     }
   }
 

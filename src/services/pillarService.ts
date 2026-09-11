@@ -24,7 +24,7 @@ export type { ExamIdentity, ExamEdition, EntranceExamListItem as PillarListItem,
 const DETAIL_SELECT = `*, cat:categories!category_id(slug), subcat:categories!subcategory_id(slug)`;
 
 const LIST_SELECT = `
-  id, slug, name, short_name, category_id, conducting_body, is_published,
+  id, slug, name, short_name, category_id, conducting_body, is_published, workflow_status,
   cycle_frequency, is_featured,
   cat:categories!category_id(slug),
   current_edition:exam_editions!current_edition_id(
@@ -49,12 +49,12 @@ function mapIdentity(row: any): ExamIdentity {
     officialWebsite: row.official_website ?? "",
     cycleFrequency: row.cycle_frequency ?? "annual",
     selectionProcess: row.selection_process ?? [],
-    syllabusHighlights: row.syllabus_highlights ?? [],
     tags: row.tags ?? [],
     searchKeywords: row.search_keywords ?? [],
     seoTitle: row.seo_title ?? null,
     seoDescription: row.seo_description ?? null,
     isFeatured: row.is_featured ?? false,
+    workflowStatus: row.workflow_status ?? "published",
     isPublished: row.is_published ?? false,
     isVerified: row.is_verified ?? false,
     faqs: row.faqs ?? [],
@@ -162,7 +162,8 @@ export function createPillarService(pillar: Pillar) {
         conducting_body: input.conductingBody,
         official_website: normalizeUrlOrThrow(input.officialWebsite), cycle_frequency: input.cycleFrequency ?? "annual",
         // status DROPPED from exams (step 4) — set on the edition insert below.
-        is_featured: false, is_published: true,
+        // workflow_status is the publish source of truth; is_published derives from it.
+        is_featured: false, workflow_status: "published",
       }).select(DETAIL_SELECT).single();
       if (examErr) throw examErr;
 
