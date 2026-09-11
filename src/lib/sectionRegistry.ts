@@ -101,8 +101,8 @@ export const SECTION_REGISTRY: SectionDef[] = [
   { slug: "syllabus",            label: "Syllabus",            source: "column",    appliesTo: ALL_PILLARS, order: 200, placement: "tab", showAsTab: true },
   { slug: "cut-off",             label: "Cut Off Marks",       source: "editorial", appliesTo: ["government-exam", "govt-vacancy", "entrance-exam"], order: 210, placement: "tab", showAsTab: true },
   { slug: "answer-key",          label: "Answer Key",          source: "editorial", appliesTo: ["government-exam", "govt-vacancy", "entrance-exam"], order: 220, placement: "tab", showAsTab: true },
-  { slug: "previous-papers",     label: "Previous Year Papers", source: "editorial", appliesTo: ALL_PILLARS, order: 230, placement: "tab", showAsTab: true },
-  { slug: "study-material",      label: "Study Material",      source: "editorial", appliesTo: ALL_PILLARS, order: 240, placement: "tab", showAsTab: true },
+  // previous-papers + study-material RETIRED (2026-09-10) — content moved to the exam_resources
+  // library (rendered by ResourceLibrary, not an editorial section). news KEPT (Related News pending).
   { slug: "news",                label: "News & Updates",      source: "editorial", appliesTo: ALL_PILLARS, order: 250, placement: "tab", showAsTab: true },
 ];
 
@@ -292,8 +292,7 @@ const CONTENT_TYPE_TO_SECTION: Record<string, string> = {
   // "date-sheet" intentionally absent: board/university concept only.
   // Must NOT fall through to "admit-card" — that caused recruitment exams with
   // admit-card content to show a Date Sheet tab.
-  "previous-papers": "previous-papers",
-  "study-material": "study-material",
+  // previous-papers / study-material removed — retired sections (now the exam_resources library).
   faqs: "faqs",
   news: "news",
 };
