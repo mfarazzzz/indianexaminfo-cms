@@ -96,14 +96,24 @@ interface Props {
   selectionModel?: SelectionModel;
   /** Group A rows deep-link to the tab that edits them (e.g. "edition", "identity"). */
   onNavigateTab?: (tabId: string) => void;
+  /**
+   * Reports whether ANY module currently has an unsaved edit — i.e. a debounced
+   * autosave is scheduled but hasn't landed yet. The editor feeds this into its
+   * unsaved-changes guard so leaving the Modules tab within the ~2s autosave
+   * window prompts to save instead of silently dropping the edit.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType, selectionModel, onNavigateTab }: Props) {
+export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType, selectionModel, onNavigateTab, onDirtyChange }: Props) {
   const [modules, setModules] = useState<ModuleDefinition[]>([]);
   const [contentModules, setContentModules] = useState<ContentModulesData>({});
   const [config, setConfig] = useState<ModuleConfig>({ moduleOrder: [], enabledModules: [], modes: {}, syncTimestamps: {} });
   const [loading, setLoading] = useState(true);
   const [statuses, setStatuses] = useState<Record<string, SaveStatus>>({});
+  // Per-module "has an unsaved edit in flight/debouncing" flags. Aggregated and
+  // reported via onDirtyChange so the editor's guard covers the autosave window.
+  const [pendingBySlug, setPendingBySlug] = useState<Record<string, boolean>>({});
   const [aiLoadingSlug, setAiLoadingSlug] = useState<string | null>(null);
   const [allCollapsed, setAllCollapsed] = useState(false);
   const { getSetting } = useSettings();
@@ -230,6 +240,25 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
   const handleStatusChange = useCallback((slug: string, status: SaveStatus) => {
     setStatuses((prev) => ({ ...prev, [slug]: status }));
   }, []);
+
+  const handlePendingChange = useCallback((slug: string, pending: boolean) => {
+    setPendingBySlug((prev) => {
+      if ((prev[slug] ?? false) === pending) return prev; // no change — skip re-render
+      return { ...prev, [slug]: pending };
+    });
+  }, []);
+
+  // Report aggregate dirtiness to the editor whenever any module's pending flips.
+  const anyPending = Object.values(pendingBySlug).some(Boolean);
+  useEffect(() => {
+    onDirtyChange?.(anyPending);
+  }, [anyPending, onDirtyChange]);
+
+  // On unmount, clear the guard's module-dirty signal so it can't linger after
+  // the panel is gone (the tab was left; any pending save already resolved above).
+  useEffect(() => {
+    return () => onDirtyChange?.(false);
+  }, [onDirtyChange]);
 
   const orderedModules = React.useMemo(() => {
     const ordered: ModuleDefinition[] = [];
@@ -372,6 +401,7 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
         onAIFill={handleAIFill}
         onSync={handleSync}
         onStatusChange={handleStatusChange}
+        onPendingChange={handlePendingChange}
         aiLoading={aiLoadingSlug === mod.slug}
         forceCollapsed={allCollapsed}
         hasLiveContent={hasLiveContent}

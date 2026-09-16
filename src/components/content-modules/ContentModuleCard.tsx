@@ -23,6 +23,9 @@ interface Props {
   onAIFill: (slug: string) => void;
   onSync: (slug: string) => void;
   onStatusChange?: (slug: string, status: SaveStatus) => void;
+  /** Reports this module's unsaved (debouncing/in-flight) state up to the panel
+   *  so the unsaved-changes guard treats a pending autosave as dirty. */
+  onPendingChange?: (slug: string, pending: boolean) => void;
   aiLoading?: boolean;
   /** Controlled collapse state from parent (Collapse All / Expand All) */
   forceCollapsed?: boolean;
@@ -44,7 +47,7 @@ interface Props {
 
 export function ContentModuleCard({
   module, enabled, editionId, content, mode, isStale, autoContent,
-  onToggle, onModeChange, onAIFill, onSync, onStatusChange, aiLoading, forceCollapsed,
+  onToggle, onModeChange, onAIFill, onSync, onStatusChange, onPendingChange, aiLoading, forceCollapsed,
   hasLiveContent, dragHandleProps, isDragging,
 }: Props) {
   // Item 4: collapsed by default — the tab was an enormous scroll with every
@@ -196,13 +199,15 @@ export function ContentModuleCard({
               <div>
                 <p className="text-[10px] uppercase text-slate-500 font-semibold mb-2">Additional Notes (Manual)</p>
                 <ModuleContentEditor editionId={editionId} moduleSlug={module.slug} fields={module.fields}
-                  initialContent={content} onStatusChange={(s) => onStatusChange?.(module.slug, s)} />
+                  initialContent={content} onStatusChange={(s) => onStatusChange?.(module.slug, s)}
+                  onPendingChange={(p) => onPendingChange?.(module.slug, p)} />
               </div>
             </div>
           )}
           {mode === "manual" && (
             <ModuleContentEditor editionId={editionId} moduleSlug={module.slug} fields={module.fields}
-              initialContent={content} onStatusChange={(s) => onStatusChange?.(module.slug, s)} />
+              initialContent={content} onStatusChange={(s) => onStatusChange?.(module.slug, s)}
+              onPendingChange={(p) => onPendingChange?.(module.slug, p)} />
           )}
         </div>
       )}

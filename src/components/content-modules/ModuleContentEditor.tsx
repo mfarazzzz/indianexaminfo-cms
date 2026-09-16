@@ -13,20 +13,33 @@ interface Props {
   fields: FieldDefinition[];
   initialContent: ModuleContentData | null;
   onStatusChange?: (status: SaveStatus) => void;
+  /** Reports whether this module has an unsaved (debouncing or in-flight) edit,
+   *  so the parent can feed it into the unsaved-changes guard. */
+  onPendingChange?: (pending: boolean) => void;
 }
 
-export function ModuleContentEditor({ editionId, moduleSlug, fields, initialContent, onStatusChange }: Props) {
+export function ModuleContentEditor({ editionId, moduleSlug, fields, initialContent, onStatusChange, onPendingChange }: Props) {
   const [content, setContent] = useState<Record<string, unknown>>(() => {
     if (!initialContent) return {};
     const { _meta, ...rest } = initialContent;
     return rest;
   });
 
-  const { scheduleAutosave, status } = useModuleAutosave(editionId, moduleSlug);
+  const { scheduleAutosave, status, pending } = useModuleAutosave(editionId, moduleSlug);
 
   useEffect(() => {
     onStatusChange?.(status);
   }, [status, onStatusChange]);
+
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
+
+  // On unmount, stop reporting pending for this instance so a stale "dirty"
+  // signal can't outlive the editor (e.g. after the module card collapses).
+  useEffect(() => {
+    return () => onPendingChange?.(false);
+  }, [onPendingChange]);
 
   const handleFieldChange = useCallback((key: string, value: unknown) => {
     setContent((prev) => {

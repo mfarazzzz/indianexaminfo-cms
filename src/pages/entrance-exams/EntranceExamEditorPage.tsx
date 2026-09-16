@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useBlocker, type BlockerFunction } from "react-router-dom";
 import { ArrowLeft, Save, Plus, Trash2, History, Sparkles, Loader2, Globe, ExternalLink } from "lucide-react";
+import { UnsavedChangesDialog } from "@/components/shared/UnsavedChangesDialog";
 import { toast } from "sonner";
 import { useForm, useFieldArray } from "react-hook-form";
 import {
@@ -138,6 +139,35 @@ export function EntranceExamEditorPage() {
   const [isPublished, setIsPublished] = useState(true);
   const [workflowStatus, setWorkflowStatus] = useState<ExamWorkflowStatus>("published");
   const [publishing, setPublishing] = useState(false);
+  // ── Unsaved-changes guard state ────────────────────────────────────────────
+  // Local-state tabs (Modules/News/News-SEO) hold edits outside react-hook-form,
+  // so they report their own dirty flag up here. Aggregated with form dirtiness
+  // below into a single `isDirty`. Each flag is set by comparing the tab's current
+  // state to the values it was seeded from (type-and-revert clears it) — never a
+  // bare "a keystroke happened" flag, so the guard doesn't fire on no-op edits.
+  // NOTE: the Modules tab (ModulePanel) autosaves module content on a 2-second
+  // debounce (useModuleAutosave). Config actions (enable/mode/reorder) persist
+  // immediately, but a content edit has a ~2s window where it's unsaved. So the
+  // Modules tab DOES feed the guard: `moduleDirty` mirrors ModulePanel's aggregate
+  // "an autosave is pending" flag, closing that window without redesigning the
+  // module save model. News list and News-SEO block are manual-save and report
+  // their own compared-to-seed flags. All feed the single unsaved-changes guard.
+  const [moduleDirty, setModuleDirty] = useState(false);
+  // Mirror of moduleDirty readable synchronously inside guard callbacks (so
+  // "Save & continue" can wait for the pending module autosave to land before
+  // it lets the tab unmount, without stale-closure reads of moduleDirty).
+  const moduleDirtyRef = React.useRef(false);
+  React.useEffect(() => { moduleDirtyRef.current = moduleDirty; }, [moduleDirty]);
+  const [newsDirty, setNewsDirty] = useState(false);
+  const [newsSeoDirty, setNewsSeoDirty] = useState(false);
+  // The pending action awaiting a Save/Discard/Cancel decision. `kind` distinguishes
+  // an in-editor tab switch from an in-app route navigation (they resume differently).
+  const [pendingExit, setPendingExit] = useState<
+    | { kind: "tab"; to: string }
+    | { kind: "nav" }
+    | null
+  >(null);
+  const [guardSaving, setGuardSaving] = useState(false);
   const { getSetting } = useSettings();
 
   const form = useForm<FormData>({
@@ -328,6 +358,125 @@ export function EntranceExamEditorPage() {
     }
   };
 
+  // ── Unsaved-changes guard ───────────────────────────────────────────────────
+  // Aggregate dirtiness: react-hook-form tracks identity/dates/seo-form (isDirty
+  // compares against the loaded defaults, so typing a value and reverting it is
+  // NOT dirty), plus the local-state tabs report their own compared-to-seed flags.
+  const formDirty = form.formState.isDirty;
+  const isDirty = formDirty || moduleDirty || newsDirty || newsSeoDirty;
+
+  // Human label for the surface that's dirty — named in the dialog so the editor
+  // knows what they'd lose. Prefer the active tab when it's the dirty one.
+  const dirtyWhere = (() => {
+    if (activeTab === "modules" && moduleDirty) return "Modules";
+    if (activeTab === "news" && newsDirty) return "News";
+    if (activeTab === "seo" && (newsSeoDirty || formDirty)) return "SEO";
+    if (moduleDirty) return "Modules";
+    if (newsDirty) return "News";
+    if (newsSeoDirty) return "News SEO";
+    const LABELS: Record<string, string> = {
+      identity: "Identity", resources: "Resources", syllabus: "Syllabus",
+      edition: "Dates & Status", modules: "Modules", news: "News",
+      seo: "SEO", editions: "Editions",
+    };
+    return LABELS[activeTab] ?? "this tab";
+  })();
+
+  // (1) In-app navigation guard (RR 6.26 useBlocker): blocks leaving the editor
+  // route (back button, sidebar link, ViewOnSite→away) while dirty.
+  const blockerFn = useCallback<BlockerFunction>(
+    ({ currentLocation, nextLocation }) =>
+      isDirty && currentLocation.pathname !== nextLocation.pathname,
+    [isDirty]
+  );
+  const blocker = useBlocker(blockerFn);
+  useEffect(() => {
+    if (blocker.state === "blocked") setPendingExit({ kind: "nav" });
+  }, [blocker.state]);
+
+  // (2) Browser close / refresh / external navigation guard.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = ""; // Chrome requires returnValue to be set
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  // (3) Tab-switch guard: the ONLY way tabs change. If the current surface is
+  // dirty, hold the switch and ask; otherwise switch immediately.
+  const guardedSetActiveTab = useCallback((to: string) => {
+    if (to === activeTab) return;
+    if (isDirty) {
+      setPendingExit({ kind: "tab", to });
+      return;
+    }
+    setActiveTab(to);
+  }, [activeTab, isDirty]);
+
+  // Clear the manual-save local dirty flags after a resolved guard. moduleDirty is
+  // NOT cleared here: it's owned by ModulePanel's live autosave state (it clears
+  // itself when the pending save lands, and resets to false on unmount), so forcing
+  // it false here would lie about whether the edit was actually persisted.
+  const clearLocalDirty = useCallback(() => {
+    setNewsDirty(false);
+    setNewsSeoDirty(false);
+  }, []);
+
+  const guardProceed = useCallback(() => {
+    const exit = pendingExit;
+    setPendingExit(null);
+    if (!exit) return;
+    if (exit.kind === "tab") setActiveTab(exit.to);
+    else if (exit.kind === "nav" && blocker.state === "blocked") blocker.proceed();
+  }, [pendingExit, blocker]);
+
+  const guardCancel = useCallback(() => {
+    setPendingExit(null);
+    if (blocker.state === "blocked") blocker.reset();
+  }, [blocker]);
+
+  const guardDiscard = useCallback(() => {
+    // Discard local-state edits so they can't resurface; RHF form is reset by the
+    // pending navigation/tab unmount reloading from server on next mount, but we
+    // also reset it to the last loaded values so a stay-then-return is clean.
+    clearLocalDirty();
+    form.reset(form.formState.defaultValues);
+    guardProceed();
+  }, [clearLocalDirty, form, guardProceed]);
+
+  const guardSaveAndContinue = useCallback(async () => {
+    setGuardSaving(true);
+    try {
+      // Save whatever is dirty. The main RHF form save covers identity/dates/seo-form;
+      // local-state tabs own their save buttons, so for those we submit the form (which
+      // persists edition-level fields) and rely on the tab having been saved via its own
+      // button. For form-dirty we run the real submit; for local-only dirt we just proceed
+      // after prompting the user saved via the tab button. To keep it deterministic we run
+      // the form submit when the form is dirty, then proceed.
+      if (formDirty) {
+        await form.handleSubmit(handleSave)();
+      }
+      // Modules: a content edit autosaves on a 2s debounce. If one is still pending
+      // we must let it land BEFORE we proceed — proceeding unmounts ModulePanel and
+      // clears the debounce timer, which would drop the edit. Wait for the pending
+      // flag (mirrored in moduleDirtyRef) to clear, capped so a stuck save can't
+      // hang the dialog forever (~6s = debounce + retry/backoff headroom).
+      if (moduleDirtyRef.current) {
+        const deadline = Date.now() + 6000;
+        while (moduleDirtyRef.current && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+      clearLocalDirty();
+      guardProceed();
+    } finally {
+      setGuardSaving(false);
+    }
+  }, [formDirty, form, clearLocalDirty, guardProceed]);
+
   const handleStartNewEdition = async (year: number, session: CycleSession, editionLabel?: string) => {
     try {
       const draft = await startNewEdition(exam!.id, { year, session, editionLabel });
@@ -383,6 +532,26 @@ export function EntranceExamEditorPage() {
     setShowAIDialog(false);
     try {
       const data = await generateExamDataWithAI(examName, year, apiKey as string, model as string || undefined, rawContent);
+
+      // No-op on empty — computed BEFORE any write. This is the "Fill Entire Exam"
+      // header button: the one that once overwrote a real Notification Date and
+      // reported "0 dates extracted" as success. If the AI returned nothing usable,
+      // change NOTHING — no form.setValue, no updateEdition/updateExamIdentity — and
+      // report it honestly. The module boolean flags (hasNotification etc.) are only
+      // written on the success path below, so an empty result can't flip real flags
+      // to false. `extractedDates` is reused by the success toast.
+      const extractedDates = data.importantDates.filter((d) => d.date && d.date.trim() !== "").length;
+      const gotAnything =
+        extractedDates > 0 ||
+        !!data.shortName || !!data.conductingBody || !!data.officialWebsite ||
+        !!data.seoTitle || !!data.seoDescription ||
+        (data.tags?.length ?? 0) > 0 || (data.faqs?.length ?? 0) > 0 ||
+        (data.vacancy != null && data.vacancy !== 0) ||
+        (data.contentModules && Object.keys(data.contentModules).length > 0);
+      if (!gotAnything) {
+        toast.warning("AI found nothing to fill — no changes were made.");
+        return;
+      }
 
       // Fill identity fields
       if (data.shortName) form.setValue("shortName", data.shortName);
@@ -487,20 +656,9 @@ export function EntranceExamEditorPage() {
         }
       }
 
-      // Item 5: don't present a no-op as a success. Count what was actually
-      // extracted; if the AI returned nothing usable, say so plainly.
-      const extractedDates = data.importantDates.filter((d) => d.date && d.date.trim() !== "").length;
-      const gotAnything =
-        extractedDates > 0 ||
-        !!data.seoTitle || !!data.seoDescription ||
-        (data.tags?.length ?? 0) > 0 || (data.faqs?.length ?? 0) > 0 ||
-        !!data.conductingBody || !!data.officialWebsite ||
-        (data.contentModules && Object.keys(data.contentModules).length > 0);
-      if (gotAnything) {
-        toast.success(`AI filled the exam. ${extractedDates} date${extractedDates === 1 ? "" : "s"} extracted.`);
-      } else {
-        toast.warning("AI found nothing to fill — no changes were made.");
-      }
+      // Success — the empty case already returned above, so we definitely wrote
+      // something. Report the honest date count.
+      toast.success(`AI filled the exam. ${extractedDates} date${extractedDates === 1 ? "" : "s"} extracted.`);
     } catch (err) {
       toast.error("AI generation failed: " + getErrorMessage(err));
     } finally {
@@ -527,9 +685,17 @@ export function EntranceExamEditorPage() {
     try {
       const { apiKey, model } = getAICredentials();
       const data = await aiFillIdentityTab(examName, rawContent, apiKey, model);
-      if (data.shortName) form.setValue("shortName", data.shortName);
-      if (data.conductingBody) form.setValue("conductingBody", data.conductingBody);
-      if (data.officialWebsite) form.setValue("officialWebsite", data.officialWebsite);
+      // No-op on empty: if the AI extracted nothing usable, change NOTHING (no
+      // form.setValue, no DB write) and say so plainly. A success toast on an empty
+      // result — while still saving — is how a real value gets silently overwritten.
+      const gotAnything = !!data.shortName || !!data.conductingBody || !!data.officialWebsite;
+      if (!gotAnything) {
+        toast.warning("AI extracted nothing for Identity — no changes made.");
+        return;
+      }
+      if (data.shortName) form.setValue("shortName", data.shortName, { shouldDirty: true });
+      if (data.conductingBody) form.setValue("conductingBody", data.conductingBody, { shouldDirty: true });
+      if (data.officialWebsite) form.setValue("officialWebsite", data.officialWebsite, { shouldDirty: true });
       // Auto-save to DB
       if (exam) {
         await updateExamIdentity(exam.id, {
@@ -552,9 +718,24 @@ export function EntranceExamEditorPage() {
     try {
       const { apiKey, model } = getAICredentials();
       const data = await aiFillDatesTab(examName, year, rawContent, apiKey, model);
-      if (data.importantDates.length > 0) {
+
+      // No-op on empty: only count a field as extracted when it carries a real value.
+      // Historically this handler always toasted "filled and saved" and unconditionally
+      // wrote status/vacancy/notificationDate — so an empty AI result reported success
+      // while overwriting a real Notification Date. Change NOTHING when nothing was found.
+      const extractedDates = data.importantDates.filter((d) => d.date && d.date.trim() !== "" && d.label).length;
+      const gotStatus  = !!data.status;
+      const gotVacancy = data.vacancy != null && data.vacancy !== 0;
+      const gotNotif   = !!data.notificationDate && data.notificationDate.trim() !== "";
+      if (extractedDates === 0 && !gotStatus && !gotVacancy && !gotNotif) {
+        toast.warning("AI extracted no dates or status — no changes made.");
+        return;
+      }
+
+      let merged: DateRow[] | null = null;
+      if (extractedDates > 0) {
         const current = form.getValues("importantDates") as DateRow[];
-        const merged = [...current];
+        merged = [...current];
         for (const ai of data.importantDates) {
           if (!ai.date || !ai.label) continue;
           const idx = merged.findIndex((d) => d.label.toLowerCase().replace(/[^a-z]/g, "").includes(ai.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8)));
@@ -562,21 +743,25 @@ export function EntranceExamEditorPage() {
           else merged.push(ai);
         }
         replaceDates(merged);
-        // Auto-save dates to DB
-        if (currentEdition) {
-          await updateEdition(currentEdition.id, {
-            importantDates: merged.filter((d) => d.date && d.date.trim() !== ""),
-            status: (data.status as EditionStatus) || undefined,
-            vacancy: data.vacancy ?? undefined,
-            notificationDate: data.notificationDate || undefined,
-          });
-          await loadExam();
-        }
       }
-      if (data.status) form.setValue("editionStatus", data.status as EditionStatus);
-      if (data.vacancy) form.setValue("vacancy", String(data.vacancy));
-      if (data.notificationDate) form.setValue("notificationDate", data.notificationDate);
-      toast.success("Dates & Status filled and saved.");
+
+      // Only set the scalar fields that were actually extracted — never clobber an
+      // existing value with a blank/absent AI field.
+      if (gotStatus)  form.setValue("editionStatus", data.status as EditionStatus, { shouldDirty: true });
+      if (gotVacancy) form.setValue("vacancy", String(data.vacancy), { shouldDirty: true });
+      if (gotNotif)   form.setValue("notificationDate", data.notificationDate, { shouldDirty: true });
+
+      // Auto-save only the fields we actually extracted (undefined = leave untouched).
+      if (currentEdition) {
+        await updateEdition(currentEdition.id, {
+          ...(merged ? { importantDates: merged.filter((d) => d.date && d.date.trim() !== "") } : {}),
+          status: gotStatus ? (data.status as EditionStatus) : undefined,
+          vacancy: gotVacancy ? data.vacancy : undefined,
+          notificationDate: gotNotif ? data.notificationDate : undefined,
+        });
+        await loadExam();
+      }
+      toast.success(`Dates & Status filled and saved. ${extractedDates} date${extractedDates === 1 ? "" : "s"} extracted.`);
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setTabAiFilling(null); }
   };
@@ -589,9 +774,16 @@ export function EntranceExamEditorPage() {
     try {
       const { apiKey, model } = getAICredentials();
       const data = await aiFillSEOTab(examName, year, rawContent, apiKey, model);
-      if (data.seoTitle) form.setValue("seoTitle", data.seoTitle);
-      if (data.seoDescription) form.setValue("seoDescription", data.seoDescription);
-      if (data.tags.length > 0) form.setValue("tags", data.tags.join(", "));
+      // No-op on empty: change nothing (no form.setValue, no DB write) when the AI
+      // returned nothing usable, and report it honestly instead of a false success.
+      const gotAnything = !!data.seoTitle || !!data.seoDescription || data.tags.length > 0 || data.faqs.length > 0;
+      if (!gotAnything) {
+        toast.warning("AI extracted nothing for SEO — no changes made.");
+        return;
+      }
+      if (data.seoTitle) form.setValue("seoTitle", data.seoTitle, { shouldDirty: true });
+      if (data.seoDescription) form.setValue("seoDescription", data.seoDescription, { shouldDirty: true });
+      if (data.tags.length > 0) form.setValue("tags", data.tags.join(", "), { shouldDirty: true });
       if (data.faqs.length > 0) replaceFaqs(data.faqs);
       // Auto-save to DB
       if (exam) {
@@ -633,6 +825,8 @@ export function EntranceExamEditorPage() {
         await updateEd(currentEdition.id, { contentModules: { ...existing, news: { items: newsItems } } });
         await loadExam();
         toast.success(`AI generated ${items.length} news items. Review in News tab.`);
+      } else {
+        toast.warning("AI generated no news items — no changes made.");
       }
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setTabAiFilling(null); }
@@ -652,6 +846,8 @@ export function EntranceExamEditorPage() {
         await updateEd(currentEdition.id, { contentModules: { ...existing, ...data.contentModules } });
         await loadExam();
         toast.success("Content modules filled by AI. Check the Modules tab.");
+      } else {
+        toast.warning("AI extracted no module content — no changes made.");
       }
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setTabAiFilling(null); }
@@ -786,7 +982,7 @@ export function EntranceExamEditorPage() {
       {/* Tabs */}
       <div className="flex gap-0 border-b border-slate-200 bg-white rounded-t-lg overflow-x-auto">
         {tabs.map((tab) => (
-          <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)}
+          <button key={tab.id} type="button" onClick={() => guardedSetActiveTab(tab.id)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === tab.id ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}>
@@ -826,9 +1022,9 @@ export function EntranceExamEditorPage() {
             }
           }}
         />}
-        {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} entityType={watchedEntityType} selectionModel={watchedSelectionModel} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
-        {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("News saved."); await loadExam(); } }} />}
-        {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onSaveModules={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("SEO settings saved."); await loadExam(); } }} />}
+        {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} onDirtyChange={setModuleDirty} entityType={watchedEntityType} selectionModel={watchedSelectionModel} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
+        {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onDirtyChange={setNewsDirty} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("News saved."); await loadExam(); } }} />}
+        {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onNewsSeoDirtyChange={setNewsSeoDirty} onSaveModules={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("SEO settings saved."); await loadExam(); } }} />}
         {activeTab === "editions" && <HistoryTab editions={editions}
           onDelete={async (edId, label) => {
             if (!confirm(`Delete edition "${label}"? This cannot be undone.`)) return;
@@ -880,6 +1076,18 @@ export function EntranceExamEditorPage() {
       <ConfirmDialog open={showDelete} onOpenChange={setShowDelete} title="Delete Exam"
         description={`Permanently delete "${exam?.name}" and all its editions? This cannot be undone.`}
         confirmLabel="Delete" onConfirm={handleDelete} confirmVariant="danger" />
+
+      {/* Unsaved-changes guard — shown when a tab switch or in-app navigation would
+          lose unsaved work. Names the dirty surface; Save & continue / Discard / Cancel. */}
+      {pendingExit && (
+        <UnsavedChangesDialog
+          where={dirtyWhere}
+          saving={guardSaving}
+          onSaveAndContinue={guardSaveAndContinue}
+          onDiscard={guardDiscard}
+          onCancel={guardCancel}
+        />
+      )}
     </form>
   );
 }
@@ -1376,15 +1584,30 @@ function ContentModulesTab({ editionId, contentModules, onSave }: { editionId: s
 
 // ── News Tab ───────────────────────────────────────────────────────────────
 
-function NewsTab({ editionId, contentModules, onSave }: { editionId: string | null; contentModules: Record<string, unknown>; onSave: (modules: Record<string, unknown>) => Promise<void> }) {
+function NewsTab({ editionId, contentModules, onSave, onDirtyChange }: { editionId: string | null; contentModules: Record<string, unknown>; onSave: (modules: Record<string, unknown>) => Promise<void>; onDirtyChange?: (dirty: boolean) => void }) {
   const [news, setNews] = React.useState<any[]>((contentModules.news as any[]) ?? []);
   const [saving, setSaving] = React.useState(false);
   const [editingIdx, setEditingIdx] = React.useState<number | null>(null);
   const [draft, setDraft] = React.useState({ title: "", content: "", excerpt: "", tags: "", isFeatured: false, featureImage: "" });
 
+  // Dirty = saved news list changed from its seed, OR a new-item draft has typed
+  // content not yet added. Compared by value (JSON) so type-and-revert clears it.
+  const seedRef = React.useRef(JSON.stringify((contentModules.news as any[]) ?? []));
+  React.useEffect(() => {
+    const listChanged = JSON.stringify(news) !== seedRef.current;
+    const draftHasContent = !!(draft.title.trim() || draft.content.trim() || draft.excerpt.trim());
+    onDirtyChange?.(listChanged || draftHasContent);
+  }, [news, draft, onDirtyChange]);
+  // Clear the dirty flag when this tab unmounts so a stale flag can't linger.
+  React.useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
   const handleSave = async () => {
     setSaving(true);
-    try { await onSave({ ...contentModules, news }); } finally { setSaving(false); }
+    try {
+      await onSave({ ...contentModules, news });
+      seedRef.current = JSON.stringify(news); // new baseline — no longer dirty
+      onDirtyChange?.(false);
+    } finally { setSaving(false); }
   };
 
   const addNews = () => {
@@ -1513,9 +1736,9 @@ function NewsTab({ editionId, contentModules, onSave }: { editionId: string | nu
   );
 }
 
-function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModules, onSaveModules }: { form: any; faqFields: any[]; appendFaq: (v: any) => void; removeFaq: (i: number) => void; editionId: string | null; contentModules: Record<string, unknown>; onSaveModules: (modules: Record<string, unknown>) => Promise<void> }) {
+function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModules, onSaveModules, onNewsSeoDirtyChange }: { form: any; faqFields: any[]; appendFaq: (v: any) => void; removeFaq: (i: number) => void; editionId: string | null; contentModules: Record<string, unknown>; onSaveModules: (modules: Record<string, unknown>) => Promise<void>; onNewsSeoDirtyChange?: (dirty: boolean) => void }) {
   const existingSeo = (contentModules.newsSeo as any) ?? {};
-  const [newsSeo, setNewsSeo] = React.useState({
+  const initialNewsSeo = {
     newsKeywords: existingSeo.newsKeywords ?? "",
     standout: existingSeo.standout ?? "",
     syndicationSource: existingSeo.syndicationSource ?? "",
@@ -1523,13 +1746,25 @@ function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModul
     robotsNewsTag: existingSeo.robotsNewsTag ?? "",
     googleNewsCategory: existingSeo.googleNewsCategory ?? "",
     discoverOptIn: existingSeo.discoverOptIn ?? true,
-  });
+  };
+  const [newsSeo, setNewsSeo] = React.useState(initialNewsSeo);
   const [savingSeo, setSavingSeo] = React.useState(false);
+
+  // Report ONLY the local news-SEO block's dirtiness (the standard SEO fields above
+  // are react-hook-form and are already tracked by the page's form.isDirty). Compared
+  // by value against the seed, so type-and-revert clears it.
+  const seedRef = React.useRef(JSON.stringify(initialNewsSeo));
+  React.useEffect(() => {
+    onNewsSeoDirtyChange?.(JSON.stringify(newsSeo) !== seedRef.current);
+  }, [newsSeo, onNewsSeoDirtyChange]);
+  React.useEffect(() => () => onNewsSeoDirtyChange?.(false), [onNewsSeoDirtyChange]);
 
   const handleSaveNewsSeo = async () => {
     setSavingSeo(true);
     try {
       await onSaveModules({ ...contentModules, newsSeo: newsSeo });
+      seedRef.current = JSON.stringify(newsSeo);
+      onNewsSeoDirtyChange?.(false);
     } finally {
       setSavingSeo(false);
     }

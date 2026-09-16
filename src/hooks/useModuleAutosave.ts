@@ -18,6 +18,14 @@ interface UseModuleAutosaveReturn {
   scheduleAutosave: (content: Record<string, unknown>) => void;
   /** Current save status */
   status: SaveStatus;
+  /**
+   * True from the moment a change is scheduled until it has been persisted.
+   * Covers BOTH the 2s debounce window AND the in-flight network save — the
+   * whole interval during which leaving the tab would drop an unsaved edit.
+   * The unsaved-changes guard reads this so a fast tab-switch can't silently
+   * discard a module edit that hasn't autosaved yet.
+   */
+  pending: boolean;
   /** Timestamp of last successful save */
   lastSavedAt: string | null;
 }
@@ -32,6 +40,10 @@ export function useModuleAutosave(
 ): UseModuleAutosaveReturn {
   const { user } = useAuth();
   const [status, setStatus] = useState<SaveStatus>("idle");
+  // `pending` is TRUE across the whole unsaved window: from scheduleAutosave()
+  // (start of the 2s debounce) through the network save, until it lands. The
+  // guard treats a pending module as dirty so leaving mid-debounce is caught.
+  const [pending, setPending] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestContentRef = useRef<Record<string, unknown> | null>(null);
@@ -47,12 +59,15 @@ export function useModuleAutosave(
         await saveModuleContent(editionId, moduleSlug, content, user?.id ?? "system");
         setStatus("saved");
         setLastSavedAt(new Date().toISOString());
+        setPending(false); // change is persisted — no longer dirty
         return;
       } catch (err) {
         attempt++;
         if (attempt >= MAX_RETRIES) {
           console.error(`[useModuleAutosave] Failed after ${MAX_RETRIES} retries:`, err);
           setStatus("error");
+          // Leave `pending` TRUE on terminal failure: the edit is still unsaved,
+          // so the guard should still protect it until a successful save.
           return;
         }
         // Exponential backoff: 1s, 2s, 4s
@@ -73,6 +88,7 @@ export function useModuleAutosave(
 
   const scheduleAutosave = useCallback((content: Record<string, unknown>) => {
     latestContentRef.current = content;
+    setPending(true); // dirty from the first keystroke of the debounce window
 
     // Clear existing timer
     if (timerRef.current) {
@@ -87,5 +103,5 @@ export function useModuleAutosave(
     }, DEBOUNCE_MS);
   }, [doSave]);
 
-  return { save, scheduleAutosave, status, lastSavedAt };
+  return { save, scheduleAutosave, status, pending, lastSavedAt };
 }
