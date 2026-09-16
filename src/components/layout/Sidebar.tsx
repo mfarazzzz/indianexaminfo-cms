@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { P } from "@/config/permissions";
 import { SITE } from "@/config/site";
 import { useMobileNav } from "@/contexts/MobileNavContext";
+import { BUILD_INFO, formatBuildTime, buildSyncLabel } from "@/config/buildInfo";
 
 interface NavItem {
   label: string;
@@ -213,6 +214,27 @@ export function Sidebar() {
           >
             <LogOut size={14} />
           </button>
+        </div>
+
+        {/* Build stamp — answers "which commit is deployed?" at a glance. The dot
+            is green only when this build is exactly origin/main; any other colour
+            means caution (ahead/behind/dirty/unknown). Hover for the build time
+            and the full sync state. */}
+        <div
+          className="flex items-center gap-1.5 px-2 pt-0.5 text-[10px] text-slate-500"
+          title={`Build ${BUILD_INFO.sha}\n${formatBuildTime(BUILD_INFO.time) || "build time unknown"}\n${buildSyncLabel(BUILD_INFO.sync).text}`}
+        >
+          <span
+            className={cn(
+              "h-1.5 w-1.5 shrink-0 rounded-full",
+              buildSyncLabel(BUILD_INFO.sync).ok ? "bg-green-500" : "bg-amber-500"
+            )}
+            aria-hidden
+          />
+          <span className="font-mono">{BUILD_INFO.sha}</span>
+          {!buildSyncLabel(BUILD_INFO.sync).ok && (
+            <span className="truncate">· {buildSyncLabel(BUILD_INFO.sync).text}</span>
+          )}
         </div>
       </div>
     </aside>
