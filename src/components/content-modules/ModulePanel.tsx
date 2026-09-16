@@ -321,8 +321,17 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
           toast.success("All modules disabled.");
         }}
       />
-      <p className="text-xs text-slate-500 mb-4">
+      <p className="text-xs text-slate-500 mb-1.5">
         Sections are grouped by how they behave on the live page. Only <span className="font-medium">Editable content modules</span> can be reordered — that order is what the page renders.
+      </p>
+      {/* Item 8: one always-visible line explaining the per-module data mode
+          dropdown, so its meaning isn't hover-only. Accurate to dataBindingService
+          resolveModuleContent(): Auto = generated from other tabs (read-only here),
+          Hybrid = that auto content plus a manual notes field, Manual = fully
+          hand-edited here. Shown once for the panel, not per card, to preserve the
+          Item 5 collapsed/decluttered layout. */}
+      <p className="text-[11px] text-slate-400 mb-4">
+        Each module's <span className="font-medium">mode</span>: <span className="font-medium">Auto</span> pulls the content from other tabs (read-only here) · <span className="font-medium">Hybrid</span> shows that auto content plus your own notes · <span className="font-medium">Manual</span> means you edit everything here yourself.
       </p>
 
       {/* ── Group A: Fixed page sections (not modules, not reorderable) ── */}
