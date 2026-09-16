@@ -465,7 +465,16 @@ export function UnifiedContentEditorPage() {
 
           {/* Sidebar */}
           <div className="space-y-5">
-            {/* Content Type Selector */}
+            {/* Content Type Selector.
+                Item 2 (Group 3): these three are DISTINCT axes, not duplicates —
+                verified against code + data. Each gets a one-line role note so the
+                editor isn't guessing what they do. No field removed, no values or
+                defaults changed, no URL/schema impact.
+                  • Content Type = route/content family (News vs Article) — decides
+                    which public route family the post lives under.
+                  • Section = topic/category AND part of the public URL
+                    (/news/<section>/… , /blog/<section>/…).
+                  • Post Type = editorial format/display label only (shown as a badge). */}
             <section className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
               <h3 className="text-sm font-semibold text-slate-900">Type & Classification</h3>
               <div>
@@ -476,6 +485,7 @@ export function UnifiedContentEditorPage() {
                     <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
                 </select>
+                <p className="text-[11px] text-slate-400 mt-0.5">Content family — sets which route the post lives under (News vs Article).</p>
               </div>
 
               {/* Section (articles/news) */}
@@ -489,6 +499,7 @@ export function UnifiedContentEditorPage() {
                       <option key={s.value} value={s.value}>{s.label}</option>
                     ))}
                   </select>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Topic category — appears in the public URL (e.g. /news/&lt;section&gt;/…). Changing it later changes the post's URL.</p>
                 </div>
               )}
 
@@ -503,6 +514,7 @@ export function UnifiedContentEditorPage() {
                       <option key={p.value} value={p.value}>{p.label}</option>
                     ))}
                   </select>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Format label shown as a badge on cards. Display only — does not affect the URL or routing.</p>
                 </div>
               )}
             </section>

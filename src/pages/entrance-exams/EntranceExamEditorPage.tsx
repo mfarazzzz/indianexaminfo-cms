@@ -172,6 +172,15 @@ export function EntranceExamEditorPage() {
   React.useEffect(() => { moduleDirtyRef.current = moduleDirty; }, [moduleDirty]);
   const [newsDirty, setNewsDirty] = useState(false);
   const [newsSeoDirty, setNewsSeoDirty] = useState(false);
+  // Item 3 (Group 3) — unified Save. News and News-SEO live in child-component
+  // local state; the children mirror their CURRENT value up into these refs on
+  // every change. The primary Save reads the refs to build ONE merged
+  // content_modules object and persists it in a SINGLE updateEdition call — so a
+  // News save and a News-SEO save can no longer each write a stale whole-column
+  // snapshot over the other (the old two-button race). null = the tab hasn't
+  // mounted/reported yet, so Save leaves that key untouched.
+  const newsRef = React.useRef<any[] | null>(null);
+  const newsSeoRef = React.useRef<Record<string, unknown> | null>(null);
   // The pending action awaiting a Save/Discard/Cancel decision. `kind` distinguishes
   // an in-editor tab switch from an in-app route navigation (they resume differently).
   const [pendingExit, setPendingExit] = useState<
@@ -320,8 +329,24 @@ export function EntranceExamEditorPage() {
         faqs: data.faqs,
       });
 
+      // Item 3 — build ONE merged content_modules from the live News / News-SEO
+      // child state (refs), overlaying the current edition's existing modules.
+      // Written in the SAME updateEdition call below (single whole-column write),
+      // which removes the stale-snapshot cross-overwrite between News and News-SEO.
+      // `undefined` when neither tab has reported, so we don't touch the column.
+      const buildMergedContentModules = (): Record<string, unknown> | undefined => {
+        if (newsRef.current === null && newsSeoRef.current === null) return undefined;
+        const base = (currentEdition?.contentModules ?? {}) as Record<string, unknown>;
+        return {
+          ...base,
+          ...(newsRef.current !== null ? { news: newsRef.current } : {}),
+          ...(newsSeoRef.current !== null ? { newsSeo: newsSeoRef.current } : {}),
+        };
+      };
+
       // Update current edition (if one exists)
       if (currentEdition) {
+        const mergedModules = buildMergedContentModules();
         await updateEdition(currentEdition.id, {
           status: data.editionStatus,
           notificationDate: data.notificationDate || null,
@@ -336,11 +361,13 @@ export function EntranceExamEditorPage() {
           hasCutoff: data.hasCutoff,
           hasCounselling: data.hasCounselling,
           faqs: data.faqs.filter((f: any) => f.question && f.question.trim() !== ""),
+          ...(mergedModules !== undefined ? { contentModules: mergedModules } : {}),
         });
       }
 
       // If there's a draft edition pending, save it and activate it (archives old one)
       if (draftEdition) {
+        const mergedModulesDraft = buildMergedContentModules();
         await updateEdition(draftEdition.id, {
           status: data.editionStatus,
           notificationDate: data.notificationDate || null,
@@ -355,6 +382,7 @@ export function EntranceExamEditorPage() {
           hasCutoff: data.hasCutoff,
           hasCounselling: data.hasCounselling,
           faqs: data.faqs.filter((f: any) => f.question && f.question.trim() !== ""),
+          ...(mergedModulesDraft !== undefined ? { contentModules: mergedModulesDraft } : {}),
         });
         await activateEdition(draftEdition.id);
         setDraftEdition(null);
@@ -362,6 +390,10 @@ export function EntranceExamEditorPage() {
       } else {
         toast.success("Saved successfully.");
       }
+      // Unified Save persisted News + News-SEO too — clear their local dirty flags.
+      // (loadExam() below re-seeds the child tabs from the freshly saved edition.)
+      setNewsDirty(false);
+      setNewsSeoDirty(false);
       await loadExam();
     } catch (err) {
       toast.error("Save failed: " + getErrorMessage(err));
@@ -462,13 +494,14 @@ export function EntranceExamEditorPage() {
   const guardSaveAndContinue = useCallback(async () => {
     setGuardSaving(true);
     try {
-      // Save whatever is dirty. The main RHF form save covers identity/dates/seo-form;
-      // local-state tabs own their save buttons, so for those we submit the form (which
-      // persists edition-level fields) and rely on the tab having been saved via its own
-      // button. For form-dirty we run the real submit; for local-only dirt we just proceed
-      // after prompting the user saved via the tab button. To keep it deterministic we run
-      // the form submit when the form is dirty, then proceed.
-      if (formDirty) {
+      // Item 3: the primary Save (handleSave) is now unified — it persists the RHF
+      // form fields AND the News / News-SEO local state (merged into one
+      // content_modules write). So "Save & continue" must run it whenever ANY of
+      // those surfaces is dirty, not only when the RHF form is dirty — otherwise a
+      // News-only edit wouldn't be saved before leaving. handleSave reads the live
+      // newsRef/newsSeoRef, so it captures the current values regardless of which
+      // tab is active.
+      if (formDirty || newsDirty || newsSeoDirty) {
         await form.handleSubmit(handleSave)();
       }
       // Modules: a content edit autosaves on a 2s debounce. If one is still pending
@@ -487,7 +520,7 @@ export function EntranceExamEditorPage() {
     } finally {
       setGuardSaving(false);
     }
-  }, [formDirty, form, clearLocalDirty, guardProceed]);
+  }, [formDirty, newsDirty, newsSeoDirty, form, clearLocalDirty, guardProceed]);
 
   const handleStartNewEdition = async (year: number, session: CycleSession, editionLabel?: string) => {
     try {
@@ -1086,8 +1119,8 @@ export function EntranceExamEditorPage() {
           }}
         />}
         {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} onDirtyChange={setModuleDirty} entityType={watchedEntityType} selectionModel={watchedSelectionModel} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
-        {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onDirtyChange={setNewsDirty} onSave={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("News saved."); await loadExam(); } }} />}
-        {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onNewsSeoDirtyChange={setNewsSeoDirty} onSaveModules={async (modules) => { if (currentEdition) { await updateEdition(currentEdition.id, { contentModules: modules }); toast.success("SEO settings saved."); await loadExam(); } }} />}
+        {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onDirtyChange={setNewsDirty} onNewsChange={(n) => { newsRef.current = n; }} />}
+        {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onNewsSeoDirtyChange={setNewsSeoDirty} onNewsSeoChange={(s) => { newsSeoRef.current = s; }} />}
         {activeTab === "editions" && <HistoryTab editions={editions}
           onDelete={async (edId, label) => {
             if (!confirm(`Delete edition "${label}"? This cannot be undone.`)) return;
@@ -1647,11 +1680,22 @@ function ContentModulesTab({ editionId, contentModules, onSave }: { editionId: s
 
 // ── News Tab ───────────────────────────────────────────────────────────────
 
-function NewsTab({ editionId, contentModules, onSave, onDirtyChange }: { editionId: string | null; contentModules: Record<string, unknown>; onSave: (modules: Record<string, unknown>) => Promise<void>; onDirtyChange?: (dirty: boolean) => void }) {
+function NewsTab({ editionId, contentModules, onNewsChange, onDirtyChange }: { editionId: string | null; contentModules: Record<string, unknown>; onNewsChange?: (news: any[] | null) => void; onDirtyChange?: (dirty: boolean) => void }) {
   const [news, setNews] = React.useState<any[]>((contentModules.news as any[]) ?? []);
-  const [saving, setSaving] = React.useState(false);
   const [editingIdx, setEditingIdx] = React.useState<number | null>(null);
   const [draft, setDraft] = React.useState({ title: "", content: "", excerpt: "", tags: "", isFeatured: false, featureImage: "" });
+
+  // Item 3: mirror the CURRENT news list up to the editor on every change, so the
+  // primary Save reads live state (not a stale snapshot). Persistence is the
+  // editor's single Save — this tab no longer has its own save button.
+  React.useEffect(() => { onNewsChange?.(news); }, [news, onNewsChange]);
+  // Post-audit fix: reset the editor's newsRef to null on unmount. Refs outlive
+  // remounts, so a ref left populated while THIS tab is unmounted could feed a
+  // stale news snapshot into a later Save (e.g. after an AI action rewrote
+  // content_modules.news and reloaded while another tab was active), overwriting
+  // the fresher server value. null means "not mounted → leave the server's news
+  // (from base) untouched", which is the safe merge behaviour.
+  React.useEffect(() => () => onNewsChange?.(null), [onNewsChange]);
 
   // Dirty = saved news list changed from its seed, OR a new-item draft has typed
   // content not yet added. Compared by value (JSON) so type-and-revert clears it.
@@ -1663,15 +1707,6 @@ function NewsTab({ editionId, contentModules, onSave, onDirtyChange }: { edition
   }, [news, draft, onDirtyChange]);
   // Clear the dirty flag when this tab unmounts so a stale flag can't linger.
   React.useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await onSave({ ...contentModules, news });
-      seedRef.current = JSON.stringify(news); // new baseline — no longer dirty
-      onDirtyChange?.(false);
-    } finally { setSaving(false); }
-  };
 
   const addNews = () => {
     if (!draft.title.trim()) return;
@@ -1714,10 +1749,9 @@ function NewsTab({ editionId, contentModules, onSave, onDirtyChange }: { edition
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-slate-500">Exam-specific news and updates. Published news appears on the exam page and global news feed.</p>
-        <button type="button" onClick={handleSave} disabled={saving || !editionId}
-          className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">
-          {saving ? "Saving..." : "Save News"}
-        </button>
+        {/* Item 3: no separate "Save News" button — news is persisted by the editor's
+            primary Save (top-right), together with everything else, in one write. */}
+        <span className="text-[11px] text-slate-400 whitespace-nowrap">Saved with the main <span className="font-medium">Save</span> button (top-right).</span>
       </div>
 
       {/* Add/Edit news form */}
@@ -1799,7 +1833,7 @@ function NewsTab({ editionId, contentModules, onSave, onDirtyChange }: { edition
   );
 }
 
-function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModules, onSaveModules, onNewsSeoDirtyChange }: { form: any; faqFields: any[]; appendFaq: (v: any) => void; removeFaq: (i: number) => void; editionId: string | null; contentModules: Record<string, unknown>; onSaveModules: (modules: Record<string, unknown>) => Promise<void>; onNewsSeoDirtyChange?: (dirty: boolean) => void }) {
+function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModules, onNewsSeoChange, onNewsSeoDirtyChange }: { form: any; faqFields: any[]; appendFaq: (v: any) => void; removeFaq: (i: number) => void; editionId: string | null; contentModules: Record<string, unknown>; onNewsSeoChange?: (newsSeo: Record<string, unknown> | null) => void; onNewsSeoDirtyChange?: (dirty: boolean) => void }) {
   const existingSeo = (contentModules.newsSeo as any) ?? {};
   const initialNewsSeo = {
     newsKeywords: existingSeo.newsKeywords ?? "",
@@ -1811,7 +1845,15 @@ function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModul
     discoverOptIn: existingSeo.discoverOptIn ?? true,
   };
   const [newsSeo, setNewsSeo] = React.useState(initialNewsSeo);
-  const [savingSeo, setSavingSeo] = React.useState(false);
+
+  // Item 3: mirror the CURRENT news-SEO block up to the editor on every change so
+  // the primary Save reads live state. Persistence is the editor's single Save —
+  // no separate "Save News SEO" button.
+  React.useEffect(() => { onNewsSeoChange?.(newsSeo); }, [newsSeo, onNewsSeoChange]);
+  // Post-audit fix (symmetric to NewsTab): reset the editor's newsSeoRef to null on
+  // unmount, so a stale news-SEO snapshot from a now-unmounted tab can't overwrite a
+  // fresher server value on a later Save. null = "leave the server's newsSeo untouched".
+  React.useEffect(() => () => onNewsSeoChange?.(null), [onNewsSeoChange]);
 
   // Report ONLY the local news-SEO block's dirtiness (the standard SEO fields above
   // are react-hook-form and are already tracked by the page's form.isDirty). Compared
@@ -1821,17 +1863,6 @@ function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModul
     onNewsSeoDirtyChange?.(JSON.stringify(newsSeo) !== seedRef.current);
   }, [newsSeo, onNewsSeoDirtyChange]);
   React.useEffect(() => () => onNewsSeoDirtyChange?.(false), [onNewsSeoDirtyChange]);
-
-  const handleSaveNewsSeo = async () => {
-    setSavingSeo(true);
-    try {
-      await onSaveModules({ ...contentModules, newsSeo: newsSeo });
-      seedRef.current = JSON.stringify(newsSeo);
-      onNewsSeoDirtyChange?.(false);
-    } finally {
-      setSavingSeo(false);
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -1849,10 +1880,9 @@ function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModul
       <div className="border border-slate-200 rounded-lg">
         <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-700">📰 News SEO (Google News & Discover)</h3>
-          <button type="button" onClick={handleSaveNewsSeo} disabled={savingSeo || !editionId}
-            className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">
-            {savingSeo ? "Saving..." : "Save News SEO"}
-          </button>
+          {/* Item 3: no separate "Save News SEO" button — this block is persisted by
+              the editor's primary Save (top-right), in the same write as everything else. */}
+          <span className="text-[11px] text-slate-400 whitespace-nowrap">Saved with the main <span className="font-medium">Save</span> button (top-right).</span>
         </div>
         <div className="p-4 space-y-4">
           <div>
