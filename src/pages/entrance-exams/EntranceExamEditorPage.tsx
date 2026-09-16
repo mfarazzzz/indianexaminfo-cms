@@ -93,6 +93,18 @@ type FormData = {
   faqs: { question: string; answer: string }[];
 };
 
+/**
+ * True when a field holds no meaningful value — used by AI Fill's empty-only
+ * rule so the AI can populate blanks but NEVER replace an existing value.
+ * Treats undefined/null, empty/whitespace strings, and empty arrays as blank.
+ */
+function isBlank(v: unknown): boolean {
+  if (v == null) return true;
+  if (typeof v === "string") return v.trim() === "";
+  if (Array.isArray(v)) return v.length === 0;
+  return false;
+}
+
 export function EntranceExamEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -553,112 +565,130 @@ export function EntranceExamEditorPage() {
         return;
       }
 
-      // Fill identity fields
-      if (data.shortName) form.setValue("shortName", data.shortName);
-      if (data.conductingBody) form.setValue("conductingBody", data.conductingBody);
-      if (data.officialWebsite) form.setValue("officialWebsite", data.officialWebsite);
+      // ── EMPTY-ONLY FILL ──────────────────────────────────────────────────
+      // AI must NEVER replace a value that already exists. The AI can hallucinate
+      // (it returned Short Name "CAT" on a Bihar Board record from junk input) and
+      // a non-empty hallucination previously passed the "gotAnything" gate and
+      // overwrote a correct value. Until a per-field preview/approve diff exists,
+      // the safety floor is: only fill fields that are currently blank. Existing
+      // values are left untouched. `filled` collects only the fields we actually
+      // wrote, so the DB auto-save below persists EXACTLY those — never echoing an
+      // AI value back over a field we chose not to touch.
+      const cur = form.getValues();
+      const filledIdentity: Record<string, unknown> = {};
+      const filledEdition: Record<string, unknown> = {};
 
-      // Fill edition fields — merge AI dates into existing standard date rows
+      // Identity scalars — fill only when blank.
+      if (data.shortName && isBlank(cur.shortName)) { form.setValue("shortName", data.shortName); filledIdentity.shortName = data.shortName; }
+      if (data.conductingBody && isBlank(cur.conductingBody)) { form.setValue("conductingBody", data.conductingBody); filledIdentity.conductingBody = data.conductingBody; }
+      if (data.officialWebsite && isBlank(cur.officialWebsite)) { form.setValue("officialWebsite", data.officialWebsite); filledIdentity.officialWebsite = data.officialWebsite; }
+
+      // Important dates — fill ONLY existing blank rows or append genuinely new
+      // labels. Never overwrite a row that already has a date (that was the
+      // original clobber path). Only append/fill; if nothing changed, don't touch.
+      let mergedDates: DateRow[] | null = null;
       if (data.importantDates.length > 0) {
-        // Get current form dates (the standard pre-defined rows)
         const currentDates = form.getValues("importantDates") as DateRow[];
-
-        // Merge: for each AI date, try to match an existing row by similar label, else append
         const merged = [...currentDates];
+        let changed = false;
         for (const aiDate of data.importantDates) {
           if (!aiDate.date || !aiDate.label) continue;
-          // Find matching existing row by loose label matching
           const matchIdx = merged.findIndex((d) =>
             d.label.toLowerCase().replace(/[^a-z]/g, "").includes(aiDate.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8)) ||
             aiDate.label.toLowerCase().replace(/[^a-z]/g, "").includes(d.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8))
           );
-          if (matchIdx >= 0 && !merged[matchIdx].date) {
-            // Fill the existing blank row
+          if (matchIdx >= 0 && isBlank(merged[matchIdx].date)) {
+            // Fill an existing BLANK row only.
             merged[matchIdx] = { ...merged[matchIdx], date: aiDate.date, isUrgent: aiDate.isUrgent };
-          } else if (matchIdx >= 0 && merged[matchIdx].date) {
-            // Row already has a date — update it
-            merged[matchIdx] = { ...merged[matchIdx], date: aiDate.date, isUrgent: aiDate.isUrgent };
-          } else {
-            // No match found — append as a new custom date
+            changed = true;
+          } else if (matchIdx < 0) {
+            // No matching row — append as a new custom date.
             merged.push({ label: aiDate.label, date: aiDate.date, isUrgent: aiDate.isUrgent });
+            changed = true;
           }
+          // matchIdx >= 0 with an existing date → LEAVE IT. Never overwrite.
         }
-        replaceDates(merged);
+        if (changed) { replaceDates(merged); mergedDates = merged; }
       }
-      if (data.vacancy) form.setValue("vacancy", String(data.vacancy));
-      form.setValue("editionStatus", data.status as EditionStatus);
 
-      // Fill modules
-      form.setValue("hasNotification", data.hasNotification);
-      form.setValue("hasApplication", data.hasApplication);
-      form.setValue("hasAdmitCard", data.hasAdmitCard);
-      form.setValue("hasSyllabus", data.hasSyllabus);
-      form.setValue("hasAnswerKey", data.hasAnswerKey);
-      form.setValue("hasResult", data.hasResult);
-      form.setValue("hasCutoff", data.hasCutoff);
-      form.setValue("hasCounselling", data.hasCounselling);
+      // Edition scalars — fill only when blank.
+      if (data.vacancy != null && data.vacancy !== 0 && isBlank(cur.vacancy)) { form.setValue("vacancy", String(data.vacancy)); filledEdition.vacancy = data.vacancy; }
+      // editionStatus always has a value (defaults to "upcoming"); treat the
+      // default as fillable so AI can advance a brand-new record, but don't
+      // clobber a status the user has already moved off the default.
+      if (data.status && cur.editionStatus === "upcoming" && data.status !== "upcoming") {
+        form.setValue("editionStatus", data.status as EditionStatus);
+        filledEdition.status = data.status;
+      }
 
-      // Fill SEO
-      if (data.seoTitle) form.setValue("seoTitle", data.seoTitle);
-      if (data.seoDescription) form.setValue("seoDescription", data.seoDescription);
-      if (data.tags.length > 0) form.setValue("tags", data.tags.join(", "));
-      if (data.faqs.length > 0) replaceFaqs(data.faqs);
+      // Module boolean flags — only flip a flag from false→true (enabling a
+      // section AI found evidence for). Never flip true→false: that would hide a
+      // section the user turned on. Each flag written independently.
+      const flagKeys = ["hasNotification","hasApplication","hasAdmitCard","hasSyllabus","hasAnswerKey","hasResult","hasCutoff","hasCounselling"] as const;
+      for (const k of flagKeys) {
+        if (data[k] === true && cur[k] !== true) {
+          form.setValue(k, true);
+          filledEdition[k] = true;
+        }
+      }
 
-      // Save content modules directly to the edition if it exists
+      // SEO — fill only when blank.
+      if (data.seoTitle && isBlank(cur.seoTitle)) { form.setValue("seoTitle", data.seoTitle); filledIdentity.seoTitle = data.seoTitle; }
+      if (data.seoDescription && isBlank(cur.seoDescription)) { form.setValue("seoDescription", data.seoDescription); filledIdentity.seoDescription = data.seoDescription; }
+      if (data.tags.length > 0 && isBlank(cur.tags)) { form.setValue("tags", data.tags.join(", ")); filledIdentity.tags = data.tags; }
+      if (data.faqs.length > 0 && (cur.faqs?.length ?? 0) === 0) { replaceFaqs(data.faqs); filledIdentity.faqs = data.faqs; }
+
+      // Content modules — merge onto existing (fills gaps, existing keys win via
+      // spread order: existing last would clobber, so spread AI first then existing).
+      let modulesToSave: Record<string, unknown> | null = null;
       if (currentEdition && data.contentModules && Object.keys(data.contentModules).length > 0) {
-        try {
-          const { updateEdition: updateEd } = await import("@/services/entranceExamService");
-          await updateEd(currentEdition.id, { contentModules: data.contentModules });
-        } catch {} // non-critical — will be saved on next Save click
+        const existing = (currentEdition.contentModules ?? {}) as Record<string, unknown>;
+        // AI first, existing second → existing values are preserved on key clash.
+        modulesToSave = { ...data.contentModules, ...existing };
       }
 
-      // Auto-save the form immediately so AI data persists without requiring manual Save click
+      // Persist EXACTLY what we filled (empty-only). Nothing here can overwrite an
+      // existing DB value because we only collected blanks above.
       if (currentEdition) {
         try {
-          const validDates = data.importantDates.filter((d) => d.date && d.date.trim() !== "");
-          await updateEdition(currentEdition.id, {
-            status: data.status as EditionStatus || form.getValues("editionStatus"),
-            vacancy: data.vacancy ?? null,
-            importantDates: validDates,
-            hasNotification: data.hasNotification,
-            hasApplication: data.hasApplication,
-            hasAdmitCard: data.hasAdmitCard,
-            hasSyllabus: data.hasSyllabus,
-            hasAnswerKey: data.hasAnswerKey,
-            hasResult: data.hasResult,
-            hasCutoff: data.hasCutoff,
-            hasCounselling: data.hasCounselling,
-          });
-          await updateExamIdentity(exam!.id, {
-            shortName: data.shortName || undefined,
-            conductingBody: data.conductingBody || undefined,
-            officialWebsite: data.officialWebsite || undefined,
-            seoTitle: data.seoTitle || undefined,
-            seoDescription: data.seoDescription || undefined,
-            tags: data.tags.length > 0 ? data.tags : undefined,
-            faqs: data.faqs.length > 0 ? data.faqs : undefined,
-          });
-
-          // Also save content modules including eligibility and important-dates binding
-          if (data.contentModules && Object.keys(data.contentModules).length > 0) {
-            const existing = currentEdition.contentModules ?? {};
-            const modulesToSave = { ...existing, ...data.contentModules };
-            // Auto-seed important-dates module from the dates we just saved
-            if (validDates.length > 0) {
-              modulesToSave["important-dates"] = { dates: validDates, _meta: { updatedAt: new Date().toISOString(), updatedBy: "ai" } };
-            }
-            await updateEdition(currentEdition.id, { contentModules: modulesToSave });
+          if (Object.keys(filledEdition).length > 0 || mergedDates) {
+            await updateEdition(currentEdition.id, {
+              ...filledEdition,
+              ...(mergedDates ? { importantDates: mergedDates.filter((d) => d.date && d.date.trim() !== "") } : {}),
+            } as any);
           }
-
-          await loadExam(); // Reload to reflect saved data
+          if (Object.keys(filledIdentity).length > 0) {
+            await updateExamIdentity(exam!.id, filledIdentity as any);
+          }
+          if (modulesToSave) {
+            const seeded = { ...modulesToSave };
+            if (mergedDates) {
+              const validDates = mergedDates.filter((d) => d.date && d.date.trim() !== "");
+              // Only seed the important-dates module if it isn't already present.
+              if (validDates.length > 0 && !seeded["important-dates"]) {
+                seeded["important-dates"] = { dates: validDates, _meta: { updatedAt: new Date().toISOString(), updatedBy: "ai" } };
+              }
+            }
+            await updateEdition(currentEdition.id, { contentModules: seeded });
+          }
+          await loadExam();
         } catch (saveErr) {
           console.error("[AI Fill] Auto-save failed:", saveErr);
         }
       }
 
-      // Success — the empty case already returned above, so we definitely wrote
-      // something. Report the honest date count.
-      toast.success(`AI filled the exam. ${extractedDates} date${extractedDates === 1 ? "" : "s"} extracted.`);
+      // Honest report: how many blank fields we actually filled, and whether we
+      // skipped fields because they already had values.
+      const filledCount =
+        Object.keys(filledIdentity).length +
+        Object.keys(filledEdition).length +
+        (mergedDates ? 1 : 0) +
+        (modulesToSave ? 1 : 0);
+      if (filledCount === 0) {
+        toast.warning("AI returned data, but every matching field already had a value — nothing was overwritten.");
+      } else {
+        toast.success(`AI filled ${filledCount} empty field${filledCount === 1 ? "" : "s"}. Existing values were left untouched.`);
+      }
     } catch (err) {
       toast.error("AI generation failed: " + getErrorMessage(err));
     } finally {
@@ -685,27 +715,32 @@ export function EntranceExamEditorPage() {
     try {
       const { apiKey, model } = getAICredentials();
       const data = await aiFillIdentityTab(examName, rawContent, apiKey, model);
-      // No-op on empty: if the AI extracted nothing usable, change NOTHING (no
-      // form.setValue, no DB write) and say so plainly. A success toast on an empty
-      // result — while still saving — is how a real value gets silently overwritten.
+      // No-op on empty: if the AI extracted nothing usable, change NOTHING and say so.
       const gotAnything = !!data.shortName || !!data.conductingBody || !!data.officialWebsite;
       if (!gotAnything) {
         toast.warning("AI extracted nothing for Identity — no changes made.");
         return;
       }
-      if (data.shortName) form.setValue("shortName", data.shortName, { shouldDirty: true });
-      if (data.conductingBody) form.setValue("conductingBody", data.conductingBody, { shouldDirty: true });
-      if (data.officialWebsite) form.setValue("officialWebsite", data.officialWebsite, { shouldDirty: true });
-      // Auto-save to DB
+      // EMPTY-ONLY FILL: only populate blank fields. The AI can hallucinate a
+      // plausible-but-wrong value (e.g. Short Name "CAT" on a Bihar Board record),
+      // so it must never replace a value that already exists. `filled` carries only
+      // the blanks we actually wrote, so the DB save can't echo an AI value over an
+      // existing one.
+      const cur = form.getValues();
+      const filled: Record<string, unknown> = {};
+      if (data.shortName && isBlank(cur.shortName)) { form.setValue("shortName", data.shortName, { shouldDirty: true }); filled.shortName = data.shortName; }
+      if (data.conductingBody && isBlank(cur.conductingBody)) { form.setValue("conductingBody", data.conductingBody, { shouldDirty: true }); filled.conductingBody = data.conductingBody; }
+      if (data.officialWebsite && isBlank(cur.officialWebsite)) { form.setValue("officialWebsite", data.officialWebsite, { shouldDirty: true }); filled.officialWebsite = data.officialWebsite; }
+      if (Object.keys(filled).length === 0) {
+        toast.warning("AI returned data, but Identity fields already had values — nothing was overwritten.");
+        return;
+      }
+      // Auto-save only the blanks we filled.
       if (exam) {
-        await updateExamIdentity(exam.id, {
-          shortName: data.shortName || undefined,
-          conductingBody: data.conductingBody || undefined,
-          officialWebsite: data.officialWebsite || undefined,
-        });
+        await updateExamIdentity(exam.id, filled as any);
         await loadExam();
       }
-      toast.success("Identity filled and saved.");
+      toast.success(`Identity: filled ${Object.keys(filled).length} empty field${Object.keys(filled).length === 1 ? "" : "s"}. Existing values untouched.`);
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setTabAiFilling(null); }
   };
@@ -732,36 +767,51 @@ export function EntranceExamEditorPage() {
         return;
       }
 
+      // EMPTY-ONLY FILL. Dates: fill BLANK rows or append new labels only — never
+      // overwrite a row that already carries a date. Scalars (status/vacancy/
+      // notificationDate): fill only when currently blank. This is what stops AI
+      // from clobbering a correct Notification Date.
+      const cur = form.getValues();
       let merged: DateRow[] | null = null;
       if (extractedDates > 0) {
         const current = form.getValues("importantDates") as DateRow[];
-        merged = [...current];
+        const next = [...current];
+        let changed = false;
         for (const ai of data.importantDates) {
           if (!ai.date || !ai.label) continue;
-          const idx = merged.findIndex((d) => d.label.toLowerCase().replace(/[^a-z]/g, "").includes(ai.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8)));
-          if (idx >= 0) merged[idx] = { ...merged[idx], date: ai.date, isUrgent: ai.isUrgent };
-          else merged.push(ai);
+          const idx = next.findIndex((d) => d.label.toLowerCase().replace(/[^a-z]/g, "").includes(ai.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8)));
+          if (idx >= 0 && isBlank(next[idx].date)) { next[idx] = { ...next[idx], date: ai.date, isUrgent: ai.isUrgent }; changed = true; }
+          else if (idx < 0) { next.push(ai); changed = true; }
+          // idx >= 0 with an existing date → LEAVE IT.
         }
-        replaceDates(merged);
+        if (changed) { replaceDates(next); merged = next; }
       }
 
-      // Only set the scalar fields that were actually extracted — never clobber an
-      // existing value with a blank/absent AI field.
-      if (gotStatus)  form.setValue("editionStatus", data.status as EditionStatus, { shouldDirty: true });
-      if (gotVacancy) form.setValue("vacancy", String(data.vacancy), { shouldDirty: true });
-      if (gotNotif)   form.setValue("notificationDate", data.notificationDate, { shouldDirty: true });
+      const setStatus  = gotStatus && cur.editionStatus === "upcoming" && data.status !== "upcoming";
+      const setVacancy = gotVacancy && isBlank(cur.vacancy);
+      const setNotif   = gotNotif && isBlank(cur.notificationDate);
+      if (setStatus)  form.setValue("editionStatus", data.status as EditionStatus, { shouldDirty: true });
+      if (setVacancy) form.setValue("vacancy", String(data.vacancy), { shouldDirty: true });
+      if (setNotif)   form.setValue("notificationDate", data.notificationDate, { shouldDirty: true });
 
-      // Auto-save only the fields we actually extracted (undefined = leave untouched).
+      const filledScalars = (setStatus ? 1 : 0) + (setVacancy ? 1 : 0) + (setNotif ? 1 : 0);
+      if (!merged && filledScalars === 0) {
+        toast.warning("AI returned data, but Dates & Status fields already had values — nothing was overwritten.");
+        return;
+      }
+
+      // Auto-save only what we filled (undefined = leave untouched).
       if (currentEdition) {
         await updateEdition(currentEdition.id, {
           ...(merged ? { importantDates: merged.filter((d) => d.date && d.date.trim() !== "") } : {}),
-          status: gotStatus ? (data.status as EditionStatus) : undefined,
-          vacancy: gotVacancy ? data.vacancy : undefined,
-          notificationDate: gotNotif ? data.notificationDate : undefined,
+          status: setStatus ? (data.status as EditionStatus) : undefined,
+          vacancy: setVacancy ? data.vacancy : undefined,
+          notificationDate: setNotif ? data.notificationDate : undefined,
         });
         await loadExam();
       }
-      toast.success(`Dates & Status filled and saved. ${extractedDates} date${extractedDates === 1 ? "" : "s"} extracted.`);
+      const addedDates = merged ? "dates updated" : "no date changes";
+      toast.success(`Dates & Status: ${addedDates}, ${filledScalars} empty field${filledScalars === 1 ? "" : "s"} filled. Existing values untouched.`);
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setTabAiFilling(null); }
   };
@@ -781,21 +831,23 @@ export function EntranceExamEditorPage() {
         toast.warning("AI extracted nothing for SEO — no changes made.");
         return;
       }
-      if (data.seoTitle) form.setValue("seoTitle", data.seoTitle, { shouldDirty: true });
-      if (data.seoDescription) form.setValue("seoDescription", data.seoDescription, { shouldDirty: true });
-      if (data.tags.length > 0) form.setValue("tags", data.tags.join(", "), { shouldDirty: true });
-      if (data.faqs.length > 0) replaceFaqs(data.faqs);
-      // Auto-save to DB
+      // EMPTY-ONLY FILL: only populate blank SEO fields; never replace existing.
+      const cur = form.getValues();
+      const filled: Record<string, unknown> = {};
+      if (data.seoTitle && isBlank(cur.seoTitle)) { form.setValue("seoTitle", data.seoTitle, { shouldDirty: true }); filled.seoTitle = data.seoTitle; }
+      if (data.seoDescription && isBlank(cur.seoDescription)) { form.setValue("seoDescription", data.seoDescription, { shouldDirty: true }); filled.seoDescription = data.seoDescription; }
+      if (data.tags.length > 0 && isBlank(cur.tags)) { form.setValue("tags", data.tags.join(", "), { shouldDirty: true }); filled.tags = data.tags; }
+      if (data.faqs.length > 0 && (cur.faqs?.length ?? 0) === 0) { replaceFaqs(data.faqs); filled.faqs = data.faqs; }
+      if (Object.keys(filled).length === 0) {
+        toast.warning("AI returned data, but SEO fields already had values — nothing was overwritten.");
+        return;
+      }
+      // Auto-save only the blanks we filled.
       if (exam) {
-        await updateExamIdentity(exam.id, {
-          seoTitle: data.seoTitle || undefined,
-          seoDescription: data.seoDescription || undefined,
-          tags: data.tags.length > 0 ? data.tags : undefined,
-          faqs: data.faqs.length > 0 ? data.faqs : undefined,
-        });
+        await updateExamIdentity(exam.id, filled as any);
         await loadExam();
       }
-      toast.success("SEO tab filled and saved.");
+      toast.success(`SEO: filled ${Object.keys(filled).length} empty field${Object.keys(filled).length === 1 ? "" : "s"}. Existing values untouched.`);
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setTabAiFilling(null); }
   };
@@ -810,7 +862,7 @@ export function EntranceExamEditorPage() {
       const items = await aiFillNewsTab(examName, year, rawContent, apiKey, model);
       if (items.length > 0) {
         const { updateEdition: updateEd } = await import("@/services/entranceExamService");
-        const existing = currentEdition.contentModules ?? {};
+        const existing = (currentEdition.contentModules ?? {}) as Record<string, any>;
         const newsItems = items.map((item) => ({
           id: crypto.randomUUID(),
           title: item.title,
@@ -822,9 +874,12 @@ export function EntranceExamEditorPage() {
           publishedAt: new Date().toISOString(),
           isPublished: true,
         }));
-        await updateEd(currentEdition.id, { contentModules: { ...existing, news: { items: newsItems } } });
+        // APPEND, don't replace: keep any existing news items and add the AI ones
+        // after them. Replacing the whole list would delete real news the user had.
+        const existingItems = Array.isArray(existing.news?.items) ? existing.news.items : [];
+        await updateEd(currentEdition.id, { contentModules: { ...existing, news: { ...existing.news, items: [...existingItems, ...newsItems] } } });
         await loadExam();
-        toast.success(`AI generated ${items.length} news items. Review in News tab.`);
+        toast.success(`AI added ${items.length} news item${items.length === 1 ? "" : "s"} to the ${existingItems.length} already there. Review in News tab.`);
       } else {
         toast.warning("AI generated no news items — no changes made.");
       }
@@ -842,10 +897,18 @@ export function EntranceExamEditorPage() {
       const data = await aiFillModulesTab(examName, year, rawContent, apiKey, model);
       if (Object.keys(data.contentModules).length > 0) {
         const { updateEdition: updateEd } = await import("@/services/entranceExamService");
-        const existing = currentEdition.contentModules ?? {};
-        await updateEd(currentEdition.id, { contentModules: { ...existing, ...data.contentModules } });
+        const existing = (currentEdition.contentModules ?? {}) as Record<string, unknown>;
+        // AI first, existing second → existing module content WINS on key clash.
+        // Only modules the edition doesn't already have get filled; nothing the
+        // user authored is overwritten.
+        const filledKeys = Object.keys(data.contentModules).filter((k) => !(k in existing));
+        await updateEd(currentEdition.id, { contentModules: { ...data.contentModules, ...existing } });
         await loadExam();
-        toast.success("Content modules filled by AI. Check the Modules tab.");
+        if (filledKeys.length === 0) {
+          toast.warning("AI returned module content, but those modules already exist — nothing was overwritten.");
+        } else {
+          toast.success(`AI filled ${filledKeys.length} empty module${filledKeys.length === 1 ? "" : "s"}. Existing modules untouched.`);
+        }
       } else {
         toast.warning("AI extracted no module content — no changes made.");
       }
