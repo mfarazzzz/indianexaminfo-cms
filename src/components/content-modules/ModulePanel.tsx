@@ -56,18 +56,11 @@ const COLUMN_BACKED_MODULE_SOURCE: Record<string, { sourceTab: string; tabId: st
 };
 
 /**
- * Group classification — MUST match what the frontend actually renders
- * (EntityDetailPage). Verified against TAB_ONLY_MODULES + ContentModulesBlock:
- *  - Group C (tab-only): render on their own sub-page, NOT the main page, so no
- *    main-page order. Matches frontend TAB_ONLY_MODULES.
- *  - Group B (editable, reorderable): render inside the main-page ContentModulesBlock,
- *    ordered by _config.moduleOrder — the ONLY genuinely draggable group.
- * Group A (fixed structure / typed-column tables) is NOT in the module registry;
- * it's a synthetic list below with deep-links to the tab that edits each.
+ * Part B (2026-09-19): the old Group A/B/C split (fixed / editable / tab-only) is gone.
+ * The tab now has TWO groups — "Edited here" (editable modules) and "Edited elsewhere"
+ * (fixed sections + column-backed modules, deduped by section). The tab-only vs main-page
+ * distinction no longer drives the layout, so TAB_ONLY_MODULE_SLUGS was removed.
  */
-const TAB_ONLY_MODULE_SLUGS = new Set([
-  "application-process", "admit-card", "result", "cut-off", "syllabus", "news", "faqs",
-]);
 
 /** Fixed page sections (not modules). Each links to the tab where it's edited. */
 const FIXED_SECTIONS: { key: string; label: string; sourceTab: string; tabId: string; sectionSlug?: string }[] = [
@@ -313,9 +306,47 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
     return ordered;
   }, [modules, config.moduleOrder]);
 
-  // Group B = main-page modules (reorderable); Group C = tab-only modules.
-  const groupBModules = orderedModules.filter((m) => !TAB_ONLY_MODULE_SLUGS.has(m.slug));
-  const groupCModules = orderedModules.filter((m) => TAB_ONLY_MODULE_SLUGS.has(m.slug));
+  // Part B (2026-09-19): TWO groups, not three. A fact is either edited HERE (an
+  // editable module) or edited ELSEWHERE (a fixed section or a column-backed module —
+  // both are just "a fact edited in another tab, shown here with a deep link"). The old
+  // Group A (fixed) / Group B (editable) / Group C (tab-only) split listed the same
+  // column-backed fact twice (once as a fixed row, once as a module row). We now render
+  // each fact once.
+  //
+  // "Edited here" = registry modules that are NOT column-backed (they have a working
+  // editor + toggle here). Order preserved from orderedModules.
+  const editHereModules = orderedModules.filter((m) => !COLUMN_BACKED_MODULE_SOURCE[m.slug]);
+
+  // "Edited elsewhere" = the fixed sections + the column-backed modules, DEDUPED by the
+  // frontend section slug so a fact with both a fixed row and a column-backed row shows
+  // once. Each row keeps its own deep-link target and live/hidden state.
+  const editElsewhereRows = React.useMemo(() => {
+    type ElsewhereRow = { key: string; label: string; sourceTab: string; tabId: string; sectionSlug?: string };
+    const bySection = new Map<string, ElsewhereRow>();
+    const push = (row: ElsewhereRow) => {
+      // De-dupe by section slug; first writer wins so the fixed-section label/target is
+      // kept where one exists. (Syllabus is the one intentional exception — see below.)
+      const k = row.sectionSlug ?? row.key;
+      if (!bySection.has(k)) bySection.set(k, row);
+    };
+    // Fixed sections first (their labels are the canonical page-section names)…
+    for (const fs of FIXED_SECTIONS) push({ ...fs });
+    // …then column-backed modules. Syllabus: the fixed "Syllabus Highlights → Identity"
+    // row is stale (the syllabus_highlights column was dropped); the column-backed row
+    // points at the real Syllabus tab (exam_syllabus). Override the syllabus row's target
+    // to the Syllabus tab so the deep link goes where the content is actually edited.
+    for (const mod of orderedModules) {
+      const src = COLUMN_BACKED_MODULE_SOURCE[mod.slug];
+      if (!src) continue;
+      const sectionSlug = MODULE_SLUG_TO_SECTION[mod.slug] ?? mod.slug;
+      if (sectionSlug === "syllabus") {
+        bySection.set("syllabus", { key: "syllabus", label: "Syllabus", sourceTab: src.sourceTab, tabId: src.tabId, sectionSlug: "syllabus" });
+        continue;
+      }
+      push({ key: mod.slug, label: mod.name, sourceTab: src.sourceTab, tabId: src.tabId, sectionSlug });
+    }
+    return Array.from(bySection.values());
+  }, [orderedModules]);
 
   // Group B reorder handler REMOVED (2026-09-19): the frontend main page renders in
   // registry order, not _config.moduleOrder, so persisting a reorder here changed
@@ -366,47 +397,39 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
         Each module's <span className="font-medium">mode</span>: <span className="font-medium">Auto</span> pulls the content from other tabs (read-only here) · <span className="font-medium">Hybrid</span> shows that auto content plus your own notes · <span className="font-medium">Manual</span> means you edit everything here yourself.
       </p>
 
-      {/* ── Group A: Fixed page sections (not modules, not reorderable) ── */}
-      <GroupHeading title="Fixed page sections" hint="Always in this position — edit content in the linked tab." />
-      <div className="space-y-1.5 mb-5">
-        {FIXED_SECTIONS.map((fs) => {
-          const live = fs.sectionSlug && liveView && SECTION_BY_SLUG[fs.sectionSlug]
-            ? hasData(liveView, fs.sectionSlug) : undefined;
-          return (
-            <div key={fs.key} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
-              <span className="text-sm text-slate-600 flex-1 min-w-0 truncate">{fs.label}</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 font-medium shrink-0">fixed</span>
-              {live === true && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 font-medium shrink-0">Live</span>}
-              {live === false && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium shrink-0">Hidden — no content yet</span>}
-              <button type="button" onClick={() => onNavigateTab?.(fs.tabId)}
-                className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline shrink-0">
-                Edit in {fs.sourceTab} →
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ── Group B: Editable content modules ──
+      {/* ── Group 1: Facts you edit here (editable modules only) ──
           Drag-to-reorder REMOVED (2026-09-19): it persisted _config.moduleOrder, but the
           main page renders in registry order (mainSectionsForPillar), so reordering here
-          changed nothing a visitor sees. The handles were a lie. _config.moduleOrder is
-          left in the data untouched. */}
-      <GroupHeading title="Editable content modules" hint="Fill these in; the main page renders them in a fixed order." />
+          changed nothing a visitor sees. _config.moduleOrder is left in the data untouched. */}
+      <GroupHeading title="Edited here" hint="Fill these in; the main page renders them in a fixed order." />
       <div className="mb-5 space-y-1.5">
-        {groupBModules.length === 0 ? (
+        {editHereModules.length === 0 ? (
           <p className="text-xs text-slate-400 italic px-1 py-2">No editable modules.</p>
         ) : (
-          groupBModules.map((mod) => renderModuleCard(mod, {}))
+          editHereModules.map((mod) => renderModuleCard(mod, {}))
         )}
       </div>
 
-      {/* ── Group C: Tab-only modules (sub-page, no main-page order) ── */}
-      {groupCModules.length > 0 && (
+      {/* ── Group 2: Facts edited elsewhere (fixed sections + column-backed), each once ── */}
+      {editElsewhereRows.length > 0 && (
         <>
-          <GroupHeading title="Tab-only modules" hint="Shown on their own content-type page, not the main page." />
+          <GroupHeading title="Edited elsewhere" hint="These come from another tab — shown here with a link to where they're edited." />
           <div className="space-y-1.5">
-            {groupCModules.map((mod) => renderModuleCard(mod, {}))}
+            {editElsewhereRows.map((row) => {
+              const live = row.sectionSlug && liveView && SECTION_BY_SLUG[row.sectionSlug]
+                ? hasData(liveView, row.sectionSlug) : undefined;
+              return (
+                <div key={row.key} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
+                  <span className="text-sm text-slate-600 flex-1 min-w-0 truncate">{row.label}</span>
+                  {live === true && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 font-medium shrink-0" title="This section has content and is visible on the live site">Live</span>}
+                  {live === false && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium shrink-0" title="Hidden on the live site — no content in the source field yet.">Hidden — no content yet</span>}
+                  <button type="button" onClick={() => onNavigateTab?.(row.tabId)}
+                    className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline shrink-0">
+                    Edit in {row.sourceTab} →
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </>
       )}

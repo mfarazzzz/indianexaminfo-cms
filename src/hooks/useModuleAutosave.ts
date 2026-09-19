@@ -6,7 +6,7 @@
  * - Injects _meta (updatedAt, updatedBy) before saving
  * - Tracks status: idle, saving, saved, error
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { saveModuleContent } from "@/services/moduleContentService";
 import { useAuth } from "@/hooks/useAuth";
 import type { SaveStatus } from "@/types/modules";
@@ -102,6 +102,38 @@ export function useModuleAutosave(
       }
     }, DEBOUNCE_MS);
   }, [doSave]);
+
+  // ── Flush on unmount ───────────────────────────────────────────────────────
+  // If a debounced save is still waiting when this hook unmounts (card collapses
+  // via remount, tab switch, editor closes), fire it NOW instead of letting the
+  // timer die with the component and dropping the edit silently.
+  //
+  // A React cleanup is synchronous and doSave() is async, so we cannot AWAIT the
+  // write here. What we CAN do reliably is INITIATE it: for an in-app unmount the
+  // browser does not abort an in-flight fetch just because a component unmounted,
+  // so the POST completes detached (its setState calls are no-ops, which is fine).
+  // The one case this does NOT cover is a full page unload / hard navigation, where
+  // the browser may cut off the in-flight request — a synchronous cleanup cannot
+  // guarantee an async POST there. That needs a separate beforeunload/keepalive
+  // mechanism and is out of scope for a debounce flush; flagged in the report.
+  //
+  // We keep the flush logic in a ref so the unmount-only effect (deps []) always
+  // runs the latest closure without re-subscribing on every render.
+  const flushRef = useRef<() => void>(() => {});
+  flushRef.current = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+      if (latestContentRef.current) {
+        // Fire-and-forget: initiate the pending save on the way out.
+        void doSave(latestContentRef.current);
+      }
+    }
+  };
+
+  useEffect(() => {
+    return () => flushRef.current();
+  }, []);
 
   return { save, scheduleAutosave, status, pending, lastSavedAt };
 }

@@ -212,9 +212,14 @@ export function ContentModuleCard({
         )}
       </div>
 
-      {/* Content area */}
-      {enabled && expanded && (
-        <div className="px-4 pb-4 border-t border-slate-100">
+      {/* Content area. Collapsing HIDES with CSS (`hidden`) rather than unmounting:
+          ModuleContentEditor's autosave keeps a pending edit in a 2s debounce timer with
+          NO flush-on-unmount, so unmounting a card mid-edit (collapse, or Collapse All)
+          would silently drop that edit. Staying mounted preserves the timer so the save
+          still lands. Kept mounted only while `enabled` (a disabled module has nothing to
+          edit and is toggled off deliberately). */}
+      {enabled && (
+        <div className={`px-4 pb-4 border-t border-slate-100${expanded ? "" : " hidden"}`}>
           {mode === "auto" && autoContent && (
             <div className="py-3">
               {isPassThrough && (
