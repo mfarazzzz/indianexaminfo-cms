@@ -11,7 +11,7 @@ import { ContentModuleCard } from "./ContentModuleCard";
 import { getModuleRegistry } from "@/services/moduleRegistryService";
 import { getContentModules, saveModuleConfig, toggleModuleEnabled, saveModuleContent } from "@/services/moduleContentService";
 import { BUILT_IN_MODULES } from "@/lib/modules/builtInSchemas";
-import { resolveModuleContent, getModuleMode, setModuleMode, getDefaultBindingConfig, countStaleModules, type DataMode, type BindingConfig } from "@/lib/modules/dataBindingService";
+import { resolveModuleContent, getModuleMode, getDefaultBindingConfig, countStaleModules, type DataMode, type BindingConfig } from "@/lib/modules/dataBindingService";
 import { aiGenerateForModule } from "@/lib/modules/moduleAI";
 import type { ModuleDefinition, ModuleConfig, ContentModulesData, ModuleContentData, SaveStatus } from "@/types/modules";
 import type { ExamIdentity, ExamEdition } from "@/services/entranceExamService";
@@ -134,7 +134,7 @@ interface Props {
 export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType, selectionModel, onNavigateTab, onDirtyChange }: Props) {
   const [modules, setModules] = useState<ModuleDefinition[]>([]);
   const [contentModules, setContentModules] = useState<ContentModulesData>({});
-  const [config, setConfig] = useState<ModuleConfig>({ moduleOrder: [], enabledModules: [], modes: {}, syncTimestamps: {} });
+  const [config, setConfig] = useState<ModuleConfig>({ moduleOrder: [], enabledModules: [], syncTimestamps: {} });
   const [loading, setLoading] = useState(true);
   const [statuses, setStatuses] = useState<Record<string, SaveStatus>>({});
   // Per-module "has an unsaved edit in flight/debouncing" flags. Aggregated and
@@ -145,8 +145,15 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
   const { getSetting } = useSettings();
   const { user } = useAuth();
 
+  // Step 4 (2026-09-19): the per-module Auto/Hybrid/Manual mode is an EDITOR-VIEW
+  // toggle only — the frontend never read _config.modes. We no longer persist it or
+  // read it from the saved config. It lives as session-only local state, seeded from
+  // DEFAULT_MODES and overridden in-memory by the dropdown. Any stale _config.modes on
+  // existing rows is ignored (not cleaned this pass).
+  const [modeOverrides, setModeOverrides] = useState<Record<string, DataMode>>({});
+
   const bindingConfig: BindingConfig = {
-    modes: (config.modes ?? {}) as Record<string, DataMode>,
+    modes: { ...getDefaultBindingConfig().modes, ...modeOverrides },
     syncTimestamps: (config.syncTimestamps ?? {}) as Record<string, string>,
   };
 
@@ -189,7 +196,13 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
 
         const existingConfig = data._config as ModuleConfig | undefined;
         if (existingConfig?.moduleOrder?.length) {
-          setConfig({ ...existingConfig, modes: existingConfig.modes ?? {}, syncTimestamps: existingConfig.syncTimestamps ?? {} });
+          // Step 4: do NOT carry `modes` into state — it is no longer read or persisted.
+          // A stale modes key on the row is simply ignored (not cleaned this pass).
+          setConfig({
+            moduleOrder: existingConfig.moduleOrder,
+            enabledModules: existingConfig.enabledModules,
+            syncTimestamps: existingConfig.syncTimestamps ?? {},
+          });
         } else {
           const enabledFromLegacy = legacyFlags
             ? Object.entries(legacyFlags).filter(([, v]) => v).map(([k]) => flagToSlug(k)).filter(Boolean) as string[]
@@ -197,7 +210,6 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
           const defaultConfig: ModuleConfig = {
             moduleOrder: registry.map((m) => m.slug),
             enabledModules: enabledFromLegacy.length > 0 ? enabledFromLegacy : [],
-            modes: getDefaultBindingConfig().modes,
             syncTimestamps: {},
           };
           setConfig(defaultConfig);
@@ -223,12 +235,10 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
     } catch (err) { toast.error(getErrorMessage(err)); }
   }, [editionId]);
 
-  const handleModeChange = useCallback(async (slug: string, mode: DataMode) => {
-    if (!editionId) return;
-    const newConfig = { ...config, modes: { ...config.modes, [slug]: mode } };
-    setConfig(newConfig);
-    await saveModuleConfig(editionId, newConfig).catch(() => {});
-  }, [editionId, config]);
+  const handleModeChange = useCallback((slug: string, mode: DataMode) => {
+    // Editor-view only — not persisted. See Step 4 note above.
+    setModeOverrides((prev) => ({ ...prev, [slug]: mode }));
+  }, []);
 
   const handleAIFill = useCallback(async (slug: string) => {
     if (!editionId || !exam) return;
@@ -255,7 +265,13 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
     const resolved = resolveModuleContent(slug, mode, exam ?? null, edition ?? null, contentModules);
     if (resolved.autoContent) {
       await saveModuleContent(editionId, slug, resolved.autoContent, user?.id ?? "system");
-      const newConfig = { ...config, syncTimestamps: { ...config.syncTimestamps, [slug]: new Date().toISOString() } };
+      // Persist syncTimestamps + order/enabled only — never `modes` (Step 4). Rebuild the
+      // config explicitly so a stale modes key on the loaded config is not re-written.
+      const newConfig: ModuleConfig = {
+        moduleOrder: config.moduleOrder,
+        enabledModules: config.enabledModules,
+        syncTimestamps: { ...config.syncTimestamps, [slug]: new Date().toISOString() },
+      };
       setConfig(newConfig);
       await saveModuleConfig(editionId, newConfig).catch(() => {});
       setContentModules((prev) => ({ ...prev, [slug]: { ...resolved.autoContent!, _meta: { updatedAt: new Date().toISOString(), updatedBy: user?.id ?? "" } } }));
