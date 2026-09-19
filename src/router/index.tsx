@@ -5,6 +5,7 @@ import { ProtectedRoute } from "./ProtectedRoute";
 import { RequirePermission } from "./RequirePermission";
 import { P } from "@/config/permissions";
 import { LoginPage } from "@/pages/auth/LoginPage";
+import { SetPasswordPage } from "@/pages/auth/SetPasswordPage";
 import { Loader2 } from "lucide-react";
 
 function Loading() {
@@ -148,6 +149,11 @@ const NavigationSettingsPage = lazyPage(() => import("@/pages/navigation/Navigat
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
+  // Public set-password screen for invite acceptance, password reset, and forced
+  // change after an admin-set temporary password. /auth/reset-password is kept as an
+  // alias because existing reset emails point there.
+  { path: "/auth/set-password",   element: <SetPasswordPage /> },
+  { path: "/auth/reset-password", element: <SetPasswordPage /> },
   { path: "/",      element: <Navigate to="/dashboard" replace /> },
   {
     element: <ProtectedRoute />,
@@ -157,40 +163,40 @@ export const router = createBrowserRouter([
         children: [
           { path: "/dashboard",         element: <DashboardPage /> },
           // M3.8: Pillar-agnostic entity routes (zero code change for new pillars)
-          { path: "/entities",             element: <EntityListPage /> },
-          { path: "/entities/:pillar",     element: <EntityListPage /> },
-          { path: "/entities/:pillar/new", element: <EntityCreationPage /> },
-          { path: "/entities/:pillar/:id", element: <EntityEditorPage /> },
+          { path: "/entities",             element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntityListPage /></RequirePermission> },
+          { path: "/entities/:pillar",     element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntityListPage /></RequirePermission> },
+          { path: "/entities/:pillar/new", element: <RequirePermission anyOf={[P.CREATE_EXAM]}><EntityCreationPage /></RequirePermission> },
+          { path: "/entities/:pillar/:id", element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntityEditorPage /></RequirePermission> },
           // M3.8: Taxonomy manager
-          { path: "/taxonomy",             element: <TaxonomyManagerPage /> },
-          { path: "/taxonomy/:type",       element: <TaxonomyManagerPage /> },
+          { path: "/taxonomy",             element: <RequirePermission anyOf={[P.MANAGE_STRUCTURAL_TAXONOMY, P.MANAGE_CATEGORIES]}><TaxonomyManagerPage /></RequirePermission> },
+          { path: "/taxonomy/:type",       element: <RequirePermission anyOf={[P.MANAGE_STRUCTURAL_TAXONOMY, P.MANAGE_CATEGORIES]}><TaxonomyManagerPage /></RequirePermission> },
           // Exam Manager — directly targets legacy `exams` table (what frontend reads)
-          { path: "/exams",             element: <ExamsListPage /> },
-          { path: "/exams/new",         element: <ExamEditorPage /> },
-          { path: "/exams/:id",         element: <ExamEditorPage /> },
-          { path: "/content",           element: <UnifiedContentListPage /> },
-          { path: "/content/new",       element: <UnifiedContentEditorPage /> },
-          { path: "/content/:id",       element: <UnifiedContentEditorPage /> },
+          { path: "/exams",             element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><ExamsListPage /></RequirePermission> },
+          { path: "/exams/new",         element: <RequirePermission anyOf={[P.CREATE_EXAM]}><ExamEditorPage /></RequirePermission> },
+          { path: "/exams/:id",         element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><ExamEditorPage /></RequirePermission> },
+          { path: "/content",           element: <RequirePermission anyOf={[P.CREATE_POST, P.EDIT_ANY_POST, P.EDIT_OWN_POST]}><UnifiedContentListPage /></RequirePermission> },
+          { path: "/content/new",       element: <RequirePermission anyOf={[P.CREATE_POST]}><UnifiedContentEditorPage /></RequirePermission> },
+          { path: "/content/:id",       element: <RequirePermission anyOf={[P.CREATE_POST, P.EDIT_ANY_POST, P.EDIT_OWN_POST]}><UnifiedContentEditorPage /></RequirePermission> },
           // Blog Authors (standalone management)
-          { path: "/blog/authors",      element: <BlogAuthorsPage /> },
+          { path: "/blog/authors",      element: <RequirePermission anyOf={[P.CREATE_POST, P.EDIT_ANY_POST]}><BlogAuthorsPage /></RequirePermission> },
           // Redirects from old routes
           { path: "/blog",              element: <Navigate to="/content" replace /> },
           { path: "/blog/new",          element: <Navigate to="/content/new" replace /> },
           { path: "/blog/:id",          element: <Navigate to="/content" replace /> },
-          { path: "/categories",        element: <CategoriesPage /> },
-          { path: "/navigation",        element: <NavigationSettingsPage /> },
-          { path: "/menus",             element: <MenusPage /> },
-          { path: "/pages",             element: <PagesListPage /> },
-          { path: "/pages/new",         element: <PageEditPage /> },
-          { path: "/pages/:id",         element: <PageEditPage /> },
-          { path: "/media",             element: <MediaLibraryPage /> },
-          { path: "/ads",               element: <AdDashboardPage /> },
-          { path: "/ads/campaigns",     element: <CampaignsListPage /> },
-          { path: "/ads/campaigns/new", element: <CampaignEditPage /> },
-          { path: "/ads/campaigns/:id", element: <CampaignEditPage /> },
-          { path: "/ads/creatives",     element: <CreativesPage /> },
-          { path: "/ads/zones",         element: <ZonesPage /> },
-          { path: "/ads/reports",       element: <ReportsPage /> },
+          { path: "/categories",        element: <RequirePermission anyOf={[P.MANAGE_CATEGORIES]}><CategoriesPage /></RequirePermission> },
+          { path: "/navigation",        element: <RequirePermission anyOf={[P.MANAGE_MENUS, P.MANAGE_CATEGORIES]}><NavigationSettingsPage /></RequirePermission> },
+          { path: "/menus",             element: <RequirePermission anyOf={[P.MANAGE_MENUS]}><MenusPage /></RequirePermission> },
+          { path: "/pages",             element: <RequirePermission anyOf={[P.MANAGE_PAGES]}><PagesListPage /></RequirePermission> },
+          { path: "/pages/new",         element: <RequirePermission anyOf={[P.MANAGE_PAGES]}><PageEditPage /></RequirePermission> },
+          { path: "/pages/:id",         element: <RequirePermission anyOf={[P.MANAGE_PAGES]}><PageEditPage /></RequirePermission> },
+          { path: "/media",             element: <RequirePermission anyOf={[P.UPLOAD_MEDIA, P.DELETE_MEDIA]}><MediaLibraryPage /></RequirePermission> },
+          { path: "/ads",               element: <RequirePermission anyOf={[P.MANAGE_ADS, P.MANAGE_AD_ZONES, P.VIEW_OWN_ADS]}><AdDashboardPage /></RequirePermission> },
+          { path: "/ads/campaigns",     element: <RequirePermission anyOf={[P.MANAGE_ADS, P.VIEW_OWN_ADS]}><CampaignsListPage /></RequirePermission> },
+          { path: "/ads/campaigns/new", element: <RequirePermission anyOf={[P.MANAGE_ADS]}><CampaignEditPage /></RequirePermission> },
+          { path: "/ads/campaigns/:id", element: <RequirePermission anyOf={[P.MANAGE_ADS, P.VIEW_OWN_ADS]}><CampaignEditPage /></RequirePermission> },
+          { path: "/ads/creatives",     element: <RequirePermission anyOf={[P.MANAGE_ADS]}><CreativesPage /></RequirePermission> },
+          { path: "/ads/zones",         element: <RequirePermission anyOf={[P.MANAGE_AD_ZONES]}><ZonesPage /></RequirePermission> },
+          { path: "/ads/reports",       element: <RequirePermission anyOf={[P.MANAGE_ADS, P.VIEW_OWN_ADS]}><ReportsPage /></RequirePermission> },
           // CMS Results (LEGACY — redirects to Govt Exam)
           { path: "/results",           element: <Navigate to="/govt-exam" replace /> },
           { path: "/results/new",       element: <Navigate to="/govt-exam/new" replace /> },
@@ -200,33 +206,33 @@ export const router = createBrowserRouter([
           { path: "/education-news/new",   element: <Navigate to="/content/new" replace /> },
           { path: "/education-news/:id",   element: <Navigate to="/content" replace /> },
           // Govt Exam (Government Competitive Exams — UPSC, SSC, RRB, etc.)
-          { path: "/govt-exam",            element: <GovtExamListPage /> },
-          { path: "/govt-exam/new",        element: <GovtExamEditorPage /> },
-          { path: "/govt-exam/:id",        element: <GovtExamEditorPage /> },
+          { path: "/govt-exam",            element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><GovtExamListPage /></RequirePermission> },
+          { path: "/govt-exam/new",        element: <RequirePermission anyOf={[P.CREATE_EXAM]}><GovtExamEditorPage /></RequirePermission> },
+          { path: "/govt-exam/:id",        element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><GovtExamEditorPage /></RequirePermission> },
           // Legacy Sarkari Naukri redirects → Govt Exam
           { path: "/sarkari-naukri",       element: <Navigate to="/govt-exam" replace /> },
           { path: "/sarkari-naukri/new",   element: <Navigate to="/govt-exam/new" replace /> },
           { path: "/sarkari-naukri/:id",   element: <Navigate to="/govt-exam" replace /> },
           // Entrance Exams (dedicated editorial workflow)
-          { path: "/entrance-exams",       element: <EntranceExamListPage /> },
-          { path: "/entrance-exams/new",   element: <EntranceExamEditorPage /> },
-          { path: "/entrance-exams/:id",   element: <EntranceExamEditorPage /> },
+          { path: "/entrance-exams",       element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntranceExamListPage /></RequirePermission> },
+          { path: "/entrance-exams/new",   element: <RequirePermission anyOf={[P.CREATE_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
+          { path: "/entrance-exams/:id",   element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
           // Govt Vacancy (previously Sarkari Bharti)
-          { path: "/govt-vacancy",         element: <SarkariBhartiListPage /> },
-          { path: "/govt-vacancy/new",     element: <EntranceExamEditorPage /> },
-          { path: "/govt-vacancy/:id",     element: <EntranceExamEditorPage /> },
+          { path: "/govt-vacancy",         element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><SarkariBhartiListPage /></RequirePermission> },
+          { path: "/govt-vacancy/new",     element: <RequirePermission anyOf={[P.CREATE_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
+          { path: "/govt-vacancy/:id",     element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
           // Legacy routes (redirect to new)
-          { path: "/sarkari-bharti",       element: <SarkariBhartiListPage /> },
-          { path: "/sarkari-bharti/new",   element: <EntranceExamEditorPage /> },
-          { path: "/sarkari-bharti/:id",   element: <EntranceExamEditorPage /> },
+          { path: "/sarkari-bharti",       element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><SarkariBhartiListPage /></RequirePermission> },
+          { path: "/sarkari-bharti/new",   element: <RequirePermission anyOf={[P.CREATE_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
+          { path: "/sarkari-bharti/:id",   element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
           // University Exams
-          { path: "/university-exams",     element: <UniversityExamsListPage /> },
-          { path: "/university-exams/new", element: <EntranceExamEditorPage /> },
-          { path: "/university-exams/:id", element: <EntranceExamEditorPage /> },
+          { path: "/university-exams",     element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><UniversityExamsListPage /></RequirePermission> },
+          { path: "/university-exams/new", element: <RequirePermission anyOf={[P.CREATE_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
+          { path: "/university-exams/:id", element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
           // Board Exams
-          { path: "/board-exams",          element: <BoardExamsListPage /> },
-          { path: "/board-exams/new",      element: <EntranceExamEditorPage /> },
-          { path: "/board-exams/:id",      element: <EntranceExamEditorPage /> },
+          { path: "/board-exams",          element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><BoardExamsListPage /></RequirePermission> },
+          { path: "/board-exams/new",      element: <RequirePermission anyOf={[P.CREATE_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
+          { path: "/board-exams/:id",      element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
           { path: "/users",             element: <RequirePermission anyOf={[P.MANAGE_USERS]}><UsersListPage /></RequirePermission> },
           { path: "/settings",          element: <RequirePermission anyOf={[P.MANAGE_SETTINGS]}><SettingsPage /></RequirePermission> },
           { path: "/audit",             element: <RequirePermission anyOf={[P.VIEW_AUDIT_LOG]}><AuditLogPage /></RequirePermission> },

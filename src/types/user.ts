@@ -25,6 +25,7 @@ export type UserProfile = {
   isActive: boolean;
   lastLogin: string | null;
   createdAt: string;
+  mustChangePassword: boolean;
 };
 
 export type AuthUser = {

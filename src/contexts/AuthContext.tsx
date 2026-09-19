@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { db } from "@/lib/supabase/client";
+import { setCurrentPermissions } from "@/lib/auth/permissionGuard";
 import type { AuthUser, UserProfile } from "@/types/user";
 
 interface AuthContextValue {
@@ -27,7 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = useCallback(async (userId: string): Promise<{ profile: UserProfile | null; fetchError: boolean }> => {
     const { data, error } = await (db as any)
       .from("user_profiles")
-      .select(`id, name, avatar, role_id, is_active, last_login, created_at, roles ( id, slug, name )`)
+      .select(`id, name, avatar, role_id, is_active, must_change_password, last_login, created_at, roles ( id, slug, name )`)
       .eq("id", userId)
       .single();
 
@@ -70,6 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isActive: data.is_active,
         lastLogin: data.last_login,
         createdAt: data.created_at,
+        mustChangePassword: data.must_change_password ?? false,
       },
     };
   }, []);
@@ -78,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (showSpinner) setIsLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) { setUser(null); return; }
+      if (!session?.user) { setUser(null); setCurrentPermissions([]); return; }
 
       const { profile, fetchError } = await fetchProfile(session.user.id);
 
@@ -90,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!profile || !profile.isActive) {
         await supabase.auth.signOut();
         setUser(null);
+        setCurrentPermissions([]);
         return;
       }
 
@@ -98,6 +101,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: session.user.email ?? "",
         profile: { ...profile, email: session.user.email ?? "" },
       });
+      // Keep the non-React permission guard (used by the service layer) in sync.
+      setCurrentPermissions(profile.permissions);
     } finally {
       if (showSpinner) setIsLoading(false);
     }

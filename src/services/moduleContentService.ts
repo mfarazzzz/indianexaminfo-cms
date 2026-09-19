@@ -168,9 +168,25 @@ export async function saveAllContentModules(
   editionId: string,
   contentModules: ContentModulesData
 ): Promise<void> {
+  // GUARD (2026-09-19): this writes content_modules wholesale. If the caller omits
+  // _config, preserve the existing one rather than dropping the module order/enabled
+  // set (which would unpublish every enabled module).
+  let toWrite: ContentModulesData = contentModules;
+  if (!("_config" in contentModules)) {
+    const { data: cur } = await db
+      .from("exam_editions")
+      .select("content_modules")
+      .eq("id", editionId)
+      .single();
+    const existingConfig = ((cur as any)?.content_modules as Record<string, unknown> | undefined)?._config;
+    if (existingConfig !== undefined) {
+      toWrite = { ...contentModules, _config: existingConfig as ContentModulesData["_config"] };
+    }
+  }
+
   const { error } = await db
     .from("exam_editions")
-    .update({ content_modules: contentModules })
+    .update({ content_modules: toWrite })
     .eq("id", editionId);
 
   if (error) throw error;

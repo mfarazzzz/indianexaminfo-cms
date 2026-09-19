@@ -4,6 +4,8 @@
  * No React imports. Business logic only.
  */
 import { db } from '@/lib/supabase/client'
+import { assertPermission, assertAffected } from '@/lib/auth/permissionGuard'
+import { P } from '@/config/permissions'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -395,6 +397,10 @@ export async function updateSarkariNaukri(id: string, input: Partial<SarkariNauk
   }
 
   if (input.workflowStatus !== undefined) {
+    // App-layer pre-check (DB RLS + trigger are authoritative). Publishing needs publish_post.
+    if (input.workflowStatus === 'published') {
+      assertPermission(P.PUBLISH_POST, 'publish a recruitment')
+    }
     updates.workflow_status = input.workflowStatus
     if (input.workflowStatus === 'published') {
       updates.published_at = new Date().toISOString()
@@ -406,10 +412,11 @@ export async function updateSarkariNaukri(id: string, input: Partial<SarkariNauk
     .update(updates)
     .eq('id', id)
     .select('*')
-    .single()
 
   if (error) throw error
-  return mapRow(data as Record<string, unknown>)
+  // Zero rows under RLS = permission refusal (e.g. no edit_any_post and not the owner).
+  assertAffected(data as unknown[] | null, 'edit this recruitment')
+  return mapRow((data as Record<string, unknown>[])[0])
 }
 
 // ── Publish / Archive / Delete ────────────────────────────────────────────────
@@ -423,13 +430,15 @@ export async function archiveSarkariNaukri(id: string): Promise<SarkariNaukri> {
 }
 
 export async function deleteSarkariNaukri(id: string): Promise<void> {
-  const { error } = await db.from('sarkari_naukri').delete().eq('id', id)
+  const { data, error } = await db.from('sarkari_naukri').delete().eq('id', id).select('id')
   if (error) throw error
+  assertAffected(data as unknown[] | null, 'delete this recruitment')
 }
 
 // ── Bulk operations ───────────────────────────────────────────────────────────
 
 export async function bulkPublish(ids: string[]): Promise<void> {
+  assertPermission(P.PUBLISH_POST, 'publish recruitments')
   const { error } = await db
     .from('sarkari_naukri')
     .update({ workflow_status: 'published', published_at: new Date().toISOString() })

@@ -219,8 +219,17 @@ function editorialHasData(exam: HasDataView, slug: string): boolean {
       return nonEmptyArr(d.items);
     case "news":
       return Array.isArray(d.items) && (d.items as { title?: string }[]).some((i) => nonEmptyStr(i?.title));
-    case "admit-card":
     case "result":
+      // Result renders declarationDate / checkLink / statistics (see ResultModule),
+      // so its presence gate must count them too — otherwise a result that has only a
+      // "check your result here" link (no body) is wrongly judged empty and hidden,
+      // and the renderer that would show the link never runs.
+      return (
+        nonEmptyStr(d.body) || nonEmptyStr(d.content) || nonEmptyStr(d.description) ||
+        nonEmptyStr(d.summary) || nonEmptyStr(d.releaseDate) || nonEmptyStr(d.date) ||
+        nonEmptyStr(d.checkLink) || nonEmptyStr(d.declarationDate) || nonEmptyStr(d.statistics)
+      );
+    case "admit-card":
     case "answer-key":
     case "cut-off":
       return (

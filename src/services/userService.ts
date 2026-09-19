@@ -31,6 +31,7 @@ export async function getUserProfiles(): Promise<UserProfile[]> {
     isActive: r.is_active,
     lastLogin: r.last_login,
     createdAt: r.created_at,
+    mustChangePassword: r.must_change_password ?? false,
   }));
 }
 
@@ -61,7 +62,9 @@ export async function inviteUser(email: string, roleId: string): Promise<{ error
     options: {
       shouldCreateUser: true,
       data: { role_id: roleId },
-      emailRedirectTo: `${window.location.origin}/dashboard`,
+      // Land on the set-password screen, not the dashboard — an invited user has no
+      // password yet and must set one before anything else.
+      emailRedirectTo: `${window.location.origin}/auth/set-password`,
     },
   });
   return { error: error?.message ?? null };
@@ -77,12 +80,43 @@ export async function updateUserProfile(id: string, input: { name?: string; role
   if (error) throw error;
 }
 
+/**
+ * setTemporaryPassword — asks the admin-set-temp-password Edge Function to set a
+ * temporary password for a user (used when invite/reset email fails).
+ *
+ * The service-role key required for the admin API cannot run in this SPA (anon key),
+ * so the call goes to the Edge Function, which re-checks manage_users against the
+ * database before acting. The returned password is shown to the admin once and is
+ * never stored anywhere.
+ */
+export async function setTemporaryPassword(
+  userId: string,
+  password?: string
+): Promise<{ tempPassword: string | null; error: string | null }> {
+  const { data, error } = await supabase.functions.invoke("admin-set-temp-password", {
+    body: { userId, ...(password ? { password } : {}) },
+  });
+  if (error) {
+    // Surface the function's JSON error message when present.
+    let msg = error.message;
+    try {
+      const ctx = (error as any).context;
+      if (ctx && typeof ctx.json === "function") {
+        const j = await ctx.json();
+        if (j?.error) msg = j.error;
+      }
+    } catch { /* keep default message */ }
+    return { tempPassword: null, error: msg };
+  }
+  return { tempPassword: (data as any)?.tempPassword ?? null, error: null };
+}
+
 export async function sendPasswordReset(email: string): Promise<{ error: string | null }> {
   if (!email || !email.includes("@")) {
     return { error: "Invalid email address." };
   }
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/auth/reset-password`,
+    redirectTo: `${window.location.origin}/auth/set-password`,
   });
   return { error: error?.message ?? null };
 }

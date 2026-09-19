@@ -5,6 +5,7 @@
  */
 import { db } from "@/lib/supabase/client";
 import { sanitizeHtml } from "@/lib/utils";
+import { assertAffected } from "@/lib/auth/permissionGuard";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -336,22 +337,27 @@ export async function updateUnifiedContent(id: string, input: UnifiedContentUpda
     .from("content_posts")
     .update(updates)
     .eq("id", id)
-    .select()
-    .single();
+    .select();
   if (error) throw error;
-  return mapRow(data as Record<string, unknown>);
+  // Zero rows under RLS = permission refusal (e.g. no edit_any_post and not the owner).
+  assertAffected(data as unknown[] | null, "edit this content");
+  return mapRow((data as Record<string, unknown>[])[0]);
 }
 
 // ── Delete ─────────────────────────────────────────────────────────────────
 
 export async function deleteUnifiedContent(id: string): Promise<void> {
-  const { error } = await db.from("content_posts").delete().eq("id", id);
+  const { data, error } = await db.from("content_posts").delete().eq("id", id).select("id");
   if (error) throw error;
+  assertAffected(data as unknown[] | null, "delete this content");
 }
 
 // ── Publish / Unpublish ────────────────────────────────────────────────────
 
 export async function publishUnifiedContent(id: string): Promise<UnifiedContent> {
+  // Publishing is gated by the publish_post trigger (raises 42501 with a clear message)
+  // and by RLS. Drop .single() so a refused RLS update surfaces as our permission message
+  // rather than a cryptic PGRST116 no-row error.
   const { data, error } = await db
     .from("content_posts")
     .update({
@@ -360,10 +366,10 @@ export async function publishUnifiedContent(id: string): Promise<UnifiedContent>
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
-    .select()
-    .single();
+    .select();
   if (error) throw error;
-  return mapRow(data as Record<string, unknown>);
+  assertAffected(data as unknown[] | null, "publish this content");
+  return mapRow((data as Record<string, unknown>[])[0]);
 }
 
 export async function unpublishUnifiedContent(id: string): Promise<UnifiedContent> {
@@ -374,10 +380,10 @@ export async function unpublishUnifiedContent(id: string): Promise<UnifiedConten
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
-    .select()
-    .single();
+    .select();
   if (error) throw error;
-  return mapRow(data as Record<string, unknown>);
+  assertAffected(data as unknown[] | null, "unpublish this content");
+  return mapRow((data as Record<string, unknown>[])[0]);
 }
 
 // ── Stats ──────────────────────────────────────────────────────────────────

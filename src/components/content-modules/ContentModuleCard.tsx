@@ -37,6 +37,17 @@ interface Props {
    */
   hasLiveContent?: boolean;
   /**
+   * Set for COLUMN-BACKED modules (eligibility, important-dates, selection-process,
+   * vacancy-details, faqs, syllabus, academic-info). Their content lives in a typed
+   * column, not content_modules — so the on/off toggle is a no-op and an
+   * "Off — has content" badge would be false. When set, this card renders a
+   * read-only source row (no toggle, no mode, no Off badge) that deep-links to
+   * the tab where the content is actually edited.
+   */
+  columnBacked?: { sourceTab: string; tabId: string; live?: boolean };
+  /** Deep-link handler to another editor tab (used by the column-backed source row). */
+  onNavigateTab?: (tabId: string) => void;
+  /**
    * Real drag handle (Group B / reorderable modules only). When absent, NO grip
    * is shown — the old decorative always-on grip was a lie for non-reorderable
    * rows. Present handle => this row genuinely reorders _config.moduleOrder.
@@ -48,8 +59,34 @@ interface Props {
 export function ContentModuleCard({
   module, enabled, editionId, content, mode, isStale, autoContent,
   onToggle, onModeChange, onAIFill, onSync, onStatusChange, onPendingChange, aiLoading, forceCollapsed,
-  hasLiveContent, dragHandleProps, isDragging,
+  hasLiveContent, columnBacked, onNavigateTab, dragHandleProps, isDragging,
 }: Props) {
+  // ── Column-backed module: read-only source row ─────────────────────────────
+  // No toggle (it's a no-op), no mode, no "Off — has content" (false here). Just
+  // the name, an honest Live/Hidden signal from the column, and a deep link to the
+  // tab that actually edits this content.
+  if (columnBacked) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
+        <span className="text-sm text-slate-600 flex-1 min-w-0 truncate">{module.name}</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 font-medium shrink-0"
+          title="This section's content comes from a fixed field, not this module. The on/off toggle does not affect it.">
+          from {columnBacked.sourceTab.replace(/ tab$/i, "")}
+        </span>
+        {columnBacked.live === true && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 font-medium shrink-0" title="This section has content and is visible on the live site">Live</span>
+        )}
+        {columnBacked.live === false && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium shrink-0" title="Hidden on the live site — no content in the source field yet.">Hidden — no content yet</span>
+        )}
+        <button type="button" onClick={() => onNavigateTab?.(columnBacked.tabId)}
+          className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline shrink-0">
+          Edit in {columnBacked.sourceTab} →
+        </button>
+      </div>
+    );
+  }
+
   // Item 4: collapsed by default — the tab was an enormous scroll with every
   // module expanded. Name + badges + toggle stay visible; content only on expand.
   const [expanded, setExpanded] = useState(false);
@@ -144,12 +181,17 @@ export function ContentModuleCard({
         {/* Controls */}
         {enabled && (
           <div className="flex items-center gap-1 shrink-0">
+            {/* Editing mode — this changes THIS EDITOR only (which fields you see),
+                not the live page. The frontend does not read _config.modes. Relabelled
+                from the old "Auto/Hybrid/Manual" data-mode that implied it affected the
+                site (it never did). */}
             <select value={mode} onChange={(e) => onModeChange(e.target.value as DataMode)}
-              title="Auto = content is pulled from the Dates/SEO/Identity tabs (read-only here). Hybrid = auto content plus your own notes. Manual = you edit everything here directly."
+              title="Editing mode — changes this editor only, not the live page. Auto shows a read-only preview pulled from other tabs; Hybrid adds a notes field; Manual lets you edit every field here."
+              aria-label="Editing mode (affects this editor only)"
               className="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 bg-white">
-              <option value="auto">Auto</option>
-              <option value="hybrid">Hybrid</option>
-              <option value="manual">Manual</option>
+              <option value="auto">Editing: Auto (preview)</option>
+              <option value="hybrid">Editing: Hybrid (+notes)</option>
+              <option value="manual">Editing: Manual (full)</option>
             </select>
             {isStale && mode !== "manual" && (
               <button type="button" onClick={() => onSync(module.slug)} title="Sync now"

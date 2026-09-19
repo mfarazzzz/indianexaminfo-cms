@@ -6,6 +6,8 @@
 import { db } from "@/lib/supabase/client";
 import { revalidateExams } from "@/lib/revalidate";
 import { normalizeUrlOrThrow } from "@/lib/utils";
+import { assertPermission, assertAffected } from "@/lib/auth/permissionGuard";
+import { P } from "@/config/permissions";
 import type { ExamEntity, ExamStatus, Pillar, ExamWorkflowStatus } from "@/types/exam";
 
 // ── Row mapper: Supabase snake_case → camelCase ────────────────────────────
@@ -268,8 +270,12 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
 // ── Delete ─────────────────────────────────────────────────────────────────
 
 export async function deleteExam(id: string): Promise<void> {
-  const { error } = await db.from("exams").delete().eq("id", id);
+  // Chain .select() so PostgREST returns the deleted rows. Under RLS a refused delete
+  // yields error=null but ZERO rows — surface that as a clear permission message rather
+  // than a false "deleted" toast. DB remains the authority (no pre-check/skip).
+  const { data, error } = await db.from("exams").delete().eq("id", id).select("id");
   if (error) throw error;
+  assertAffected(data as unknown[] | null, "delete this exam");
 }
 
 // ── Publish / Unpublish ────────────────────────────────────────────────────
@@ -278,15 +284,23 @@ export async function deleteExam(id: string): Promise<void> {
 // is DERIVED by a DB trigger — writing it directly is a no-op, so these write
 // workflow_status. draft = not on site, published = live, archived = retired.
 export async function setExamWorkflowStatus(id: string, status: ExamWorkflowStatus): Promise<ExamEntity> {
+  // App-layer pre-check (DB RLS + trigger are the authoritative gate). Publishing
+  // requires publish_exam; other transitions require edit rights.
+  if (status === "published") {
+    assertPermission(P.PUBLISH_EXAM, "publish an exam");
+  } else {
+    assertPermission(P.EDIT_ANY_EXAM, "change an exam's status");
+  }
   const { data, error } = await db
     .from("exams")
     .update({ workflow_status: status, updated_at: new Date().toISOString() })
     .eq("id", id)
-    .select(LIST_SELECT)
-    .single();
+    .select(LIST_SELECT);
   if (error) throw error;
+  // Zero rows under RLS = permission refusal, not success.
+  assertAffected(data as unknown[] | null, status === "published" ? "publish this exam" : "change this exam's status");
   revalidateExams().catch(() => {});
-  return mapRow(data as Record<string, unknown>);
+  return mapRow((data as Record<string, unknown>[])[0]);
 }
 
 export async function publishExam(id: string): Promise<ExamEntity> {

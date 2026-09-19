@@ -11,6 +11,8 @@
 import { db } from "@/lib/supabase/client";
 import { revalidateExams } from "@/lib/revalidate";
 import { normalizeUrlOrThrow } from "@/lib/utils";
+import { getModuleRegistry } from "@/services/moduleRegistryService";
+import { assertAffected } from "@/lib/auth/permissionGuard";
 import type { Pillar, ExamWorkflowStatus } from "@/types/exam";
 import type { SelectionModel } from "@/types/selection";
 
@@ -367,6 +369,23 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
     .single();
   if (examErr) throw examErr;
 
+  // Seed _config with the pillar's default module set (2026-09-19). Previously the
+  // edition was created with NO content_modules/_config, so a new record depended on
+  // someone opening the Modules tab for ModulePanel to build a default — and AI Fill
+  // All (which never touched _config) left every generated module OFF. Seeding here
+  // makes modules ON by default, so content added later is visible without a manual
+  // toggle. Non-fatal: if the registry read fails, fall back to an empty _config
+  // (same as the old behaviour) rather than blocking creation.
+  const pillarForModules = (input as any).pillar ?? "entrance-exam";
+  let seededConfig: { moduleOrder: string[]; enabledModules: string[] } = { moduleOrder: [], enabledModules: [] };
+  try {
+    const registry = await getModuleRegistry(pillarForModules);
+    const slugs = registry.map((m) => m.slug);
+    seededConfig = { moduleOrder: slugs, enabledModules: slugs };
+  } catch {
+    // keep empty _config — creation must not fail on a registry hiccup
+  }
+
   // Create first edition
   const { data: edRow, error: edErr } = await db
     .from("exam_editions")
@@ -377,6 +396,7 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
       edition_label: String(input.firstEditionYear),
       is_current: true,
       status: "upcoming",
+      content_modules: { _config: seededConfig },
     })
     .select("*")
     .single();
@@ -448,14 +468,16 @@ export async function updateExamIdentity(
     .from("exams")
     .update(updates)
     .eq("id", examId)
-    .select(DETAIL_SELECT)
-    .single();
+    .select(DETAIL_SELECT);
   if (error) throw error;
+  // Zero rows under RLS = permission refusal (e.g. no edit_any_exam and not the owner),
+  // not success. Surface it clearly instead of a cryptic single-row error.
+  assertAffected(data as unknown[] | null, "edit this exam");
 
   // Trigger frontend cache revalidation
   revalidateExams().catch(() => {});
 
-  return mapExamIdentityRow(data as Record<string, unknown>);
+  return mapExamIdentityRow((data as Record<string, unknown>[])[0]);
 }
 
 // ── Update Edition (temporal fields) ───────────────────────────────────────
@@ -509,21 +531,41 @@ export async function updateEdition(
   if (input.resultSummary !== undefined) updates.result_summary = input.resultSummary;
   if (input.counsellingData !== undefined) updates.counselling_data = input.counsellingData;
   if (input.syllabusResourceId !== undefined) updates.syllabus_resource_id = input.syllabusResourceId;
-  if (input.contentModules !== undefined) updates.content_modules = input.contentModules;
+  if (input.contentModules !== undefined) {
+    // GUARD (2026-09-19): content_modules is written wholesale here. If the caller
+    // passes a blob WITHOUT _config, we must not silently drop the existing _config
+    // (module order + enabled set) — doing so unpublishes every enabled module. Read
+    // the current _config and preserve it unless the caller explicitly provided one.
+    const incoming = input.contentModules as Record<string, unknown>;
+    if (!("_config" in incoming)) {
+      const { data: cur } = await db
+        .from("exam_editions")
+        .select("content_modules")
+        .eq("id", editionId)
+        .single();
+      const existingConfig = ((cur as any)?.content_modules as Record<string, unknown> | undefined)?._config;
+      updates.content_modules = existingConfig !== undefined
+        ? { ...incoming, _config: existingConfig }
+        : incoming;
+    } else {
+      updates.content_modules = incoming;
+    }
+  }
   if (input.faqs !== undefined) updates.faqs = input.faqs;
 
   const { data, error } = await db
     .from("exam_editions")
     .update(updates)
     .eq("id", editionId)
-    .select("*")
-    .single();
+    .select("*");
   if (error) throw error;
+  // Zero rows under RLS = permission refusal, not success.
+  assertAffected(data as unknown[] | null, "edit this exam's dates & details");
 
   // Trigger frontend cache revalidation
   revalidateExams().catch(() => {});
 
-  return mapEditionRow(data as Record<string, unknown>);
+  return mapEditionRow((data as Record<string, unknown>[])[0]);
 }
 
 // ── Start New Edition ──────────────────────────────────────────────────────

@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { UserPlus, Loader2, KeyRound, UserX } from "lucide-react";
-import { getUserProfiles, getRoles, inviteUser, updateUserProfile, sendPasswordReset } from "@/services/userService";
+import { UserPlus, Loader2, KeyRound, UserX, KeySquare, Copy, X } from "lucide-react";
+import { getUserProfiles, getRoles, inviteUser, updateUserProfile, sendPasswordReset, setTemporaryPassword } from "@/services/userService";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatDate , getErrorMessage } from "@/lib/utils";
+import { usePermission } from "@/hooks/usePermission";
+import { P } from "@/config/permissions";
 import type { UserProfile, Role } from "@/types/user";
 
 export function UsersListPage() {
@@ -14,6 +16,12 @@ export function UsersListPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("");
   const [inviting, setInviting] = useState(false);
+  const canManageUsers = usePermission(P.MANAGE_USERS);
+  // Temporary-password modal state. The password is held in component state only long
+  // enough to show it once; it is never persisted.
+  const [tempPwFor, setTempPwFor] = useState<UserProfile | null>(null);
+  const [tempPwValue, setTempPwValue] = useState<string | null>(null);
+  const [tempPwLoading, setTempPwLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -61,6 +69,24 @@ export function UsersListPage() {
     const { error } = await sendPasswordReset(email);
     if (error) toast.error(error);
     else toast.success("Password reset email sent.");
+  };
+
+  const handleSetTempPassword = async (user: UserProfile) => {
+    setTempPwLoading(true);
+    setTempPwFor(user);
+    setTempPwValue(null);
+    try {
+      const { tempPassword, error } = await setTemporaryPassword(user.id);
+      if (error) {
+        toast.error(error);
+        setTempPwFor(null);
+        return;
+      }
+      setTempPwValue(tempPassword);
+      load(); // refresh so must_change_password state is current
+    } finally {
+      setTempPwLoading(false);
+    }
   };
 
   const changeRole = async (userId: string, roleId: string) => {
@@ -153,9 +179,16 @@ export function UsersListPage() {
                 <td className="px-4 py-3">
                   <div className="flex gap-1">
                     <button onClick={() => handlePasswordReset(user.email)}
-                      title="Reset password" className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                      title="Send password reset email" className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
                       <KeyRound size={14} />
                     </button>
+                    {canManageUsers && (
+                      <button onClick={() => handleSetTempPassword(user)}
+                        title="Set temporary password (for when email fails)"
+                        className="rounded p-1.5 text-slate-400 hover:bg-amber-50 hover:text-amber-600">
+                        <KeySquare size={14} />
+                      </button>
+                    )}
                     <button onClick={() => toggleActive(user)}
                       title={user.isActive ? "Deactivate" : "Reactivate"}
                       className={`rounded p-1.5 ${user.isActive ? "text-slate-400 hover:bg-red-50 hover:text-red-600" : "text-slate-400 hover:bg-green-50 hover:text-green-600"}`}>
@@ -168,6 +201,62 @@ export function UsersListPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Temporary-password modal — shows the generated password ONCE. */}
+      {tempPwFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-900">Temporary password</h2>
+              <button
+                onClick={() => { setTempPwFor(null); setTempPwValue(null); }}
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {tempPwLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+              </div>
+            ) : tempPwValue ? (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-600">
+                  For <span className="font-medium text-slate-900">{tempPwFor.name || tempPwFor.email}</span>.
+                  This is shown once and is not stored anywhere. Copy it now and share it
+                  through a secure channel.
+                </p>
+                <div className="flex items-center gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                  <code className="flex-1 select-all font-mono text-sm text-slate-900 break-all">
+                    {tempPwValue}
+                  </code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(tempPwValue);
+                      toast.success("Copied.");
+                    }}
+                    title="Copy"
+                    className="rounded p-1.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                  >
+                    <Copy size={14} />
+                  </button>
+                </div>
+                <p className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
+                  The user must change this password at their next sign-in before they can
+                  reach anything else.
+                </p>
+                <button
+                  onClick={() => { setTempPwFor(null); setTempPwValue(null); }}
+                  className="w-full rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Done
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

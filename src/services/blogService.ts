@@ -1,4 +1,5 @@
 import { db } from "@/lib/supabase/client";
+import { assertAffected } from "@/lib/auth/permissionGuard";
 import type { BlogPost, BlogAuthor, BlogSection, PostType } from "@/types/blog";
 import { sanitizeHtml } from "@/lib/utils";
 
@@ -144,12 +145,15 @@ export async function updateBlogPost(id: string, input: any): Promise<BlogPost> 
     updates.status = input.status;
     if (input.status === "published") updates.published_at = new Date().toISOString();
   }
-  const { data, error } = await db.from("blog_posts").update(updates).eq("id", id).select("*, blog_authors(*)").single();
+  const { data, error } = await db.from("blog_posts").update(updates).eq("id", id).select("*, blog_authors(*)");
   if (error) throw error;
-  return mapPost(data);
+  // Zero rows under RLS = permission refusal, not success.
+  assertAffected(data as unknown[] | null, "edit this blog post");
+  return mapPost((data as any[])[0]);
 }
 
 export async function deleteBlogPost(id: string): Promise<void> {
-  const { error } = await db.from("blog_posts").delete().eq("id", id);
+  const { data, error } = await db.from("blog_posts").delete().eq("id", id).select("id");
   if (error) throw error;
+  assertAffected(data as unknown[] | null, "delete this blog post");
 }

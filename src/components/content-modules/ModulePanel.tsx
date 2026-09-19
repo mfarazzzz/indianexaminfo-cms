@@ -19,7 +19,6 @@ import type { SelectionModel } from "@/types/selection";
 import { isModuleApplicable, MODULE_REGISTRY } from "@/config/moduleRegistry";
 import { getErrorMessage } from "@/lib/utils";
 import { hasData, SECTION_BY_SLUG, type HasDataView } from "@/lib/sectionRegistry";
-import { DraggableList } from "@/components/shared/DraggableList";
 import { useSettings } from "@/hooks/useSettings";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -31,6 +30,29 @@ const MODULE_SLUG_TO_SECTION: Record<string, string> = {
   // application-process is now a registry section slug in its own right (was
   // renamed from how-to-apply); only vacancy-details still differs.
   "vacancy-details": "vacancy",
+};
+
+/**
+ * Column-backed module slugs: their live content comes from a typed column
+ * (exams.* or exam_editions.*), NOT from content_modules[slug]. For these, the
+ * frontend's hasData() reads the column and IGNORES the enabledModules toggle —
+ * so a toggle here is a no-op and an "Off — has content" badge is a lie.
+ *
+ * Derived from sectionRegistry: a module is column-backed when its mapped
+ * section's source is "column" (or "structure", e.g. key-highlights). Editorial
+ * modules (source: "editorial") keep the working toggle.
+ *
+ * Each entry also names WHERE the content is actually edited, mirroring the
+ * FIXED_SECTIONS deep-links, so the read-only card can point the editor there.
+ */
+const COLUMN_BACKED_MODULE_SOURCE: Record<string, { sourceTab: string; tabId: string }> = {
+  "eligibility":        { sourceTab: "Dates & Status tab", tabId: "edition" },
+  "important-dates":    { sourceTab: "Dates & Status tab", tabId: "edition" },
+  "vacancy-details":    { sourceTab: "Dates & Status tab", tabId: "edition" },
+  "selection-process":  { sourceTab: "Identity tab",       tabId: "identity" },
+  "faqs":               { sourceTab: "SEO tab",            tabId: "seo" },
+  "syllabus":           { sourceTab: "Syllabus tab",       tabId: "syllabus" },
+  "academic-info":      { sourceTab: "Identity tab",       tabId: "identity" },
 };
 
 /**
@@ -49,7 +71,11 @@ const TAB_ONLY_MODULE_SLUGS = new Set([
 
 /** Fixed page sections (not modules). Each links to the tab where it's edited. */
 const FIXED_SECTIONS: { key: string; label: string; sourceTab: string; tabId: string; sectionSlug?: string }[] = [
-  { key: "key-highlights",    label: "Key Highlights",     sourceTab: "auto (Dates/Eligibility/Fee)", tabId: "edition" },
+  // Key Highlights row REMOVED (2026-09-19): the frontend intentionally does not render
+  // a Key Highlights block (SHOW_KEY_HIGHLIGHTS = false in EntityDetailPage — a deliberate
+  // design decision: each fact now renders as its own ordered section). Showing it here as
+  // a "Live" fixed section was false. If the frontend flag is ever turned back on, restore
+  // this row.
   { key: "important-dates-t", label: "Important Dates",    sourceTab: "Dates & Status tab", tabId: "edition", sectionSlug: "important-dates" },
   { key: "eligibility-t",     label: "Eligibility",        sourceTab: "Dates & Status tab", tabId: "edition", sectionSlug: "eligibility" },
   { key: "application-fee-t", label: "Application Fee",     sourceTab: "Dates & Status tab", tabId: "edition", sectionSlug: "application-fee" },
@@ -275,19 +301,9 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
   const groupBModules = orderedModules.filter((m) => !TAB_ONLY_MODULE_SLUGS.has(m.slug));
   const groupCModules = orderedModules.filter((m) => TAB_ONLY_MODULE_SLUGS.has(m.slug));
 
-  // Real drag: reorder Group B and persist to _config.moduleOrder — the value
-  // the frontend main-page ContentModulesBlock actually renders by. Tab-only
-  // (Group C) slugs keep their existing relative order appended after.
-  const handleReorderGroupB = useCallback((orderedIds: string[]) => {
-    if (!editionId) return;
-    // orderedIds are module slugs (DraggableList item ids). Rebuild moduleOrder:
-    // new Group-B order first, then the untouched tab-only slugs in prior order.
-    const tabOnlyInOrder = config.moduleOrder.filter((s) => TAB_ONLY_MODULE_SLUGS.has(s));
-    const newOrder = [...orderedIds, ...tabOnlyInOrder];
-    const newConfig = { ...config, moduleOrder: newOrder };
-    setConfig(newConfig);
-    saveModuleConfig(editionId, newConfig).catch((e) => toast.error("Reorder save failed: " + getErrorMessage(e)));
-  }, [editionId, config]);
+  // Group B reorder handler REMOVED (2026-09-19): the frontend main page renders in
+  // registry order, not _config.moduleOrder, so persisting a reorder here changed
+  // nothing on the site. The moduleOrder array is left in the data untouched.
 
   if (loading) {
     return <div className="flex justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" /></div>;
@@ -355,20 +371,17 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
         })}
       </div>
 
-      {/* ── Group B: Editable content modules (the ONLY reorderable group) ── */}
-      <GroupHeading title="Editable content modules" hint="Drag to reorder — this order is what the main page renders." />
-      <div className="mb-5">
+      {/* ── Group B: Editable content modules ──
+          Drag-to-reorder REMOVED (2026-09-19): it persisted _config.moduleOrder, but the
+          main page renders in registry order (mainSectionsForPillar), so reordering here
+          changed nothing a visitor sees. The handles were a lie. _config.moduleOrder is
+          left in the data untouched. */}
+      <GroupHeading title="Editable content modules" hint="Fill these in; the main page renders them in a fixed order." />
+      <div className="mb-5 space-y-1.5">
         {groupBModules.length === 0 ? (
           <p className="text-xs text-slate-400 italic px-1 py-2">No editable modules.</p>
         ) : (
-          <DraggableList
-            items={groupBModules.map((m) => ({ ...m, id: m.slug }))}
-            onReorder={handleReorderGroupB}
-            showDefaultHandle={false}
-            renderItem={(mod, { dragHandleProps, isDragging }) =>
-              renderModuleCard(mod as ModuleDefinition, { dragHandleProps, isDragging })
-            }
-          />
+          groupBModules.map((mod) => renderModuleCard(mod, {}))
         )}
       </div>
 
@@ -395,6 +408,9 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
     const hasLiveContent = liveView && SECTION_BY_SLUG[sectionSlug]
       ? hasData(liveView, sectionSlug)
       : undefined;
+    // Column-backed modules: the toggle is a no-op and "Off — has content" is
+    // false. Render a read-only source card that points to the tab that edits it.
+    const columnSource = COLUMN_BACKED_MODULE_SOURCE[mod.slug];
     return (
       <ContentModuleCard
         key={mod.slug}
@@ -414,6 +430,8 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
         aiLoading={aiLoadingSlug === mod.slug}
         forceCollapsed={allCollapsed}
         hasLiveContent={hasLiveContent}
+        columnBacked={columnSource ? { ...columnSource, live: hasLiveContent } : undefined}
+        onNavigateTab={onNavigateTab}
         dragHandleProps={dragHandleProps}
         isDragging={isDragging}
       />

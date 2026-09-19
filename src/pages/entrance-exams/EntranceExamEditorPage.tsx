@@ -11,13 +11,16 @@ import {
 } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
 import { deleteExam, setExamWorkflowStatus } from "@/services/examService";
+import { getDerivedStatus, derivedStatusLabel, type DerivedStatusRow } from "@/services/derivedStatusService";
 import type { ExamWorkflowStatus } from "@/types/exam";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { RichEditor } from "@/components/shared/RichEditor";
 import { ImageUploader } from "@/components/shared/ImageUploader";
 import { DraggableList } from "@/components/shared/DraggableList";
 import { ModulePanel } from "@/components/content-modules/ModulePanel";
-import { getErrorMessage, normalizeUrl } from "@/lib/utils";
+import type { ModuleConfig } from "@/types/modules";
+import { getErrorMessage } from "@/lib/utils";
+import { validateField } from "@/lib/fields/fieldTypes";
 import { ALL_SELECTION_MODELS, SELECTION_MODEL_LABELS, SELECTION_MODEL_HINTS, type SelectionModel } from "@/types/selection";
 import { getModulesForEntityType } from "@/config/moduleRegistry";
 import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
@@ -29,18 +32,10 @@ import { SyllabusResourcePicker } from "@/components/entrance-exams/SyllabusReso
 import { SyllabusTab } from "@/components/entrance-exams/SyllabusTab";
 import { useSettings } from "@/hooks/useSettings";
 
-const EDITION_STATUSES: { value: EditionStatus; label: string }[] = [
-  { value: "upcoming", label: "Upcoming" },
-  { value: "notification-released", label: "Notification Released" },
-  { value: "registration-open", label: "Registration Open" },
-  { value: "registration-closed", label: "Registration Closed" },
-  { value: "admit-card-released", label: "Admit Card Released" },
-  { value: "exam-conducted", label: "Exam Conducted" },
-  { value: "answer-key-released", label: "Answer Key Released" },
-  { value: "result-declared", label: "Result Declared" },
-  { value: "counselling", label: "Counselling" },
-  { value: "completed", label: "Completed" },
-];
+// EDITION_STATUSES dropdown options REMOVED (2026-09-19) with the manual status
+// field. The EditionStatus type is retained (form value + AI-fill still carry the
+// stored column value), but there is no longer an editable status control — the
+// site-authoritative status is the derived-status panel in the Dates & Status tab.
 
 const CYCLE_FREQUENCIES: { value: CycleFrequency; label: string }[] = [
   { value: "annual", label: "Annual (once per year)" },
@@ -282,8 +277,11 @@ export function EntranceExamEditorPage() {
     // than silently storing "" (which would destroy the editor's input without
     // warning). Empty is fine; only non-empty-in / empty-out is an error. The
     // form keeps the original text so nothing is lost — the editor just fixes it.
-    if (data.officialWebsite.trim() && !normalizeUrl(data.officialWebsite)) {
-      toast.error("Official Website must be a single URL — remove the extra URL or whitespace.");
+    // Uses the shared `url` field type so the CMS and the Postgres CHECK on
+    // exams.official_website enforce the SAME rule (no drift).
+    const websiteCheck = validateField("url", data.officialWebsite);
+    if (!websiteCheck.ok) {
+      toast.error(`Official Website: ${websiteCheck.error}`);
       return;
     }
 
@@ -935,12 +933,28 @@ export function EntranceExamEditorPage() {
         // Only modules the edition doesn't already have get filled; nothing the
         // user authored is overwritten.
         const filledKeys = Object.keys(data.contentModules).filter((k) => !(k in existing));
-        await updateEd(currentEdition.id, { contentModules: { ...data.contentModules, ...existing } });
+        const mergedContent = { ...data.contentModules, ...existing } as Record<string, unknown>;
+
+        // FIX (2026-09-19): the AI returns data.enabledModules — the slugs it wrote
+        // content for — but we used to discard it, writing content while leaving every
+        // module OFF (invisible on the site). Merge those slugs into _config now.
+        // UNION only; never remove a slug the editor deliberately enabled. We only add
+        // slugs that were actually NEWLY filled here (filledKeys) — an AI-claimed slug
+        // whose content already existed keeps whatever enabled state the editor chose.
+        const prevConfig = (existing._config as ModuleConfig | undefined) ?? { moduleOrder: [], enabledModules: [] };
+        const aiEnabled = Array.isArray(data.enabledModules) ? data.enabledModules : [];
+        const slugsToEnable = filledKeys.filter((k) => aiEnabled.includes(k));
+        const nextEnabled = Array.from(new Set([...(prevConfig.enabledModules ?? []), ...slugsToEnable]));
+        const nextOrder = Array.from(new Set([...(prevConfig.moduleOrder ?? []), ...filledKeys]));
+        mergedContent._config = { ...prevConfig, enabledModules: nextEnabled, moduleOrder: nextOrder };
+
+        await updateEd(currentEdition.id, { contentModules: mergedContent });
         await loadExam();
         if (filledKeys.length === 0) {
           toast.warning("AI returned module content, but those modules already exist — nothing was overwritten.");
         } else {
-          toast.success(`AI filled ${filledKeys.length} empty module${filledKeys.length === 1 ? "" : "s"}. Existing modules untouched.`);
+          const newlyEnabledCount = slugsToEnable.filter((s) => !(prevConfig.enabledModules ?? []).includes(s)).length;
+          toast.success(`AI filled ${filledKeys.length} empty module${filledKeys.length === 1 ? "" : "s"}${newlyEnabledCount > 0 ? `, ${newlyEnabledCount} now visible on the site` : ""}. Existing modules untouched.`);
         }
       } else {
         toast.warning("AI extracted no module content — no changes made.");
@@ -1337,6 +1351,22 @@ function mergeWithStandardDates(rawDates: unknown): DateRow[] {
 }
 
 function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, watchFrequency, examId, editionId, syllabusResourceId, onLinkSyllabus }: { form: any; dateFields: any[]; appendDate: (v: any) => void; removeDate: (i: number) => void; replaceDates: (v: any[]) => void; watchFrequency: CycleFrequency; examId: string | null; editionId: string | null; syllabusResourceId: string | null; onLinkSyllabus: (resourceId: string | null) => void }) {
+  // ── Derived status (what the SITE shows) ───────────────────────────────────
+  // The public site computes status from the current edition's important_dates
+  // via the exam_derived_status VIEW — NOT from the manual `status` column below.
+  // We read the VIEW here so the editor stops lying about what a visitor sees.
+  const [derived, setDerived] = React.useState<DerivedStatusRow | null>(null);
+  const [derivedLoading, setDerivedLoading] = React.useState(false);
+  React.useEffect(() => {
+    if (!examId) { setDerived(null); return; }
+    let cancelled = false;
+    setDerivedLoading(true);
+    getDerivedStatus(examId)
+      .then((d) => { if (!cancelled) setDerived(d); })
+      .finally(() => { if (!cancelled) setDerivedLoading(false); });
+    return () => { cancelled = true; };
+  }, [examId]);
+
   // On first render, ensure standard date fields exist ONLY if truly empty
   // Use a small delay to allow form.reset() from loadExam to propagate first
   const didInit = React.useRef(false);
@@ -1376,12 +1406,47 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
             </select>
           </div>
         )}
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-          <select {...form.register("editionStatus")} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
-            {EDITION_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
+        {/* Manual status dropdown REMOVED (2026-09-19): the exam_editions.status column
+            is not read by the frontend in any case (its enum can't even hold
+            cancelled/postponed, the only values the site would honour), so an editable
+            field here only invited edits that do nothing. The column is left in place and
+            untouched; the site-authoritative status is the derived panel below. */}
+      </div>
+
+      {/* ── What the site shows: DERIVED status ──────────────────────────────
+          Read from exam_derived_status (same VIEW the frontend reads). This is
+          the authoritative, honest status. The manual field above does not drive
+          any public surface. */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Status shown on site
+            </span>
+            {derivedLoading ? (
+              <span className="text-xs text-slate-400">Loading…</span>
+            ) : derived ? (
+              <span className="text-sm px-2 py-0.5 rounded bg-blue-600 text-white font-semibold">
+                {derivedStatusLabel(derived.derivedStatus)}
+              </span>
+            ) : (
+              <span className="text-xs text-slate-400 italic">
+                {examId ? "Not published / no dates yet — the site shows no derived status." : "Save the exam first."}
+              </span>
+            )}
+          </div>
+          {derived && (
+            <span className="text-[11px] text-slate-400">
+              Computed live from Important Dates below · updates automatically
+            </span>
+          )}
         </div>
+
+        {/* Where cancelled/postponed actually comes from. */}
+        <p className="mt-2 text-[11px] text-slate-500">
+          To mark the exam <strong>cancelled</strong> or <strong>postponed</strong>, set that state on the specific
+          date row in Important Dates below — the site reads it from there, not from the Status field.
+        </p>
       </div>
 
       {/* Syllabus PDF for THIS cycle — references the shared library (Option A). */}
