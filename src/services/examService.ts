@@ -19,6 +19,7 @@ function mapRow(row: Record<string, unknown>): ExamEntity {
     name: row.name as string,
     shortName: (row.short_name as string) ?? "",
     pillar: row.pillar as Pillar,
+    region: (row.region as string) ?? null,
     category: (row as any).cat?.slug ?? "",
     subcategory: (row as any).subcat?.slug ?? "",
     // Expose raw FK IDs so the editor can re-populate dropdowns on load
@@ -123,6 +124,7 @@ export interface ExamCreateInput {
   name: string;
   shortName: string;
   pillar: Pillar;
+  region: string;
   categoryId?: string | null;
   subcategoryId?: string | null;
   entityType: ExamEntity["entityType"];
@@ -141,6 +143,7 @@ export async function createExam(input: ExamCreateInput): Promise<ExamEntity> {
       name: input.name,
       short_name: input.shortName,
       pillar: input.pillar,
+      region: input.region,
       category_id: input.categoryId || null,
       subcategory_id: input.subcategoryId || null,
       entity_type: input.entityType,
@@ -163,6 +166,7 @@ export interface ExamUpdateInput {
   name?: string;
   shortName?: string;
   pillar?: Pillar;
+  region?: string;
   categoryId?: string | null;
   subcategoryId?: string | null;
   entityType?: ExamEntity["entityType"];
@@ -214,6 +218,7 @@ export async function updateExam(id: string, input: ExamUpdateInput): Promise<Ex
     name: "name",
     shortName: "short_name",
     pillar: "pillar",
+    region: "region",
     categoryId: "category_id",
     subcategoryId: "subcategory_id",
     entityType: "entity_type",

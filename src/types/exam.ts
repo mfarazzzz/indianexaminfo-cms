@@ -39,6 +39,7 @@ export type ExamEntity = {
   name: string;
   shortName: string;
   pillar: Pillar;
+  region: string | null;  // state-page routing key → regions.slug (all-india = national)
   category: string;       // category slug (from categories table)
   subcategory: string;    // subcategory slug
   categoryId: string | null;       // raw FK UUID for form population

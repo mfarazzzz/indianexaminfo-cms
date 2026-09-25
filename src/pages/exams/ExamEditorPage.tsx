@@ -23,6 +23,7 @@ import {
   getExamById, createExam, updateExam, checkSlugAvailable,
 } from "@/services/examService";
 import { getCategories, type Category } from "@/services/categoryService";
+import { getRegions, type Region } from "@/services/regionService";
 import {
   getContentPosts, createContentPost, updateContentPost,
 } from "@/services/contentService";
@@ -58,6 +59,10 @@ const examSchema = z.object({
   slug: z.string().min(1, "Slug is required"),
   shortName: z.string().default(""),
   pillar: z.string().min(1, "Pillar is required"),
+  // region: which state page this appears on (or all-india). REQUIRED on create,
+  // NO default — a national exam gets "all-india" because someone chose it, not
+  // because it was left blank. FK-checked in the DB against the regions table.
+  region: z.string().min(1, "Region is required"),
   categoryId: z.string().optional().nullable(),
   subcategoryId: z.string().optional().nullable(),
   entityType: z.enum(["exam", "board", "university", "recruitment"]).default("exam"),
@@ -145,6 +150,7 @@ export function ExamEditorPage() {
   const [activeTab, setActiveTab] = useState<TabId>("general");
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Category[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
   const { data: pillarsRaw } = usePillars();
   const pillars = Array.isArray(pillarsRaw) ? pillarsRaw : [];
   const [moduleData, setModuleData] = useState<Record<string, any>>({});
@@ -171,6 +177,9 @@ export function ExamEditorPage() {
     resolver: zodResolver(examSchema),
     defaultValues: {
       name: "", slug: "", shortName: "", pillar: "sarkari-naukri",
+      // NO region default — the picker starts on "— Select —" so a value must be
+      // chosen. Zod's min(1) blocks save until it is.
+      region: "",
       categoryId: null, subcategoryId: null, entityType: "recruitment",
       conductingBody: "", officialWebsite: "", status: "upcoming", isFeatured: false,
       hasAdmitCard: false, hasResult: false, hasAnswerKey: false, hasSyllabus: false,
@@ -204,6 +213,11 @@ export function ExamEditorPage() {
     }
   }, [watchedPillar]);
 
+  // Region vocabulary for the picker (states + UTs + all-india). Loaded once.
+  useEffect(() => {
+    getRegions().then(setRegions).catch(() => setRegions([]));
+  }, []);
+
   useEffect(() => {
     if (isNew) return;
     setLoading(true);
@@ -212,7 +226,7 @@ export function ExamEditorPage() {
       setExam(data);
       form.reset({
         name: data.name, slug: data.slug, shortName: data.shortName,
-        pillar: data.pillar, entityType: data.entityType, conductingBody: data.conductingBody,
+        pillar: data.pillar, region: data.region ?? "", entityType: data.entityType, conductingBody: data.conductingBody,
         officialWebsite: data.officialWebsite ?? "", status: data.status, isFeatured: data.isFeatured,
         categoryId: data.categoryId ?? null, subcategoryId: data.subcategoryId ?? null,
         hasAdmitCard: data.hasAdmitCard, hasResult: data.hasResult, hasAnswerKey: data.hasAnswerKey,
@@ -252,13 +266,13 @@ export function ExamEditorPage() {
       if (isNew) {
         const available = await checkSlugAvailable(data.slug);
         if (!available) { form.setError("slug", { message: "Slug already taken" }); setSaving(false); return; }
-        const created = await createExam({ slug: data.slug, name: data.name, shortName: data.shortName, pillar: data.pillar as Pillar, categoryId: data.categoryId, subcategoryId: data.subcategoryId, entityType: data.entityType, conductingBody: data.conductingBody, officialWebsite: data.officialWebsite, status: data.status, isFeatured: data.isFeatured, createdBy: user?.id });
+        const created = await createExam({ slug: data.slug, name: data.name, shortName: data.shortName, pillar: data.pillar as Pillar, region: data.region, categoryId: data.categoryId, subcategoryId: data.subcategoryId, entityType: data.entityType, conductingBody: data.conductingBody, officialWebsite: data.officialWebsite, status: data.status, isFeatured: data.isFeatured, createdBy: user?.id });
         await updateExam(created.id, payload);
         toast.success("Exam created!");
         navigate(`/exams/${created.id}`, { replace: true });
       } else {
         if (data.slug !== exam?.slug) { const available = await checkSlugAvailable(data.slug, id); if (!available) { form.setError("slug", { message: "Slug already taken" }); setSaving(false); return; } }
-        await updateExam(id!, { ...payload, slug: data.slug, name: data.name, shortName: data.shortName, pillar: data.pillar as Pillar, categoryId: data.categoryId, subcategoryId: data.subcategoryId, entityType: data.entityType, conductingBody: data.conductingBody, officialWebsite: data.officialWebsite, status: data.status, isFeatured: data.isFeatured });
+        await updateExam(id!, { ...payload, slug: data.slug, name: data.name, shortName: data.shortName, pillar: data.pillar as Pillar, region: data.region, categoryId: data.categoryId, subcategoryId: data.subcategoryId, entityType: data.entityType, conductingBody: data.conductingBody, officialWebsite: data.officialWebsite, status: data.status, isFeatured: data.isFeatured });
         toast.success("Exam saved!");
         // Background batched revalidation — debounced, non-blocking
         revalidateAfterExamSave({ id: id!, slug: data.slug, pillar: data.pillar, categorySlug: exam?.category ?? "" });
@@ -303,7 +317,7 @@ export function ExamEditorPage() {
       {/* Tab content */}
       <DatesNavContext.Provider value={goToImportantDates}>
       <div className="bg-white rounded-b-lg rounded-tr-lg border border-slate-200 p-6">
-        {activeTab === "general" && <GeneralTab form={form} pillars={pillars} categories={categories} subcategories={subcategories} watchedCategoryId={watchedCategoryId} entityProfile={entityProfile} onNameBlur={handleNameBlur} />}
+        {activeTab === "general" && <GeneralTab form={form} pillars={pillars} regions={regions} categories={categories} subcategories={subcategories} watchedCategoryId={watchedCategoryId} entityProfile={entityProfile} onNameBlur={handleNameBlur} />}
         {activeTab === "dates" && <DatesTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} entityProfile={entityProfile} entityType={watchedEntityType} />}
         {activeTab === "eligibility" && <EligibilityTab form={form} entityProfile={entityProfile} />}
         {activeTab === "modules" && <ModulesTab form={form} examId={id ?? ""} examName={form.watch("name")} pillar={watchedPillar} entityType={watchedEntityType} moduleData={moduleData} setModuleData={setModuleData} moduleSaving={moduleSaving} setModuleSaving={setModuleSaving} isNew={isNew} moduleDrafts={moduleDrafts} updateModuleDraft={updateModuleDraft} clearModuleDraft={clearModuleDraft} />}
@@ -339,6 +353,17 @@ export function ExamEditorPage() {
           if (g.slug) form.setValue("slug", g.slug, opts);
           const pillar = g.pillar ?? d.pillar;
           if (pillar && pillar.length > 0) form.setValue("pillar", pillar, opts);
+          // AI PROPOSES a region; the editor confirms. Only accept it if it maps
+          // to a real regions-table value (slug or label match) — never write an
+          // unvalidated string. If it doesn't match, leave the field for the
+          // editor to choose (required, so save is still blocked until they do).
+          const regionRaw = (g.region ?? d.region ?? g.state ?? d.state ?? "").toString().trim().toLowerCase();
+          if (regionRaw) {
+            const rMatch = regions.find(
+              (r) => r.slug === regionRaw || r.label.toLowerCase() === regionRaw
+            );
+            if (rMatch) form.setValue("region", rMatch.slug, opts);
+          }
           const entityType = g.entityType ?? d.examType ?? d.entityType;
           if (entityType && ["exam","board","university","recruitment"].includes(entityType)) form.setValue("entityType", entityType, opts);
           if (g.conductingBody) form.setValue("conductingBody", g.conductingBody, opts);
@@ -527,7 +552,7 @@ function RegistryFieldInput({ field, form, prefix }: { field: FieldDef; form: an
 // TAB: General
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function GeneralTab({ form, pillars, categories, subcategories, watchedCategoryId, entityProfile, onNameBlur }: { form: any; pillars: any[]; categories: Category[]; subcategories: Category[]; watchedCategoryId: string | null | undefined; entityProfile: EntityTypeProfile | undefined; onNameBlur: () => void }) {
+function GeneralTab({ form, pillars, regions, categories, subcategories, watchedCategoryId, entityProfile, onNameBlur }: { form: any; pillars: any[]; regions: Region[]; categories: Category[]; subcategories: Category[]; watchedCategoryId: string | null | undefined; entityProfile: EntityTypeProfile | undefined; onNameBlur: () => void }) {
   const filteredSubcats = subcategories.filter((c) => c.parentId === watchedCategoryId);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const essentialFields = entityProfile?.generalFields.filter((f) => f.priority === "essential") ?? [];
@@ -542,6 +567,7 @@ function GeneralTab({ form, pillars, categories, subcategories, watchedCategoryI
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Short Name</label><input {...form.register("shortName")} placeholder="IBPS PO" className={cls} /></div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Entity Type</label><select {...form.register("entityType")} className={cls}><option value="recruitment">🏛️ Government Recruitment</option><option value="exam">📝 Entrance Exam</option><option value="board">🏫 Board Exam</option><option value="university">🎓 University Admission</option></select><p className="text-xs text-slate-400 mt-0.5">Changes fields, modules, and validation across all tabs</p></div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Pillar *</label><select {...form.register("pillar")} className={cls}>{pillars.map((p) => <option key={p.slug} value={p.slug}>{p.label}</option>)}{pillars.length === 0 && <><option value="sarkari-naukri">Sarkari Naukri</option><option value="entrance-exam">Entrance Exam</option><option value="board-university">Board & University</option></>}</select></div>
+        <div><label className="block text-sm font-medium text-slate-700 mb-1">Region *</label><select {...form.register("region")} className={cls}><option value="">— Select —</option>{regions.filter((r) => r.kind === "national").map((r) => <option key={r.slug} value={r.slug}>{r.label}</option>)}{regions.some((r) => r.kind === "state") && <optgroup label="States">{regions.filter((r) => r.kind === "state").map((r) => <option key={r.slug} value={r.slug}>{r.label}</option>)}</optgroup>}{regions.some((r) => r.kind === "ut") && <optgroup label="Union Territories">{regions.filter((r) => r.kind === "ut").map((r) => <option key={r.slug} value={r.slug}>{r.label}</option>)}</optgroup>}</select>{form.formState.errors.region && <p className="text-xs text-red-500 mt-1">{form.formState.errors.region.message}</p>}<p className="text-xs text-slate-400 mt-0.5">Which state page this appears on. Choose All India for national exams.</p></div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Category</label><select {...form.register("categoryId")} className={cls}><option value="">— Select —</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Subcategory</label><select {...form.register("subcategoryId")} disabled={!watchedCategoryId} className={cn(cls, "disabled:opacity-50")}><option value="">— Select —</option>{filteredSubcats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Conducting Body *</label><input {...form.register("conductingBody")} placeholder="e.g. Institute of Banking Personnel Selection" className={cls} />{form.formState.errors.conductingBody && <p className="text-xs text-red-500 mt-1">{form.formState.errors.conductingBody.message}</p>}</div>

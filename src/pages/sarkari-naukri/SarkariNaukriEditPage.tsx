@@ -8,6 +8,7 @@ import {
   deleteSarkariNaukri, type SarkariNaukri, type SarkariNaukriInput,
   type RecruitmentType,
 } from "@/services/sarkariNaukriService";
+import { getRegions, type Region } from "@/services/regionService";
 
 export function SarkariNaukriEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +18,7 @@ export function SarkariNaukriEditPage() {
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
+  const [regions, setRegions] = useState<Region[]>([]);
   const [item, setItem] = useState<Partial<SarkariNaukriInput>>({
     recruitmentType: "direct",
     title: "",
@@ -27,6 +29,11 @@ export function SarkariNaukriEditPage() {
     status: "upcoming",
     workflowStatus: "draft",
   });
+
+  // Region vocabulary for the picker (states + UTs + all-india). Loaded once.
+  useEffect(() => {
+    getRegions().then(setRegions).catch(() => setRegions([]));
+  }, []);
 
   useEffect(() => {
     if (!isNew && id) {
@@ -57,6 +64,9 @@ export function SarkariNaukriEditPage() {
     if (!item.title?.trim()) { toast.error("Title is required"); return; }
     if (!item.slug?.trim()) { toast.error("Slug is required"); return; }
     if (!item.organization?.trim()) { toast.error("Organization is required"); return; }
+    // State is the vacancy's routing key (becomes exams.region at merge). Required
+    // on create, chosen from the regions list — no free text, no silent blank.
+    if (!item.state?.trim()) { toast.error("State is required — choose All India for national vacancies"); return; }
 
     setSaving(true);
     try {
@@ -162,9 +172,29 @@ export function SarkariNaukriEditPage() {
               className="w-full rounded border border-slate-200 px-3 py-2 text-sm" placeholder="e.g. SSC, UPSC, WCD Bihar" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">State</label>
-            <input value={item.state ?? ""} onChange={(e) => handleChange("state", e.target.value)}
-              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" placeholder="e.g. uttar-pradesh, all-india" />
+            <label className="mb-1 block text-xs font-medium text-slate-600">State *</label>
+            <select value={item.state ?? ""} onChange={(e) => handleChange("state", e.target.value)}
+              className="w-full rounded border border-slate-200 px-3 py-2 text-sm">
+              <option value="">— Select —</option>
+              {regions.filter((r) => r.kind === "national").map((r) => (
+                <option key={r.slug} value={r.slug}>{r.label}</option>
+              ))}
+              {regions.some((r) => r.kind === "state") && (
+                <optgroup label="States">
+                  {regions.filter((r) => r.kind === "state").map((r) => (
+                    <option key={r.slug} value={r.slug}>{r.label}</option>
+                  ))}
+                </optgroup>
+              )}
+              {regions.some((r) => r.kind === "ut") && (
+                <optgroup label="Union Territories">
+                  {regions.filter((r) => r.kind === "ut").map((r) => (
+                    <option key={r.slug} value={r.slug}>{r.label}</option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            <p className="mt-0.5 text-[11px] text-slate-400">Which state page this vacancy appears on. Choose All India for national vacancies.</p>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">Category</label>
