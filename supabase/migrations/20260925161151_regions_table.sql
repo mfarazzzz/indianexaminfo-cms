@@ -51,4 +51,4 @@ on conflict (slug) do nothing;
 alter table regions enable row level security;
 
 drop policy if exists regions_read on regions;
-create policy regions_read on regions for select using (true);
+create policy regions_read on regions for select using (true);;

@@ -9,4 +9,4 @@ alter table exams
   foreign key (region) references regions(slug)
   on update cascade on delete restrict;
 
-create index if not exists exams_region_idx on exams(region);
+create index if not exists exams_region_idx on exams(region);;

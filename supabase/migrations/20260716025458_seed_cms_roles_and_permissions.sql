@@ -1,0 +1,40 @@
+INSERT INTO cms_roles (name, display_name, rank, ai_default) VALUES
+  ('super_admin', 'Super Admin', 1, true),
+  ('admin', 'Admin', 2, true),
+  ('editor', 'Editor', 3, false),
+  ('author', 'Author', 4, false),
+  ('reporter', 'Reporter', 5, false),
+  ('contributor', 'Contributor', 6, false),
+  ('advertiser', 'Advertiser', 7, false)
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO cms_permissions (role, resource, action, scope) VALUES
+('super_admin','article','create','all'),('super_admin','article','read','all'),('super_admin','article','update','all'),('super_admin','article','delete','all'),('super_admin','article','publish','all'),
+('super_admin','ad','create','all'),('super_admin','ad','read','all'),('super_admin','ad','update','all'),('super_admin','ad','delete','all'),
+('super_admin','user','create','all'),('super_admin','user','read','all'),('super_admin','user','update','all'),('super_admin','user','delete','all'),('super_admin','user','manage_users','all'),
+('super_admin','media','create','all'),('super_admin','media','read','all'),('super_admin','media','delete','all'),
+('super_admin','category','create','all'),('super_admin','category','read','all'),('super_admin','category','update','all'),('super_admin','category','delete','all'),
+('super_admin','tag','create','all'),('super_admin','tag','read','all'),('super_admin','tag','update','all'),('super_admin','tag','delete','all'),
+('super_admin','analytics','read','all'),('super_admin','site_setting','read','all'),('super_admin','site_setting','update','all'),
+('admin','article','create','all'),('admin','article','read','all'),('admin','article','update','all'),('admin','article','delete','all'),('admin','article','publish','all'),
+('admin','ad','create','all'),('admin','ad','read','all'),('admin','ad','update','all'),('admin','ad','delete','all'),
+('admin','user','create','all'),('admin','user','read','all'),('admin','user','update','all'),('admin','user','manage_users','all'),
+('admin','media','create','all'),('admin','media','read','all'),('admin','media','delete','all'),
+('admin','category','create','all'),('admin','category','read','all'),('admin','category','update','all'),('admin','category','delete','all'),
+('admin','tag','create','all'),('admin','tag','read','all'),('admin','tag','update','all'),('admin','tag','delete','all'),
+('admin','analytics','read','all'),('admin','site_setting','read','all'),('admin','site_setting','update','all'),
+('editor','article','create','all'),('editor','article','read','all'),('editor','article','update','all'),('editor','article','publish','all'),
+('editor','media','create','all'),('editor','media','read','all'),('editor','media','delete','all'),
+('editor','category','create','all'),('editor','category','read','all'),('editor','category','update','all'),
+('editor','tag','create','all'),('editor','tag','read','all'),('editor','tag','update','all'),
+('editor','analytics','read','all'),('editor','user','read','all'),
+('author','article','create','all'),('author','article','read','all'),('author','article','update','own'),('author','article','delete','own'),
+('author','media','create','all'),('author','media','read','all'),('author','media','delete','own'),
+('author','category','read','all'),('author','tag','read','all'),('author','user','read','own'),
+('reporter','article','create','all'),('reporter','article','read','all'),('reporter','article','update','own'),
+('reporter','media','create','all'),('reporter','media','read','own'),('reporter','category','read','all'),
+('contributor','article','create','all'),('contributor','article','read','own'),
+('contributor','media','create','all'),('contributor','media','read','own'),('contributor','category','read','all'),
+('advertiser','ad','create','all'),('advertiser','ad','read','own'),('advertiser','ad','update','own'),('advertiser','ad','delete','own'),
+('advertiser','analytics','read','own')
+ON CONFLICT (role, resource, action) DO NOTHING;;
