@@ -432,6 +432,7 @@ export async function updateExamIdentity(
     isFeatured: boolean;
     faqs: { question: string; answer: string }[];
     selectionModel: SelectionModel;
+    entityType: string;
   }>
 ): Promise<ExamIdentity> {
   const updates: Record<string, unknown> = {};
@@ -463,6 +464,7 @@ export async function updateExamIdentity(
   if (input.isFeatured !== undefined) updates.is_featured = input.isFeatured;
   if (input.faqs !== undefined) updates.faqs = input.faqs;
   if (input.selectionModel !== undefined) updates.selection_model = input.selectionModel;
+  if (input.entityType !== undefined) updates.entity_type = input.entityType;
 
   const { data, error } = await db
     .from("exams")

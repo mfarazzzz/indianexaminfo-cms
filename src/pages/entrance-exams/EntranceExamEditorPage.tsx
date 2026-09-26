@@ -22,7 +22,7 @@ import type { ModuleConfig } from "@/types/modules";
 import { getErrorMessage } from "@/lib/utils";
 import { validateField } from "@/lib/fields/fieldTypes";
 import { ALL_SELECTION_MODELS, SELECTION_MODEL_LABELS, SELECTION_MODEL_HINTS, type SelectionModel } from "@/types/selection";
-import { getModulesForEntityType } from "@/config/moduleRegistry";
+import { getModulesForEntityType, entityTypeForPillar, resolveEntityType, ENTRANCE_EXAM_ENTITY_CHOICES } from "@/config/moduleRegistry";
 import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
 import { aiFillIdentityTab, aiFillDatesTab, aiFillSEOTab, aiFillNewsTab, aiFillModulesTab } from "@/lib/gemini/tabAI";
 import { AIFillButton } from "@/components/shared/AIFillButton";
@@ -190,13 +190,9 @@ export function EntranceExamEditorPage() {
     defaultValues: {
       name: "", shortName: "", slug: "", categoryId: "", subcategoryId: "",
       conductingBody: "", officialWebsite: "", cycleFrequency: "annual",
-      // entityType defaults per pillar — user can override in the Identity tab
-      entityType: (
-        pillarFromUrl === "board-exam" ? "board" :
-        pillarFromUrl === "university-exam" ? "university" :
-        pillarFromUrl === "entrance-exam" ? "exam" :
-        "recruitment" // government-exam, govt-vacancy, sarkari-*
-      ),
+      // entityType is decided by the pillar (same rule as the DB CHECK). Only
+      // entrance-exam leaves a choice; every other pillar is fixed.
+      entityType: resolveEntityType(pillarFromUrl),
       selectionModel: "written-exam",
       isFeatured: false, editionYear: new Date().getFullYear(), editionSession: "main",
       editionStatus: "upcoming", notificationDate: "", vacancy: "",
@@ -217,6 +213,21 @@ export function EntranceExamEditorPage() {
   useEffect(() => {
     getCategories(pillarFromUrl).then(setCategories).catch(() => {});
   }, [pillarFromUrl]);
+
+  // The pillar (from the URL) decides the entity type — the same rule as the DB
+  // CHECK. A fixed pillar forces its type; entrance-exam keeps a value only if
+  // it's one of the two valid choices, else snaps to "exam". This also corrects
+  // any stale entity_type read from an older record on load.
+  useEffect(() => {
+    const fixed = entityTypeForPillar(pillarFromUrl);
+    if (fixed !== null) {
+      if (watchedEntityType !== fixed) {
+        form.setValue("entityType", fixed, { shouldDirty: false, shouldValidate: true });
+      }
+    } else if (!ENTRANCE_EXAM_ENTITY_CHOICES.includes(watchedEntityType as never)) {
+      form.setValue("entityType", "exam", { shouldDirty: false, shouldValidate: true });
+    }
+  }, [pillarFromUrl, watchedEntityType, form]);
 
   const loadExam = useCallback(async () => {
     if (isNew || !id) return;
@@ -298,7 +309,8 @@ export function EntranceExamEditorPage() {
           conductingBody: data.conductingBody,
           officialWebsite: data.officialWebsite,
           cycleFrequency: data.cycleFrequency,
-          entityType: data.entityType,
+          // Pillar decides the type at write time — backstop against a stale value.
+          entityType: resolveEntityType(pillarFromUrl, data.entityType),
           selectionModel: data.selectionModel,
           firstEditionYear: data.editionYear,
         });
@@ -319,6 +331,9 @@ export function EntranceExamEditorPage() {
         conductingBody: data.conductingBody,
         officialWebsite: data.officialWebsite,
         cycleFrequency: data.cycleFrequency,
+        // Persist the pillar-resolved entity type so an entrance-exam record can
+        // be switched between exam / university-admission; fixed pillars are a no-op.
+        entityType: resolveEntityType(pillarFromUrl, data.entityType),
         isFeatured: data.isFeatured,
         selectionModel: data.selectionModel,
         seoTitle: data.seoTitle || undefined,
@@ -1114,7 +1129,7 @@ export function EntranceExamEditorPage() {
           </div>
         )}
 
-        {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} watchedSelectionModel={watchedSelectionModel} isNew={isNew} />}
+        {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} watchedSelectionModel={watchedSelectionModel} isNew={isNew} pillar={pillarFromUrl} />}
         {activeTab === "resources" && <ResourcesTab examId={exam?.id ?? null} />}
         {activeTab === "syllabus" && <SyllabusTab examId={exam?.id ?? null} />}
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency}
@@ -1204,7 +1219,17 @@ export function EntranceExamEditorPage() {
 
 // ── Tab Components ─────────────────────────────────────────────────────────
 
-function IdentityTab({ form, categories, watchFrequency, watchedSelectionModel, isNew }: { form: any; categories: Category[]; watchFrequency: CycleFrequency; watchedSelectionModel: SelectionModel; isNew: boolean }) {
+function IdentityTab({ form, categories, watchFrequency, watchedSelectionModel, isNew, pillar }: { form: any; categories: Category[]; watchFrequency: CycleFrequency; watchedSelectionModel: SelectionModel; isNew: boolean; pillar: string }) {
+  // The pillar decides the entity type. Only entrance-exam offers a choice.
+  const pillarIsFixed = entityTypeForPillar(pillar) !== null;
+  const currentEntityType: string = form.watch("entityType");
+  const ENTITY_TYPE_LABELS: Record<string, string> = {
+    recruitment: "🏛️ Government Recruitment",
+    exam: "📝 Entrance / Competitive Exam",
+    board: "🏫 Board Exam",
+    "university-admission": "🎓 University Admission",
+    "university-exam": "📚 University Exam",
+  };
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <Field label="Exam Name *" name="name" form={form} placeholder="Common Admission Test (CAT)" />
@@ -1225,16 +1250,23 @@ function IdentityTab({ form, categories, watchFrequency, watchedSelectionModel, 
           {CYCLE_FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
       </div>
-      {/* Entity Type — Axis 1: what this entity is */}
+      {/* Entity Type — Axis 1: what this entity is. Decided by the pillar. */}
       <div>
         <label className="block text-xs font-medium text-slate-600 mb-1">Entity Type</label>
-        <select {...form.register("entityType")} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
-          <option value="recruitment">🏛️ Government Recruitment</option>
-          <option value="exam">📝 Entrance / Competitive Exam</option>
-          <option value="board">🏫 Board Exam</option>
-          <option value="university">🎓 University Admission</option>
-        </select>
-        <p className="text-xs text-slate-400 mt-0.5">What this entity is</p>
+        {pillarIsFixed ? (
+          <>
+            <input type="text" readOnly value={ENTITY_TYPE_LABELS[currentEntityType] ?? currentEntityType} className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-500 cursor-not-allowed" />
+            <p className="text-xs text-slate-400 mt-0.5">Set by the pillar for this section</p>
+          </>
+        ) : (
+          <>
+            <select {...form.register("entityType")} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
+              <option value="exam">📝 Entrance / Competitive Exam</option>
+              <option value="university-admission">🎓 University Admission</option>
+            </select>
+            <p className="text-xs text-slate-400 mt-0.5">Entrance exams only: an entrance exam or a university admission</p>
+          </>
+        )}
       </div>
       {/* Selection Model — Axis 2: how candidates are selected */}
       <div>

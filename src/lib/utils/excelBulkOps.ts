@@ -11,6 +11,8 @@ import { db } from "@/lib/supabase/client";
 import { validateAndFixDate } from "@/lib/utils/indianDateParser";
 import { normalizeUrl } from "@/lib/utils";
 import { normalizeLabel } from "@/lib/dates/normalizeLabel";
+import { getRegions } from "@/services/regionService";
+import { resolveEntityType } from "@/config/moduleRegistry";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,6 +21,7 @@ export interface ExportRow {
   shortName: string;
   slug: string;
   pillar: string;
+  region: string;
   category: string;
   conductingBody: string;
   officialWebsite: string;
@@ -45,6 +48,7 @@ export interface ImportRow {
   name: string;
   shortName?: string;
   slug?: string;
+  region?: string;
   category?: string;
   conductingBody?: string;
   officialWebsite?: string;
@@ -83,7 +87,7 @@ export async function exportExamsToExcel(pillar: string, pillarLabel: string): P
   const { data, error } = await db
     .from("exams")
     .select(`
-      id, slug, name, short_name, pillar, conducting_body, official_website,
+      id, slug, name, short_name, pillar, region, conducting_body, official_website,
       is_featured, is_published, seo_title, seo_description, tags, status,
       cat:categories!category_id(slug, name),
       current_edition:exam_editions!current_edition_id(
@@ -112,6 +116,7 @@ export async function exportExamsToExcel(pillar: string, pillarLabel: string): P
       shortName: row.short_name ?? "",
       slug: row.slug ?? "",
       pillar: row.pillar ?? pillar,
+      region: row.region ?? "",
       category: row.cat?.name ?? row.cat?.slug ?? "",
       conductingBody: row.conducting_body ?? "",
       officialWebsite: row.official_website ?? "",
@@ -144,6 +149,7 @@ export async function exportExamsToExcel(pillar: string, pillarLabel: string): P
     { wch: 12 }, // shortName
     { wch: 30 }, // slug
     { wch: 15 }, // pillar
+    { wch: 16 }, // region
     { wch: 20 }, // category
     { wch: 30 }, // conductingBody
     { wch: 30 }, // officialWebsite
@@ -182,6 +188,7 @@ export function downloadImportTemplate(pillar: string, pillarLabel: string): voi
     name: "Example Exam Name 2026",
     shortName: "EEN",
     slug: "",
+    region: "all-india",
     category: "",
     conductingBody: "Example Board",
     officialWebsite: "https://example.gov.in",
@@ -206,7 +213,7 @@ export function downloadImportTemplate(pillar: string, pillarLabel: string): voi
 
   const ws = XLSX.utils.json_to_sheet([templateRow]);
   ws["!cols"] = [
-    { wch: 40 }, { wch: 12 }, { wch: 30 }, { wch: 20 }, { wch: 30 },
+    { wch: 40 }, { wch: 12 }, { wch: 30 }, { wch: 16 }, { wch: 20 }, { wch: 30 },
     { wch: 30 }, { wch: 18 }, { wch: 8 }, { wch: 15 }, { wch: 10 },
     { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
     { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 8 },
@@ -239,6 +246,23 @@ export async function importExamsFromExcel(
 
   const result: ImportResult = { created: 0, updated: 0, errors: [] };
 
+  // Region controlled vocabulary — loaded ONCE. A create must write a valid
+  // region (exams.region is NOT NULL + FK), so we validate the sheet value here
+  // and give a row-level message naming the bad value, rather than letting the
+  // raw FK / NOT NULL error surface. Accept either the slug ("all-india") or the
+  // human label ("All India"), case-insensitively.
+  const regionRecords = await getRegions();
+  const regionBySlug = new Map(regionRecords.map((r) => [r.slug.toLowerCase(), r.slug]));
+  const regionByLabel = new Map(regionRecords.map((r) => [r.label.toLowerCase(), r.slug]));
+  const resolveRegion = (cell: string): string | null => {
+    const v = cell.trim().toLowerCase();
+    if (!v) return null;
+    return regionBySlug.get(v) ?? regionByLabel.get(v) ?? null;
+  };
+  // The pillar decides the entity type — the same rule the editors use and the
+  // DB CHECK enforces. Bulk import never lets a sheet column override it.
+  const entityType = resolveEntityType(pillar);
+
   for (let i = 0; i < rows.length; i++) {
     const raw = rows[i];
     const rowNum = i + 2; // Excel row number (1-indexed + header)
@@ -252,6 +276,8 @@ export async function importExamsFromExcel(
 
       const shortName = String(raw.shortName || raw["Short Name"] || raw.short_name || "").trim();
       const slug = String(raw.slug || raw.Slug || "").trim() || generateSlug(shortName || name);
+      const regionCell = String(raw.region || raw.Region || "").trim();
+      const region = resolveRegion(regionCell);
       const conductingBody = String(raw.conductingBody || raw["Conducting Body"] || raw.conducting_body || "").trim();
       const officialWebsite = String(raw.officialWebsite || raw["Official Website"] || raw.official_website || "").trim();
       const status = String(raw.status || raw.Status || "upcoming").trim();
@@ -304,9 +330,20 @@ export async function importExamsFromExcel(
         // edition below (exams.status was dropped in step 4).
         // is_featured/is_published are only written when the cell was explicitly
         // present — an absent flag preserves the existing value (no silent flip).
+        // Region on update: only touch it when the cell is present. A present-but-
+        // invalid value fails the row (naming the bad value); an absent cell leaves
+        // the existing region untouched (never blanked — it's NOT NULL).
+        if (regionCell && region === null) {
+          result.errors.push({
+            row: rowNum, name,
+            error: `Region "${regionCell}" is not a known state, union territory, or all-india. Fix the value or use the exact region slug.`,
+          });
+          continue;
+        }
         await db.from("exams").update({
           name,
           short_name: shortName,
+          ...(region !== null ? { region } : {}),
           conducting_body: conductingBody,
           official_website: officialWebsite,
           ...(isFeatured !== undefined ? { is_featured: isFeatured } : {}),
@@ -330,23 +367,33 @@ export async function importExamsFromExcel(
 
         result.updated++;
       } else {
+        // Create new exam. region is REQUIRED (exams.region is NOT NULL + FK).
+        // Fail this row with an actionable message instead of a raw DB error.
+        if (!regionCell) {
+          result.errors.push({
+            row: rowNum, name,
+            error: "Region is required for a new record. Add a 'region' column with a value like 'all-india' or 'uttar-pradesh'.",
+          });
+          continue;
+        }
+        if (region === null) {
+          result.errors.push({
+            row: rowNum, name,
+            error: `Region "${regionCell}" is not a known state, union territory, or all-india. Fix the value or use the exact region slug.`,
+          });
+          continue;
+        }
         // Create new exam
         const { data: newExam, error: createErr } = await db.from("exams").insert({
           slug,
           name,
           short_name: shortName,
           pillar,
+          region,
+          // entity_type comes from the pillar (same rule as the editors + DB CHECK).
+          entity_type: entityType,
           conducting_body: conductingBody,
           official_website: officialWebsite,
-          entity_type: (
-            (pillar === "sarkari-naukri" || pillar === "govt-vacancy" || pillar === "government-exam")
-              ? "recruitment"
-              : pillar === "board-exam" || pillar === "board-university"
-              ? "board"
-              : pillar === "university-exam"
-              ? "university"
-              : "exam"
-          ),
           // status DROPPED from exams (step 4) — written to the edition insert below.
           // New record: absent flag → sensible default (not featured; published).
           is_featured: isFeatured ?? false,
@@ -491,6 +538,18 @@ export async function previewImportFromExcel(
   const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws);
   if (rows.length === 0) throw new Error("No data rows found in the spreadsheet.");
 
+  // Same region vocabulary the real import validates against, so the dry-run can
+  // flag a missing/invalid region BEFORE any write (a create with a bad region
+  // fails at the DB otherwise).
+  const regionRecords = await getRegions();
+  const regionBySlug = new Map(regionRecords.map((r) => [r.slug.toLowerCase(), r.slug]));
+  const regionByLabel = new Map(regionRecords.map((r) => [r.label.toLowerCase(), r.slug]));
+  const resolveRegion = (cell: string): string | null => {
+    const v = cell.trim().toLowerCase();
+    if (!v) return null;
+    return regionBySlug.get(v) ?? regionByLabel.get(v) ?? null;
+  };
+
   const preview: ImportPreview = {
     totalRows: rows.length,
     newEditions: [],
@@ -510,6 +569,8 @@ export async function previewImportFromExcel(
     const shortName = String(raw.shortName || raw["Short Name"] || raw.short_name || "").trim();
     const slug = String(raw.slug || raw.Slug || "").trim() || generateSlug(shortName || name);
     const officialWebsite = String(raw.officialWebsite || raw["Official Website"] || raw.official_website || "").trim();
+    const regionCell = String(raw.region || raw.Region || "").trim();
+    const regionResolved = resolveRegion(regionCell);
     const rowYearRaw = raw.editionYear ?? raw["Edition Year"] ?? raw.edition_year;
     const rowYear = rowYearRaw === undefined || rowYearRaw === "" ? null : parseInt(String(rowYearRaw));
     // Optional explicit state column (change 3: spreadsheet state overrides inference).
@@ -552,7 +613,21 @@ export async function previewImportFromExcel(
 
     if (!existing) {
       pr.action = "create-exam";
+      // A create MUST carry a valid region (NOT NULL + FK). Surface a missing or
+      // unknown region here so it's fixed before the write fails the row.
+      if (!regionCell) {
+        pr.guardGaps.push("region MISSING — required for a new record; this row will fail to import until a region is set");
+        pr.destructive = true;
+      } else if (regionResolved === null) {
+        pr.guardGaps.push(`region "${regionCell}" is not a known state/UT/all-india — this row will fail to import until fixed`);
+        pr.destructive = true;
+      }
       preview.createExam++; preview.rows.push(pr); continue;
+    }
+    // Existing-record update: a present-but-invalid region will fail the row.
+    const regionInvalidOnUpdate = !!(regionCell && regionResolved === null);
+    if (regionInvalidOnUpdate) {
+      pr.guardGaps.push(`region "${regionCell}" is not a known state/UT/all-india — this row will fail to import until fixed`);
     }
 
     // Fetch current edition + its existing cycle content (for wipe + archive summaries).
@@ -658,7 +733,8 @@ export async function previewImportFromExcel(
       pr.fieldsCleared.length > 0 ||
       pr.dateStateChanges.length > 0 ||
       pr.droppedDateTypes.length > 0 ||
-      !!pr.importantDatesWipe;
+      !!pr.importantDatesWipe ||
+      regionInvalidOnUpdate;
 
     if (pr.fieldsCleared.length > 0) preview.guardSummary.rowsClearingFields++;
     if (pr.dateStateChanges.length > 0) preview.guardSummary.rowsChangingDateState++;

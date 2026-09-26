@@ -27,8 +27,65 @@ import type { SelectionModel } from "@/types/selection";
 // The exhaustiveness guard asserts every module covers all of these (or "*")
 // or explicitly opts out. Adding a value here fails the test for any module
 // that neither includes nor opts out of it — forcing a conscious decision.
-export type EntityType = "exam" | "board" | "university" | "recruitment";
-export const ALL_ENTITY_TYPES: EntityType[] = ["exam", "board", "university", "recruitment"];
+export type EntityType = "exam" | "board" | "university-admission" | "recruitment" | "university-exam";
+export const ALL_ENTITY_TYPES: EntityType[] = ["exam", "board", "university-admission", "recruitment", "university-exam"];
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PILLAR → ENTITY TYPE — the single authority for "the pillar decides the type"
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// This mirrors the DB CHECK constraint `exams_pillar_entity_type_valid`. Every
+// write path — the two editors AND Excel bulk import — MUST derive entity_type
+// from the pillar through here, never from user input or a duplicated ternary.
+//
+// Four pillars are deterministic (one entity type each). Only entrance-exam
+// carries a genuine choice: a competitive entrance exam ("exam"), or a
+// counselling-route university admission ("university-admission"). For that
+// pillar the editor offers the two, defaulting to "exam"; every other pillar
+// has NO choice and the editor shows the type as read-only.
+
+/** Entrance-exam is the ONLY pillar where the editor chooses the entity type. */
+export const ENTRANCE_EXAM_ENTITY_CHOICES: EntityType[] = ["exam", "university-admission"];
+
+/**
+ * The fixed entity type for a pillar, or null when the pillar allows a choice
+ * (currently only "entrance-exam"). Unknown pillars fall back to "exam" so a
+ * brand-new pillar never silently writes an invalid pairing — it writes the
+ * safe default and the DB constraint remains the backstop.
+ */
+export function entityTypeForPillar(pillar: string): EntityType | null {
+  switch (pillar) {
+    case "government-exam":
+    case "govt-vacancy":
+    case "sarkari-naukri":   // legacy alias for the recruitment pillar
+      return "recruitment";
+    case "board-exam":
+    case "board-university": // legacy alias for the board pillar
+      return "board";
+    case "university-exam":
+      return "university-exam";
+    case "university-admission":
+      return "university-admission";
+    case "entrance-exam":
+      return null;           // editor chooses exam | university-admission
+    default:
+      return "exam";
+  }
+}
+
+/**
+ * Resolve the entity type to WRITE for a pillar, honouring an editor's choice
+ * only where the pillar actually allows one (entrance-exam). For every fixed
+ * pillar the chosen value is ignored — the pillar wins. This is the function
+ * every insert/upsert should call.
+ */
+export function resolveEntityType(pillar: string, chosen?: string | null): EntityType {
+  const fixed = entityTypeForPillar(pillar);
+  if (fixed !== null) return fixed;                 // pillar decides; ignore `chosen`
+  // entrance-exam: accept a valid choice, else default to "exam".
+  return ENTRANCE_EXAM_ENTITY_CHOICES.includes(chosen as EntityType)
+    ? (chosen as EntityType)
+    : "exam";
+}
 
 // Axis 3 — the LEVEL a module's data lives at. Every module must declare one so it's
 // unambiguous where its content belongs and how it survives an edition rollover:
@@ -91,7 +148,7 @@ export interface ModuleDefinition {
   /** Short description for editors */
   description: string;
   /** Axis 1 — which entity types this module applies to */
-  applicableTo: string[];  // ["recruitment", "exam", "board", "university"] or ["*"] for all
+  applicableTo: string[];  // ["recruitment", "exam", "board", "university-admission", "university-exam"] or ["*"] for all
   /**
    * Axis 2 — which selection models this module applies to.
    * OMITTED = applies to ALL selection models (backward compatible).
@@ -268,8 +325,8 @@ export const ENTITY_TYPE_PROFILES: Record<string, EntityTypeProfile> = {
     ],
   },
 
-  university: {
-    id: "university",
+  "university-admission": {
+    id: "university-admission",
     label: "University Admission",
     description: "DU, JNU, State Universities — program admissions",
     icon: "🎓",
@@ -303,6 +360,42 @@ export const ENTITY_TYPE_PROFILES: Record<string, EntityTypeProfile> = {
       { key: "minimumPercentage", label: "Minimum % Required", type: "text", placeholder: "e.g. 50% in 10+2", priority: "essential" },
       { key: "domicileRequired", label: "Domicile Required?", type: "boolean", priority: "advanced" },
       { key: "lateralEntry", label: "Lateral Entry Available?", type: "boolean", priority: "advanced" },
+    ],
+  },
+
+  "university-exam": {
+    id: "university-exam",
+    label: "University Exam",
+    description: "Semester / annual exams for already-enrolled students — date-sheets, results, revaluation, back papers",
+    icon: "📚",
+    requiredModules: ["date-sheet"],
+    // Enrolled-student lifecycle: schedule → sit exam → result → revaluation/back-paper.
+    // NO application / counselling / merit-list / seat-allotment / cutoff (those are admission).
+    defaultModules: ["date-sheet", "admit-card", "syllabus", "result", "revaluation"],
+    publishChecklist: [
+      { label: "University name filled", check: "typeField:universityName" },
+      { label: "Exam session / semester specified", check: "typeField:examSession" },
+      { label: "Date sheet published", check: "module:date-sheet" },
+      { label: "SEO title set", check: "field:seoTitle" },
+    ],
+    generalFields: [
+      { key: "universityName", label: "University Name", type: "text", placeholder: "e.g. Delhi University, IGNOU", priority: "essential", required: true },
+      { key: "examSession", label: "Exam Session / Semester", type: "text", placeholder: "e.g. Dec 2025 Semester, Term-End June 2026", priority: "essential", required: true },
+      { key: "examType", label: "Exam Type", type: "select", priority: "essential",
+        options: [{ value: "semester", label: "Semester Exam" }, { value: "annual", label: "Annual Exam" }, { value: "term-end", label: "Term-End Exam" }, { value: "supplementary", label: "Supplementary / Back Paper" }] },
+      { key: "programName", label: "Program / Course", type: "text", placeholder: "e.g. B.A., B.Com, MBA", priority: "essential" },
+      { key: "examMode", label: "Exam Mode", type: "select", priority: "advanced",
+        options: [{ value: "offline", label: "Offline (Pen & Paper)" }, { value: "online", label: "Online (CBT)" }, { value: "hybrid", label: "Hybrid" }] },
+    ],
+    dateFields: [
+      { key: "dateSheetRelease", label: "Date Sheet Release", type: "date", priority: "essential" },
+      { key: "examStart", label: "Exam Start Date", type: "date", priority: "essential", required: true },
+      { key: "examEnd", label: "Exam End Date", type: "date", priority: "essential" },
+      { key: "resultDate", label: "Result Declaration Date", type: "date", priority: "advanced" },
+    ],
+    eligibilityFields: [
+      { key: "enrolledOnly", label: "Enrolled Students Only?", type: "boolean", priority: "advanced" },
+      { key: "attendanceRequired", label: "Min Attendance Required", type: "text", placeholder: "e.g. 75%", priority: "advanced" },
     ],
   },
 };
@@ -415,14 +508,17 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Answer Key",
     icon: "🔑",
     description: "Provisional / final answer key and objection window",
-    applicableTo: ["recruitment", "exam", "university"],
+    applicableTo: ["recruitment", "exam", "university-admission"],
     appliesToSelection: ["written-exam"], // gate is the WRITTEN PAPER (selectionModel), not entity type — a written-exam university (VITEEE) publishes one
     selectionOptOut: [
       { value: "merit-based", reason: "No question paper → no answer key" },
       { value: "interview-based", reason: "No question paper → no answer key" },
       { value: "internal-admission", reason: "No question paper → no answer key" },
     ],
-    entityOptOut: [{ value: "board", reason: "Boards publish results, not challengeable answer keys" }],
+    entityOptOut: [
+      { value: "board", reason: "Boards publish results, not challengeable answer keys" },
+      { value: "university-exam", reason: "Semester exams publish results directly; corrections go through revaluation, not an answer key" },
+    ],
     category: "lifecycle",
     level: "edition-cycle",
     displayOrder: 4,
@@ -477,11 +573,14 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Cut Off",
     icon: "📊",
     description: "Category-wise cutoff marks and trends",
-    applicableTo: ["recruitment", "exam", "university"],
+    applicableTo: ["recruitment", "exam", "university-admission"],
     // Cutoffs apply across ALL selection models: written-exam scores, merit lists,
     // interview panels, and internal-admission counselling all publish cutoffs.
     appliesToSelection: ["written-exam", "merit-based", "interview-based", "internal-admission"],
-    entityOptOut: [{ value: "board", reason: "Boards report pass/division, not competitive cutoffs" }],
+    entityOptOut: [
+      { value: "board", reason: "Boards report pass/division, not competitive cutoffs" },
+      { value: "university-exam", reason: "Semester exams grade against fixed criteria, not a competitive cutoff" },
+    ],
     category: "lifecycle",
     level: "edition-cycle",
     displayOrder: 6,
@@ -505,12 +604,13 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Counselling",
     icon: "🤝",
     description: "Counselling rounds, seat allotment, and choice filling",
-    applicableTo: ["exam", "university"],
+    applicableTo: ["exam", "university-admission"],
     // Re-scoped: used by exam/university admission lifecycles; selection-agnostic
     // (unconstrained) so it serves internal-admission universities too.
     entityOptOut: [
       { value: "recruitment", reason: "Jobs use document-verification/final-selection, not counselling" },
       { value: "board", reason: "Boards have no seat counselling" },
+      { value: "university-exam", reason: "Counselling is an admission stage; enrolled-student exams have none" },
     ],
     category: "lifecycle",
     level: "edition-cycle",
@@ -538,7 +638,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Merit List",
     icon: "📋",
     description: "Merit list publication and verification",
-    applicableTo: ["recruitment", "university"],
+    applicableTo: ["recruitment", "university-admission"],
     // Re-scoped: the non-exam outcome document. Exam-based recruitment uses
     // Result instead, so exclude written-exam to avoid a duplicate outcome.
     appliesToSelection: ["merit-based", "interview-based", "internal-admission"],
@@ -546,6 +646,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     entityOptOut: [
       { value: "exam", reason: "Entrance exams publish Result, not a merit list" },
       { value: "board", reason: "Boards publish Result, not a merit list" },
+      { value: "university-exam", reason: "Merit lists are an admission stage; enrolled-student exams publish Result" },
     ],
     category: "lifecycle",
     level: "edition-cycle",
@@ -582,7 +683,8 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     entityOptOut: [
       { value: "exam", reason: "Entrance exams verify at counselling, not a recruitment DV gate" },
       { value: "board", reason: "Boards have no DV stage" },
-      { value: "university", reason: "Universities verify at counselling/seat-allotment" },
+      { value: "university-admission", reason: "Universities verify at counselling/seat-allotment" },
+      { value: "university-exam", reason: "Enrolled students are already verified; no DV stage" },
     ],
     category: "lifecycle",
     level: "edition-cycle",
@@ -608,14 +710,17 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Interview Schedule",
     icon: "🗣️",
     description: "Interview / personality-test dates, venue, and panel details",
-    applicableTo: ["recruitment", "exam", "university"],
+    applicableTo: ["recruitment", "exam", "university-admission"],
     appliesToSelection: ["interview-based"],
     selectionOptOut: [
       { value: "written-exam", reason: "Written selection has no interview round" },
       { value: "merit-based", reason: "Merit selection has no interview round" },
       { value: "internal-admission", reason: "Admission is by allotment, not interview" },
     ],
-    entityOptOut: [{ value: "board", reason: "Boards have no interview" }],
+    entityOptOut: [
+      { value: "board", reason: "Boards have no interview" },
+      { value: "university-exam", reason: "Semester exams have no interview round" },
+    ],
     category: "lifecycle",
     level: "edition-cycle",
     displayOrder: 9.5,
@@ -648,7 +753,8 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     entityOptOut: [
       { value: "exam", reason: "Entrance exams publish Result" },
       { value: "board", reason: "Boards publish Result" },
-      { value: "university", reason: "Universities use seat-allotment" },
+      { value: "university-admission", reason: "Universities use seat-allotment" },
+      { value: "university-exam", reason: "Semester exams publish Result, not a selection list" },
     ],
     category: "lifecycle",
     level: "edition-cycle",
@@ -671,7 +777,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Seat Allotment",
     icon: "🎟️",
     description: "Round-wise seat allotment and acceptance — the admission analogue of a result",
-    applicableTo: ["university"],
+    applicableTo: ["university-admission"],
     appliesToSelection: ["internal-admission"],
     selectionOptOut: [
       { value: "written-exam", reason: "Seat allotment is an admission outcome, not an exam outcome" },
@@ -682,6 +788,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       { value: "recruitment", reason: "Jobs appoint via final-selection" },
       { value: "exam", reason: "Entrance exams route to counselling, not per-exam seat allotment" },
       { value: "board", reason: "Boards have no seat allotment" },
+      { value: "university-exam", reason: "Seat allotment is an admission stage; enrolled students already hold a seat" },
     ],
     category: "lifecycle",
     level: "edition-cycle",
@@ -707,14 +814,17 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Exam Pattern",
     icon: "📐",
     description: "Exam structure, papers, marking scheme",
-    applicableTo: ["recruitment", "exam", "university"],
+    applicableTo: ["recruitment", "exam", "university-admission"],
     appliesToSelection: ["written-exam"], // gate is the WRITTEN PAPER (selectionModel), not entity type — a written-exam university has a paper structure
     selectionOptOut: [
       { value: "merit-based", reason: "No paper → no pattern" },
       { value: "interview-based", reason: "No paper → no pattern" },
       { value: "internal-admission", reason: "No paper → no pattern" },
     ],
-    entityOptOut: [{ value: "board", reason: "Boards use date-sheet + syllabus, not a competitive exam pattern" }],
+    entityOptOut: [
+      { value: "board", reason: "Boards use date-sheet + syllabus, not a competitive exam pattern" },
+      { value: "university-exam", reason: "Semester exams use date-sheet + syllabus; no competitive exam pattern" },
+    ],
     category: "academic",
     level: "exam-identity",
     displayOrder: 10,
@@ -766,12 +876,13 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     label: "Date Sheet / Schedule",
     icon: "📅",
     description: "Exam timetable / date sheet",
-    applicableTo: ["board", "university"],
+    applicableTo: ["board", "university-exam"],
     // Multi-subject scheduled timetable — boards/universities. Borderline: a
     // multi-paper written exam arguably has one too (flagged in NORMALIZATION_AUDIT).
     entityOptOut: [
       { value: "recruitment", reason: "Jobs use a single exam date, not a subject-wise date sheet" },
       { value: "exam", reason: "Entrance exams use a single exam date; multi-subject schedule is board/university" },
+      { value: "university-admission", reason: "Admission has application/counselling dates, not a subject-wise exam date sheet" },
     ],
     category: "academic",
     level: "edition-cycle",
@@ -792,6 +903,41 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   },
 
   {
+    id: "revaluation",
+    label: "Revaluation / Back Paper",
+    icon: "🔁",
+    description: "Revaluation, rechecking, and supplementary / back-paper exams for enrolled students",
+    applicableTo: ["university-exam"],
+    // Enrolled-student post-result stage: rechecking a result or re-sitting a
+    // failed paper. Admission lifecycles never revalue — this is exam-only.
+    entityOptOut: [
+      { value: "recruitment", reason: "Recruitment results are final; no revaluation stage" },
+      { value: "exam", reason: "Entrance exams challenge via answer-key objections, not revaluation" },
+      { value: "board", reason: "Boards run compartment exams; tracked on the board result, not here" },
+      { value: "university-admission", reason: "Admissions have no exam to revalue" },
+    ],
+    category: "lifecycle",
+    level: "edition-cycle",
+    displayOrder: 12.5,
+    capabilities: {
+      supportsAttachments: true, supportsTimeline: true, supportsDownloads: true,
+      supportsFAQs: true, supportsSEO: true, supportsAI: false,
+      supportsVersionHistory: true, supportsPreview: true, isRepeatable: true,
+    },
+    fields: [
+      { key: "revalType", label: "Type", type: "select", priority: "essential", required: true,
+        options: [{ value: "revaluation", label: "Revaluation" }, { value: "rechecking", label: "Rechecking / Retotalling" }, { value: "back-paper", label: "Back Paper / Supplementary" }, { value: "improvement", label: "Improvement Exam" }] },
+      { key: "applicationStart", label: "Application Start Date", type: "date", priority: "essential", required: true },
+      { key: "applicationEnd", label: "Application Last Date", type: "date", priority: "essential", required: true },
+      { key: "applyUrl", label: "Apply / Portal URL", type: "url", priority: "essential", placeholder: "https://…/revaluation" },
+      { key: "feePerPaper", label: "Fee per Paper (₹)", type: "number", priority: "essential", placeholder: "e.g. 500" },
+      { key: "examDate", label: "Back Paper Exam Date", type: "date", priority: "advanced", placeholder: "For back-paper / supplementary only" },
+      { key: "resultDate", label: "Revaluation Result Date", type: "date", priority: "advanced" },
+      { key: "instructions", label: "Instructions", type: "textarea", priority: "advanced", placeholder: "Eligibility, how to apply, refund policy" },
+    ],
+  },
+
+  {
     id: "vacancy-details",
     label: "Vacancy Details",
     icon: "👥",
@@ -802,7 +948,8 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     entityOptOut: [
       { value: "exam", reason: "Entrance exams have no vacancies (admission, not hiring)" },
       { value: "board", reason: "Boards have no vacancies" },
-      { value: "university", reason: "Universities admit to seats (seat-allotment), not vacancies" },
+      { value: "university-admission", reason: "Universities admit to seats (seat-allotment), not vacancies" },
+      { value: "university-exam", reason: "Semester exams have no vacancies" },
     ],
     category: "academic",
     level: "edition-cycle",

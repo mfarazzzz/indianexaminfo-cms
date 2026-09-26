@@ -192,6 +192,7 @@ export function createPillarService(pillar: Pillar) {
       if (input.tags !== undefined) updates.tags = input.tags;
       if (input.faqs !== undefined) updates.faqs = input.faqs;
       if (input.selectionModel !== undefined) updates.selection_model = input.selectionModel;
+      if (input.entityType !== undefined) updates.entity_type = input.entityType;
 
       const { data, error } = await db.from("exams").update(updates).eq("id", examId).select(DETAIL_SELECT).single();
       if (error) throw error;

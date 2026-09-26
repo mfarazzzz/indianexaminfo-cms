@@ -44,7 +44,7 @@ export type ExamEntity = {
   subcategory: string;    // subcategory slug
   categoryId: string | null;       // raw FK UUID for form population
   subcategoryId: string | null;    // raw FK UUID for form population
-  entityType: "exam" | "board" | "university" | "recruitment";
+  entityType: "exam" | "board" | "university-admission" | "recruitment" | "university-exam";
   conductingBody: string;
   officialWebsite: string;
   status: ExamStatus;

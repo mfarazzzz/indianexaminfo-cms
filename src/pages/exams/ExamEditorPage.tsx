@@ -33,6 +33,7 @@ import {
   getEntityProfile, getModulesForEntityType,
   getEssentialFields, getAdvancedFields, isModuleRequired,
   MODULE_CATEGORY_LABELS,
+  entityTypeForPillar, resolveEntityType, ENTRANCE_EXAM_ENTITY_CHOICES,
   type FieldDef, type ModuleDefinition, type EntityTypeProfile,
 } from "@/config/moduleRegistry";
 import { usePillars } from "@/hooks/usePillars";
@@ -65,7 +66,7 @@ const examSchema = z.object({
   region: z.string().min(1, "Region is required"),
   categoryId: z.string().optional().nullable(),
   subcategoryId: z.string().optional().nullable(),
-  entityType: z.enum(["exam", "board", "university", "recruitment"]).default("exam"),
+  entityType: z.enum(["exam", "board", "university-admission", "recruitment", "university-exam"]).default("exam"),
   conductingBody: z.string().default(""),
   officialWebsite: z.string().optional().default(""),
   status: z.enum(["upcoming", "active", "registration-open", "registration-closed", "result-declared", "completed", "ongoing"]).default("upcoming"),
@@ -213,6 +214,22 @@ export function ExamEditorPage() {
     }
   }, [watchedPillar]);
 
+  // The PILLAR decides the entity type — same rule as the DB CHECK constraint.
+  // A fixed pillar (government-exam, govt-vacancy, board-exam, university-exam)
+  // forces its one entity type. Only entrance-exam leaves a choice; if the
+  // current value isn't one of its two valid options, snap it back to "exam".
+  useEffect(() => {
+    if (!watchedPillar) return;
+    const fixed = entityTypeForPillar(watchedPillar);
+    if (fixed !== null) {
+      if (watchedEntityType !== fixed) {
+        form.setValue("entityType", fixed, { shouldDirty: true, shouldValidate: true });
+      }
+    } else if (!ENTRANCE_EXAM_ENTITY_CHOICES.includes(watchedEntityType as never)) {
+      form.setValue("entityType", "exam", { shouldDirty: true, shouldValidate: true });
+    }
+  }, [watchedPillar, watchedEntityType, form]);
+
   // Region vocabulary for the picker (states + UTs + all-india). Loaded once.
   useEffect(() => {
     getRegions().then(setRegions).catch(() => setRegions([]));
@@ -263,16 +280,20 @@ export function ExamEditorPage() {
     setSaving(true);
     try {
       const payload = buildUpdatePayload(data);
+      // Final backstop: the pillar decides the entity type at write time, so a
+      // stale form value can never persist a wrong pairing (the DB CHECK is the
+      // last line; this keeps the error out of the editor's face entirely).
+      const entityType = resolveEntityType(data.pillar, data.entityType);
       if (isNew) {
         const available = await checkSlugAvailable(data.slug);
         if (!available) { form.setError("slug", { message: "Slug already taken" }); setSaving(false); return; }
-        const created = await createExam({ slug: data.slug, name: data.name, shortName: data.shortName, pillar: data.pillar as Pillar, region: data.region, categoryId: data.categoryId, subcategoryId: data.subcategoryId, entityType: data.entityType, conductingBody: data.conductingBody, officialWebsite: data.officialWebsite, status: data.status, isFeatured: data.isFeatured, createdBy: user?.id });
+        const created = await createExam({ slug: data.slug, name: data.name, shortName: data.shortName, pillar: data.pillar as Pillar, region: data.region, categoryId: data.categoryId, subcategoryId: data.subcategoryId, entityType, conductingBody: data.conductingBody, officialWebsite: data.officialWebsite, status: data.status, isFeatured: data.isFeatured, createdBy: user?.id });
         await updateExam(created.id, payload);
         toast.success("Exam created!");
         navigate(`/exams/${created.id}`, { replace: true });
       } else {
         if (data.slug !== exam?.slug) { const available = await checkSlugAvailable(data.slug, id); if (!available) { form.setError("slug", { message: "Slug already taken" }); setSaving(false); return; } }
-        await updateExam(id!, { ...payload, slug: data.slug, name: data.name, shortName: data.shortName, pillar: data.pillar as Pillar, region: data.region, categoryId: data.categoryId, subcategoryId: data.subcategoryId, entityType: data.entityType, conductingBody: data.conductingBody, officialWebsite: data.officialWebsite, status: data.status, isFeatured: data.isFeatured });
+        await updateExam(id!, { ...payload, slug: data.slug, name: data.name, shortName: data.shortName, pillar: data.pillar as Pillar, region: data.region, categoryId: data.categoryId, subcategoryId: data.subcategoryId, entityType, conductingBody: data.conductingBody, officialWebsite: data.officialWebsite, status: data.status, isFeatured: data.isFeatured });
         toast.success("Exam saved!");
         // Background batched revalidation — debounced, non-blocking
         revalidateAfterExamSave({ id: id!, slug: data.slug, pillar: data.pillar, categorySlug: exam?.category ?? "" });
@@ -364,8 +385,16 @@ export function ExamEditorPage() {
             );
             if (rMatch) form.setValue("region", rMatch.slug, opts);
           }
-          const entityType = g.entityType ?? d.examType ?? d.entityType;
-          if (entityType && ["exam","board","university","recruitment"].includes(entityType)) form.setValue("entityType", entityType, opts);
+          // Entity type is NEVER taken from the AI directly — the pillar decides it,
+          // the same rule the editor and the DB CHECK enforce. For a fixed pillar the
+          // AI's proposed type is ignored entirely; for entrance-exam we let the AI's
+          // hint pick between the two valid options (exam | university-admission),
+          // defaulting to "exam". This runs after the pillar is set above.
+          const effectivePillar = (pillar && pillar.length > 0) ? pillar : watchedPillar;
+          const aiTypeHint = (g.entityType ?? d.examType ?? d.entityType) as string | undefined;
+          if (effectivePillar) {
+            form.setValue("entityType", resolveEntityType(effectivePillar, aiTypeHint), opts);
+          }
           if (g.conductingBody) form.setValue("conductingBody", g.conductingBody, opts);
           if (g.officialWebsite) form.setValue("officialWebsite", g.officialWebsite, opts);
           const status = g.status ?? d.status;
@@ -559,13 +588,27 @@ function GeneralTab({ form, pillars, regions, categories, subcategories, watched
   const advancedFields = entityProfile?.generalFields.filter((f) => f.priority === "advanced") ?? [];
   const cls = "w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 
+  // The pillar decides the entity type. For a fixed pillar the type is shown
+  // read-only (the value is forced by an effect in the parent); only entrance-exam
+  // offers a genuine choice between an entrance exam and a university admission.
+  const currentPillar: string = form.watch("pillar");
+  const currentEntityType: string = form.watch("entityType");
+  const pillarIsFixed = entityTypeForPillar(currentPillar) !== null;
+  const ENTITY_TYPE_LABELS: Record<string, string> = {
+    recruitment: "🏛️ Government Recruitment",
+    exam: "📝 Entrance Exam",
+    board: "🏫 Board Exam",
+    "university-admission": "🎓 University Admission",
+    "university-exam": "📚 University Exam",
+  };
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Exam Name *</label><input {...form.register("name")} onBlur={onNameBlur} placeholder="e.g. IBPS PO 2025" className={cls} />{form.formState.errors.name && <p className="text-xs text-red-500 mt-1">{form.formState.errors.name.message}</p>}</div>
         <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Slug *</label><input {...form.register("slug")} placeholder="ibps-po-2025" className={cn(cls, "font-mono")} />{form.formState.errors.slug && <p className="text-xs text-red-500 mt-1">{form.formState.errors.slug.message}</p>}</div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Short Name</label><input {...form.register("shortName")} placeholder="IBPS PO" className={cls} /></div>
-        <div><label className="block text-sm font-medium text-slate-700 mb-1">Entity Type</label><select {...form.register("entityType")} className={cls}><option value="recruitment">🏛️ Government Recruitment</option><option value="exam">📝 Entrance Exam</option><option value="board">🏫 Board Exam</option><option value="university">🎓 University Admission</option></select><p className="text-xs text-slate-400 mt-0.5">Changes fields, modules, and validation across all tabs</p></div>
+        <div><label className="block text-sm font-medium text-slate-700 mb-1">Entity Type</label>{pillarIsFixed ? (<><input type="text" readOnly value={ENTITY_TYPE_LABELS[currentEntityType] ?? currentEntityType} className={cn(cls, "bg-slate-50 text-slate-500 cursor-not-allowed")} /><p className="text-xs text-slate-400 mt-0.5">Set by the pillar — change the pillar to change the type</p></>) : (<><select {...form.register("entityType")} className={cls}><option value="exam">📝 Entrance Exam</option><option value="university-admission">🎓 University Admission</option></select><p className="text-xs text-slate-400 mt-0.5">Entrance exams only: choose an entrance exam or a university admission</p></>)}</div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Pillar *</label><select {...form.register("pillar")} className={cls}>{pillars.map((p) => <option key={p.slug} value={p.slug}>{p.label}</option>)}{pillars.length === 0 && <><option value="sarkari-naukri">Sarkari Naukri</option><option value="entrance-exam">Entrance Exam</option><option value="board-university">Board & University</option></>}</select></div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Region *</label><select {...form.register("region")} className={cls}><option value="">— Select —</option>{regions.filter((r) => r.kind === "national").map((r) => <option key={r.slug} value={r.slug}>{r.label}</option>)}{regions.some((r) => r.kind === "state") && <optgroup label="States">{regions.filter((r) => r.kind === "state").map((r) => <option key={r.slug} value={r.slug}>{r.label}</option>)}</optgroup>}{regions.some((r) => r.kind === "ut") && <optgroup label="Union Territories">{regions.filter((r) => r.kind === "ut").map((r) => <option key={r.slug} value={r.slug}>{r.label}</option>)}</optgroup>}</select>{form.formState.errors.region && <p className="text-xs text-red-500 mt-1">{form.formState.errors.region.message}</p>}<p className="text-xs text-slate-400 mt-0.5">Which state page this appears on. Choose All India for national exams.</p></div>
         <div><label className="block text-sm font-medium text-slate-700 mb-1">Category</label><select {...form.register("categoryId")} className={cls}><option value="">— Select —</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>

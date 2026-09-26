@@ -58,7 +58,7 @@ export interface Database {
           pillar: "sarkari-naukri" | "entrance-exam" | "board-university";
           category_id: string | null;
           subcategory_id: string | null;
-          entity_type: "exam" | "board" | "university" | "recruitment" | null;
+          entity_type: "exam" | "board" | "university-admission" | "recruitment" | "university-exam" | null;
           conducting_body: string;
           official_website: string | null;
           // status, has_*, important_dates, vacancy, eligibility, application_fee,
