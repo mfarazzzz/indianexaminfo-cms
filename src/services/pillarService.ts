@@ -39,6 +39,7 @@ function mapIdentity(row: any): ExamIdentity {
     name: row.name,
     shortName: row.short_name ?? "",
     pillar: row.pillar,
+    region: row.region ?? null,
     category: row.cat?.slug ?? "",
     subcategory: row.subcat?.slug ?? "",
     categoryId: row.category_id ?? null,
