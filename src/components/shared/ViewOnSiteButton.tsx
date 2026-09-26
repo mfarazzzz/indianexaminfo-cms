@@ -2,32 +2,13 @@ import React from "react";
 import { ExternalLink } from "lucide-react";
 import { SITE } from "@/config/site";
 
-/**
- * Maps CMS pillar slugs to the actual frontend route path.
- */
-function getFrontendPillar(cmsPillar: string): string {
-  const map: Record<string, string> = {
-    "government-exam": "government-exam",
-    "govt-vacancy": "govt-vacancy",
-    "entrance-exam": "entrance-exam",
-    "board-exam": "board-exam",
-    "university-exam": "university-exam",
-    "news": "news",
-    // Legacy fallbacks (in case old values still exist somewhere)
-    "sarkari-naukri": "government-exam",
-    "sarkari-bharti": "govt-vacancy",
-    "government-jobs": "govt-vacancy",
-    "board-university": "board-exam",
-  };
-  return map[cmsPillar] ?? cmsPillar;
-}
-
 interface ViewOnSiteButtonProps {
-  /** The pillar/section of the entity (e.g., "entrance-exam", "sarkari-naukri") */
-  pillar: string;
-  /** The category slug (optional) */
+  /** Pillar of the entity. Retained for call-site compatibility; the URL is now
+   *  resolved by the frontend /go/{slug} handler, so this is no longer used to build it. */
+  pillar?: string;
+  /** Category slug. Retained for call-site compatibility; no longer used to build the URL. */
   category?: string;
-  /** The item slug */
+  /** The item slug — the key /go/{slug} resolves against (exams.slug is unique). */
   slug: string;
   /** Whether the item is published/live — if false, shows a muted preview link */
   isPublished?: boolean;
@@ -42,8 +23,6 @@ interface ViewOnSiteButtonProps {
  * Shows for all items that have a slug. Published items get green color, drafts get muted.
  */
 export function ViewOnSiteButton({
-  pillar,
-  category,
   slug,
   isPublished = true,
   overridePath,
@@ -51,12 +30,12 @@ export function ViewOnSiteButton({
 }: ViewOnSiteButtonProps) {
   if (!slug) return null;
 
-  const frontendPillar = getFrontendPillar(pillar);
-  const path = overridePath
-    ? overridePath
-    : [frontendPillar, category, slug].filter(Boolean).join("/");
-
-  const href = `${SITE.frontendUrl}/${path}`;
+  // The CMS builds NO public URLs. It links to the frontend's /go/{slug} resolver,
+  // which looks the record up and 308s to its canonical URL (pillar → segment lives
+  // in the frontend only). `overridePath` stays as an escape hatch for non-exam links.
+  const href = overridePath
+    ? `${SITE.frontendUrl}/${overridePath}`
+    : `${SITE.frontendUrl}/go/${slug}`;
 
   if (size === "lg") {
     return (
