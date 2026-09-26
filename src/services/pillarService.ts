@@ -148,7 +148,7 @@ export function createPillarService(pillar: Pillar) {
       return { exam, currentEdition, editions };
     },
 
-    async create(input: { name: string; shortName: string; slug?: string; categoryId?: string; conductingBody: string; officialWebsite?: string; cycleFrequency?: CycleFrequency; entityType?: string; selectionModel?: SelectionModel; firstEditionYear: number }) {
+    async create(input: { name: string; shortName: string; slug?: string; region: string; categoryId?: string; conductingBody: string; officialWebsite?: string; cycleFrequency?: CycleFrequency; entityType?: string; selectionModel?: SelectionModel; firstEditionYear: number }) {
       const slug = input.slug || input.shortName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 60) || input.name.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 60);
 
       const { data: existing } = await db.from("exams").select("id").eq("slug", slug).maybeSingle();
@@ -156,7 +156,7 @@ export function createPillarService(pillar: Pillar) {
 
       const { data: examRow, error: examErr } = await db.from("exams").insert({
         slug, name: input.name, short_name: input.shortName,
-        pillar: pillar, category_id: input.categoryId || null,
+        pillar: pillar, region: input.region, category_id: input.categoryId || null,
         entity_type: input.entityType ?? "exam",
         selection_model: input.selectionModel ?? "written-exam",
         conducting_body: input.conductingBody,

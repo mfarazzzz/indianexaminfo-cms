@@ -11,6 +11,7 @@ import {
 } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
 import { deleteExam, setExamWorkflowStatus } from "@/services/examService";
+import { getRegions, type Region } from "@/services/regionService";
 import { getDerivedStatus, derivedStatusLabel, type DerivedStatusRow } from "@/services/derivedStatusService";
 import type { ExamWorkflowStatus } from "@/types/exam";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -56,6 +57,7 @@ type FormData = {
   name: string;
   shortName: string;
   slug: string;
+  region: string;
   categoryId: string;
   subcategoryId: string;
   conductingBody: string;
@@ -136,6 +138,7 @@ export function EntranceExamEditorPage() {
   const [draftEdition, setDraftEdition] = useState<ExamEdition | null>(null);
   const [editions, setEditions] = useState<ExamEdition[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
   const [activeTab, setActiveTab] = useState<string>("identity");
   const [showNewEdition, setShowNewEdition] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -188,7 +191,10 @@ export function EntranceExamEditorPage() {
 
   const form = useForm<FormData>({
     defaultValues: {
-      name: "", shortName: "", slug: "", categoryId: "", subcategoryId: "",
+      // region: REQUIRED on create, NO default — the picker starts on "— Select —"
+      // so a value must be chosen (the region lesson: a blank must block save, not
+      // silently write a wrong/national value). Validated in onSubmit + DB FK/NOT NULL.
+      name: "", shortName: "", slug: "", region: "", categoryId: "", subcategoryId: "",
       conductingBody: "", officialWebsite: "", cycleFrequency: "annual",
       // entityType is decided by the pillar (same rule as the DB CHECK). Only
       // entrance-exam leaves a choice; every other pillar is fixed.
@@ -213,6 +219,11 @@ export function EntranceExamEditorPage() {
   useEffect(() => {
     getCategories(pillarFromUrl).then(setCategories).catch(() => {});
   }, [pillarFromUrl]);
+
+  // Region vocabulary for the picker (states + UTs + all-india). Loaded once.
+  useEffect(() => {
+    getRegions().then(setRegions).catch(() => setRegions([]));
+  }, []);
 
   // The pillar (from the URL) decides the entity type — the same rule as the DB
   // CHECK. A fixed pillar forces its type; entrance-exam keeps a value only if
@@ -244,6 +255,7 @@ export function EntranceExamEditorPage() {
         name: data.exam.name,
         shortName: data.exam.shortName,
         slug: data.exam.slug,
+        region: data.exam.region ?? "",
         categoryId: data.exam.categoryId ?? "",
         subcategoryId: data.exam.subcategoryId ?? "",
         conductingBody: data.exam.conductingBody,
@@ -296,6 +308,15 @@ export function EntranceExamEditorPage() {
       return;
     }
 
+    // Region is REQUIRED (exams.region is NOT NULL + FK to regions). Block save on a
+    // blank rather than letting the DB reject it with an opaque constraint error.
+    // No default — the editor must consciously choose (the region lesson).
+    if (!data.region) {
+      toast.error("Region is required — choose a state, union territory, or All India.");
+      setActiveTab("identity");
+      return;
+    }
+
     setSaving(true);
     try {
       if (isNew) {
@@ -305,6 +326,7 @@ export function EntranceExamEditorPage() {
           shortName: data.shortName,
           slug: data.slug || undefined,
           pillar: pillarFromUrl,
+          region: data.region,
           categoryId: data.categoryId || undefined as any,
           conductingBody: data.conductingBody,
           officialWebsite: data.officialWebsite,
@@ -326,6 +348,7 @@ export function EntranceExamEditorPage() {
         name: data.name,
         shortName: data.shortName,
         slug: data.slug,
+        region: data.region,
         categoryId: data.categoryId,
         subcategoryId: data.subcategoryId || null,
         conductingBody: data.conductingBody,
@@ -1129,7 +1152,7 @@ export function EntranceExamEditorPage() {
           </div>
         )}
 
-        {activeTab === "identity" && <IdentityTab form={form} categories={categories} watchFrequency={watchFrequency} watchedSelectionModel={watchedSelectionModel} isNew={isNew} pillar={pillarFromUrl} />}
+        {activeTab === "identity" && <IdentityTab form={form} categories={categories} regions={regions} watchFrequency={watchFrequency} watchedSelectionModel={watchedSelectionModel} isNew={isNew} pillar={pillarFromUrl} />}
         {activeTab === "resources" && <ResourcesTab examId={exam?.id ?? null} />}
         {activeTab === "syllabus" && <SyllabusTab examId={exam?.id ?? null} />}
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency}
@@ -1219,7 +1242,7 @@ export function EntranceExamEditorPage() {
 
 // ── Tab Components ─────────────────────────────────────────────────────────
 
-function IdentityTab({ form, categories, watchFrequency, watchedSelectionModel, isNew, pillar }: { form: any; categories: Category[]; watchFrequency: CycleFrequency; watchedSelectionModel: SelectionModel; isNew: boolean; pillar: string }) {
+function IdentityTab({ form, categories, regions, watchFrequency, watchedSelectionModel, isNew, pillar }: { form: any; categories: Category[]; regions: Region[]; watchFrequency: CycleFrequency; watchedSelectionModel: SelectionModel; isNew: boolean; pillar: string }) {
   // The pillar decides the entity type. Only entrance-exam offers a choice.
   const pillarIsFixed = entityTypeForPillar(pillar) !== null;
   const currentEntityType: string = form.watch("entityType");
@@ -1235,6 +1258,24 @@ function IdentityTab({ form, categories, watchFrequency, watchedSelectionModel, 
       <Field label="Exam Name *" name="name" form={form} placeholder="Common Admission Test (CAT)" />
       <Field label="Short Name *" name="shortName" form={form} placeholder="CAT" />
       <Field label="Slug" name="slug" form={form} placeholder="auto-generated if empty" disabled={!isNew} />
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Region *</label>
+        <select {...form.register("region")} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
+          <option value="">— Select —</option>
+          {regions.filter((r) => r.kind === "national").map((r) => <option key={r.slug} value={r.slug}>{r.label}</option>)}
+          {regions.some((r) => r.kind === "state") && (
+            <optgroup label="States">
+              {regions.filter((r) => r.kind === "state").map((r) => <option key={r.slug} value={r.slug}>{r.label}</option>)}
+            </optgroup>
+          )}
+          {regions.some((r) => r.kind === "ut") && (
+            <optgroup label="Union Territories">
+              {regions.filter((r) => r.kind === "ut").map((r) => <option key={r.slug} value={r.slug}>{r.label}</option>)}
+            </optgroup>
+          )}
+        </select>
+        <p className="text-xs text-slate-400 mt-0.5">Which state page this appears on. Choose All India for national exams.</p>
+      </div>
       <div>
         <label className="block text-xs font-medium text-slate-600 mb-1">Category *</label>
         <select {...form.register("categoryId")} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">

@@ -76,6 +76,7 @@ export interface ExamIdentity {
   name: string;
   shortName: string;
   pillar: Pillar;
+  region: string | null;
   category: string;
   subcategory: string;
   categoryId: string | null;
@@ -138,6 +139,8 @@ export interface NewExamInput {
   shortName: string;
   slug?: string;
   pillar?: string;
+  /** Region slug (regions table FK). REQUIRED at the DB (NOT NULL); the editor enforces it. */
+  region: string;
   categoryId: string;
   subcategoryId?: string;
   conductingBody: string;
@@ -197,6 +200,7 @@ function mapExamIdentityRow(row: Record<string, unknown>): ExamIdentity {
     name: row.name as string,
     shortName: (row.short_name as string) ?? "",
     pillar: row.pillar as Pillar,
+    region: (row.region as string) ?? null,
     category: (row as any).cat?.slug ?? "",
     subcategory: (row as any).subcat?.slug ?? "",
     categoryId: (row.category_id as string) ?? null,
@@ -353,6 +357,7 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
       name: input.name,
       short_name: input.shortName,
       pillar: (input as any).pillar ?? "entrance-exam" as Pillar,
+      region: input.region,
       category_id: input.categoryId || null,
       subcategory_id: input.subcategoryId || null,
       entity_type: input.entityType ?? "exam",
@@ -419,6 +424,7 @@ export async function updateExamIdentity(
     name: string;
     shortName: string;
     slug: string;
+    region: string;
     categoryId: string;
     subcategoryId: string | null;
     conductingBody: string;
@@ -449,6 +455,7 @@ export async function updateExamIdentity(
       .replace(/-{2,}/g, "-")
       .replace(/^-+|-+$/g, "");
   }
+  if (input.region !== undefined) updates.region = input.region;
   if (input.categoryId !== undefined) updates.category_id = input.categoryId;
   if (input.subcategoryId !== undefined) updates.subcategory_id = input.subcategoryId;
   if (input.conductingBody !== undefined) updates.conducting_body = input.conductingBody;
