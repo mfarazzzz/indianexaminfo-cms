@@ -67,6 +67,10 @@ export function SarkariNaukriEditPage() {
     // State is the vacancy's routing key (becomes exams.region at merge). Required
     // on create, chosen from the regions list — no free text, no silent blank.
     if (!item.state?.trim()) { toast.error("State is required — choose All India for national vacancies"); return; }
+    // Validate date ordering: start must not be after end when both are present.
+    if (item.applicationStartDate && item.applicationEndDate && item.applicationStartDate > item.applicationEndDate) {
+      toast.error("Application start date must be on or before end date"); return;
+    }
 
     setSaving(true);
     try {
