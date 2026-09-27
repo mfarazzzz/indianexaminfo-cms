@@ -1,7 +1,13 @@
 # Bulletin — Layer 1 and the CMS home
 
-Status: design only, nothing built. Live numbers from project
-`cwbhhcqsrbuoybeaondk`, run 2026-09-28. Owner reviews before anything is coded.
+Status: build steps 1–3 are written as **PROPOSED** files
+(`supabase/proposed/page_traffic.sql`, `content_has_data_fn.sql`,
+`bulletin_rules_and_signals.sql`) and each was **compiled and run inside a
+rolled-back transaction** against live project `cwbhhcqsrbuoybeaondk` (run
+2026-09-28) to prove it works and return the counts below. **Nothing applied,
+nothing promoted** — owner reviews before any promotion. `content_has_data()`
+is pinned by a CI parity test (`src/lib/contentHasData.parity.test.ts`,
+PGlite): the same fixtures give identical booleans in SQL and TS.
 
 **Layer 1 rule (from the 26 Sep living doc):** the bulletin fires on **database
 signals only** — no AI, no editorial guesswork. It is the editor's daily work
@@ -12,7 +18,9 @@ to a separate **backlog** view, not the daily queue.
 ## a. Signals
 
 Two date sources, because vacancy content lives in two tables (see
-`vacancy-tables.md`).
+`vacancy-tables.md`). A signal is a **triple `(event, offset window, target)`**
+— NOT the event date alone: an event lights up a target over a *window* around
+its date, and the window differs per event (see the offsets table in a.3).
 
 ### a.1 `exam_editions.important_dates` (typed jsonb array)
 
@@ -63,8 +71,35 @@ columns. Each column, when set, maps to the paired URL/content field:
 | `document_verification_date` | document-verification details |
 | `walk_in_date` | `walk_in_venue` + closed marker |
 
-A signal is therefore `(entity, event_type, event_date)` from either source,
-keyed to exactly one **target** section/field.
+Each signal resolves to exactly one **target** section/field. The recency
+window is **offsets applied to the event date**, held as tunable rows in
+`bulletin_rules` (§d) — never a hard-coded CASE — so editors can retune without
+a deploy.
+
+### a.3 Offsets (`bulletin_rules`)
+
+A signal is active while `today ∈ [event_date + offset_from_days, event_date +
+offset_to_days]`. `arrived` = active **and** `today ≥ event_date`; `upcoming` =
+active **and** `today < event_date`. Base self-date events use `[-7, +3]`, which
+reproduces the prior "arrived = last 3 days / upcoming = next 7 days" behaviour
+exactly. The exam events each fan out to **two** targets:
+
+| event_type | target_section | offset_from_days | offset_to_days | meaning |
+|---|---|---|---|---|
+| notification | overview | -7 | 3 | as now |
+| application_start | application-process | -7 | 3 | as now |
+| application_end | application-process | -7 | 3 | as now |
+| admit_card | admit-card | -7 | 3 | as now |
+| answer_key | answer-key | -7 | 3 | as now |
+| result | result | -7 | 3 | as now |
+| merit_list | merit-list | -7 | 3 | as now |
+| counselling | seat-allotment | -7 | 3 | as now |
+| interview | interview-schedule | -7 | 3 | as now |
+| **exam_written / exam_physical / exam_practical** | **admit-card** | **-10** | **0** | lead-up: admit card must exist by exam day |
+| **exam_written / exam_physical / exam_practical** | **answer-key** | **+1** | **+10** | follow-up: answer key expected after the exam |
+
+(These are the seed rows inserted into `bulletin_rules`; editors tune them with
+plain UPDATEs, gated by `edit_any_post` — §d.)
 
 ## b. The existence rule — one implementation
 
@@ -92,87 +127,103 @@ view, and bind them with one **parity test** (same fixtures in, same booleans
 out) so "one fact, one place" holds under test rather than hope. The generated-
 column variant is the fallback only if the function proves slow at queue scale.
 
-## c. Windows
+## c. Buckets (offsets applied) — recomputed live
 
-Definitions (defaults, editor-tunable): **Just arrived** = date passed in the
-last N=3 days (`date ∈ [today-3, today]`); **Coming up** = date in the next M=7
-days (`date ∈ (today, today+7]`); **Backlog** = older than N days. A fourth
-bucket, **Future** (beyond +7), is out of every queue.
+The recency column is named **`bucket`**, not `window` (`window` is a reserved
+word). A signal's active span is `[event_date + offset_from_days, event_date +
+offset_to_days]` from `bulletin_rules` (a.3):
 
-Live counts today across the 478 dated `important_dates` events
-(`exam_editions ⋈ exams`):
+- **arrived** — active **and** `today ≥ event_date`
+- **upcoming** — active **and** `today < event_date`
+- **backlog** — `today > event_date + offset_to_days` (past the window)
+- **future** — `today < event_date + offset_from_days` (before the window)
 
-- Just arrived (3d): **1** — a govt-vacancy `exam_written` in Chhattisgarh.
-- Coming up (7d): **8** — 6 exam_written, 1 result, 1 application_end.
-- Backlog (older): **405**.
-- Future (beyond 7d): 64.
+Recomputed live from the rolled-back run (both date sources, offsets applied,
+project `cwbhhcqsrbuoybeaondk`, 2026-09-28). "open" = `NOT has_content`, i.e.
+actionable work:
 
-Per pillar (arrived / upcoming / backlog / future):
+- **Arrived: 14 signals (5 open)** — 5 from `exam_editions` (all open), 9 from
+  `sarkari_naukri` (all already have content → 0 open).
+- **Upcoming: 21 signals (11 open)** — 12 from `exam_editions` (11 open), 9 from
+  `sarkari_naukri` (0 open).
+- **Backlog: 800 signals (548 open)** · **Future: 251 signals (100 open)**.
 
-| Pillar | Arrived 3d | Upcoming 7d | Backlog | Future | Total |
-|---|---|---|---|---|---|
-| government-exam | 0 | 3 | 119 | 26 | 148 |
-| entrance-exam | 0 | 1 | 114 | 9 | 124 |
-| govt-vacancy | 1 | 3 | 82 | 25 | 111 |
-| board-exam | 0 | 1 | 63 | 2 | 66 |
-| university-exam | 0 | 0 | 27 | 2 | 29 |
+Signal counts are higher than the old 478-event model because (a) each exam
+event now fans to **two** targets (admit-card lead window + answer-key follow
+window) and (b) the 361 `sarkari_naukri` result dates contribute — but every
+naukri signal is already `has_content` (its `result_url` is present), so the
+vacancy source adds **0 open work** today and the actionable queue stays short.
 
-Per region (nonzero arrived/upcoming shown; `all-india` is the national pool):
+Per pillar (signals, with open work in parentheses):
 
-| Region | Arrived 3d | Upcoming 7d | Backlog |
-|---|---|---|---|
-| chhattisgarh | 1 | 0 | 7 |
-| all-india | 0 | 5 | 219 |
-| uttar-pradesh | 0 | 2 | 28 |
-| tamil-nadu | 0 | 1 | 8 |
-| *(all other states)* | 0 | 0 | 135 (sum of ≤19 each) |
+| Pillar | Arrived (open) | Upcoming (open) |
+|---|---|---|
+| government-exam | 2 (2) | 4 (3) |
+| entrance-exam | 0 (0) | 1 (1) |
+| govt-vacancy | 3 (3) | 5 (5) |
+| board-exam | 0 (0) | 2 (2) |
+| university-exam | 0 (0) | 0 (0) |
+| sarkari-naukri (dormant) | 9 (0) | 9 (0) |
 
-Read: with a 3-day window the **daily queue is genuinely short (1 arrived, 8
-coming up)**, which is the point — layer 1 surfaces what is live *now*, and the
-405 older gaps sit behind the backlog link rather than the editor's first
-screen.
+A per-region cut is available by adding `GROUP BY region` to the same
+`bulletin_signals` query (the view carries `region`); it is omitted here rather
+than carried as stale event-date numbers.
+
+Read: even with the widened, two-target windows the **actionable daily queue is
+small — 5 open arrived, 11 open upcoming** — which is the point. Layer 1
+surfaces what is live *now*; the ~548 older open gaps sit behind the backlog
+link rather than the editor's first screen.
 
 ## d. Data model
 
-Two pieces: a computed signal (no stored rows to drift) and a tiny editor-state
-table (the only mutable state).
+Three pieces: the tunable `bulletin_rules` offset table (seeded rows, no CASE),
+a computed `bulletin_signals` view (no stored rows to drift), and a tiny
+editor-state table (the only mutable state). `supabase/proposed/bulletin_rules_and_signals.sql`
+is the source of truth; the shape is:
 
 ```sql
--- Computed view: one row per (entity, event) with window + whether content exists yet
-create view public.bulletin_signals as
+-- 1) bulletin_rules — the editor-tunable OFFSETS table (§a.3), NOT a hard CASE.
+--    Rows, so editors retune windows with plain UPDATEs (gated by edit_any_post).
+create table public.bulletin_rules (
+  event_type       text    not null,
+  target_section   text    not null,
+  offset_from_days integer not null default -7,
+  offset_to_days   integer not null default 3,
+  primary key (event_type, target_section)
+);
+-- seeded: base events [-7,+3] (reproduces arrived=last-3d / upcoming=next-7d),
+-- and exam_written|physical|practical → admit-card [-10,0] + answer-key [+1,+10].
+
+-- 2) bulletin_signals — one row per (entity, event, target) with its bucket and
+--    whether the target already has content. WITH (security_invoker = true): the
+--    view reads the base tables under the QUERYING user's privileges + RLS, not
+--    the owner's. Two date sources UNION'd:
+--      • exam_editions.important_dates → registry section, content via the
+--        canonical content_has_data(<HasDataView jsonb>, target) (§b) — the SAME
+--        rule the site uses, evaluated in SQL.
+--      • sarkari_naukri date columns → paired url/field (§a.2), so vacancy
+--        signals light up as editors enter dates (only result_date set today).
+create view public.bulletin_signals
+with (security_invoker = true) as
 select
-  e.id            as edition_id,
-  ex.id           as exam_id,
-  ex.slug         as exam_slug,
-  ex.pillar::text as pillar,
-  ex.region::text as region,
-  lower(d->>'type')          as event_type,
-  (d->>'date')::date         as event_date,
-  case
-    when (d->>'date')::date between current_date - 3 and current_date then 'arrived'
-    when (d->>'date')::date >  current_date
-     and (d->>'date')::date <= current_date + 7                        then 'upcoming'
-    else 'backlog'
-  end                        as window,
-  s.section_slug             as target_section,          -- event_type -> section map
-  content_has_data(ex.id, s.section_slug) as has_content  -- §b canonical rule
-from exam_editions e
-join exams ex on ex.id = e.exam_id
-cross join lateral jsonb_array_elements(
-  case when jsonb_typeof(e.important_dates)='array'
-       then e.important_dates else '[]'::jsonb end) as d
-join lateral (select case lower(d->>'type')     -- event_type -> target section
-     when 'admit_card' then 'admit-card' when 'result' then 'result'
-     when 'answer_key' then 'answer-key' when 'merit_list' then 'merit-list'
-     when 'notification' then 'overview'
-     when 'application_start' then 'application-process'
-     when 'application_end'    then 'application-process'
-     when 'interview' then 'interview-schedule'
-     when 'counselling' then 'seat-allotment'
-     else null end as section_slug) s on true
-where (d->>'date') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
-  and s.section_slug is not null;
--- A signal is OPEN work when: window in ('arrived','upcoming') AND NOT has_content.
+  raw.source_table, raw.exam_id, raw.edition_id, raw.naukri_id, raw.slug, raw.title,
+  raw.pillar, raw.region, raw.event_type, raw.target_section, raw.event_date,
+  raw.has_content,
+  case   -- column is "bucket", NOT "window" (window is a reserved word)
+    when current_date between raw.event_date + raw.offset_from_days
+                          and raw.event_date + raw.offset_to_days
+         and current_date >= raw.event_date then 'arrived'
+    when current_date between raw.event_date + raw.offset_from_days
+                          and raw.event_date + raw.offset_to_days
+         and current_date <  raw.event_date then 'upcoming'
+    when current_date >  raw.event_date + raw.offset_to_days then 'backlog'
+    else 'future'
+  end as bucket,
+  (raw.source_table || ':' || coalesce(raw.edition_id::text, raw.naukri_id::text)
+     || ':' || raw.event_type || ':' || raw.event_date::text || ':' || raw.target_section
+  ) as signal_key
+from ( /* exam_editions ⋈ exams ⋈ bulletin_rules  UNION ALL  sarkari_naukri */ ) raw;
+-- A signal is OPEN work when: bucket in ('arrived','upcoming') AND NOT has_content.
 -- It AUTO-RESOLVES the instant has_content flips true — no state to clear.
 ```
 
@@ -190,28 +241,36 @@ create table public.bulletin_editor_state (
 );
 ```
 
-A signal shows in a queue when its window is `arrived`/`upcoming`, `has_content`
+A signal shows in a queue when its bucket is `arrived`/`upcoming`, `has_content`
 is false, and it is not currently snoozed
 (`status<>'snoozed' or snooze_until < current_date`). `done-by-hand` suppresses
 it even if `has_content` is still false (editor judged it not needed).
 **Auto-resolution is by `has_content`, not by editor action** — the moment the
 page gains content the signal leaves the queue on its own.
 
-**RLS (the intern acts; publishing stays gated):**
+**RLS (permission-based — never the JWT role claim, never role names):**
 
 ```sql
 alter table public.bulletin_editor_state enable row level security;
--- any authenticated editor reads the board
-create policy bulletin_read on public.bulletin_editor_state
-  for select to authenticated using (true);
--- an intern/editor may insert+update state (assign, snooze, note, mark done-by-hand)
-create policy bulletin_write_state on public.bulletin_editor_state
-  for all to authenticated
-  using (true) with check (auth.jwt() ->> 'role' in ('intern','editor','admin'));
--- editor_state carries NO content and grants NO publish right;
--- the only publish path stays the gated verify/publish trigger from M3
--- (publish_post permission). The bulletin moves work, never ships it.
+-- read: any editor (holder of edit_own_post OR edit_any_post)
+create policy editor_state_read on public.bulletin_editor_state
+  for select to authenticated using (
+    current_user_has_permission('edit_own_post')
+    or current_user_has_permission('edit_any_post'));
+-- write (assign / snooze / note / done-by-hand): edit_any_post ONLY
+create policy editor_state_insert on public.bulletin_editor_state
+  for insert to authenticated with check (current_user_has_permission('edit_any_post'));
+create policy editor_state_update on public.bulletin_editor_state
+  for update to authenticated
+  using (current_user_has_permission('edit_any_post'))
+  with check (current_user_has_permission('edit_any_post'));
+-- NO delete policy -> deletes are denied to every API role (deny-all).
+-- editor_state carries NO content and grants NO publish right; the only publish
+-- path stays the gated verify/publish trigger from M3 (publish_post).
 ```
+
+`bulletin_rules` uses the same shape: read for `edit_own_post`/`edit_any_post`,
+insert/update/delete for `edit_any_post` (senior editors tune the offsets).
 
 ## e. Priority — `page_traffic`
 
@@ -228,6 +287,23 @@ create table public.page_traffic (
   loaded_at    timestamptz not null default now(),
   primary key (url, period_start, period_end)
 );
+
+-- RLS — permission-based, never the JWT role claim / role names:
+--   read  = any editor (edit_own_post OR edit_any_post)
+--   write = manage_settings ONLY (the CMS "Import GSC CSV" upload runs as a USER,
+--           not the service role, so the writer must hold a real permission)
+--   delete = NO policy (deny-all; traffic is only ever upserted)
+alter table public.page_traffic enable row level security;
+create policy page_traffic_read on public.page_traffic
+  for select to authenticated using (
+    current_user_has_permission('edit_own_post')
+    or current_user_has_permission('edit_any_post'));
+create policy page_traffic_insert on public.page_traffic
+  for insert to authenticated with check (current_user_has_permission('manage_settings'));
+create policy page_traffic_update on public.page_traffic
+  for update to authenticated
+  using (current_user_has_permission('manage_settings'))
+  with check (current_user_has_permission('manage_settings'));
 ```
 
 Signals join to it on their canonical URL (`/sarkari-naukri/{slug}` or
@@ -253,10 +329,10 @@ bulletin becomes the first thing an editor sees.
 ```
 IndianExamInfo CMS
 ├─ Bulletin            (home; default route)
-│    ├─ Just arrived        (3d)         [1]
-│    ├─ Coming up           (7d)         [8]
+│    ├─ Just arrived        (open work)  [5]
+│    ├─ Coming up           (open work)  [11]
 │    ├─ Verification queue  (unverified vacancies, by traffic)   [361 ▲]
-│    └─ Backlog             (older gaps) [405 →]
+│    └─ Backlog             (older gaps) [548 →]
 ├─ Vacancies        → sarkari_naukri list/editor
 ├─ Exams            → exam manager (all pillars)
 ├─ Content          → posts / news
@@ -269,11 +345,11 @@ IndianExamInfo CMS
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ Bulletin                                   Mon 28 Sep 2026      [Faraz ▾] │
 ├──────────────────────────────────────────────────────────────────────────┤
-│ JUST ARRIVED  (last 3 days)                                     1 item     │
+│ JUST ARRIVED  (open work now)                                  5 items     │
 │  ─────────────────────────────────────────────────────────────────────── │
 │  Exam date 26 Sep · Chhattisgarh govt-vacancy   admit-card    ○ empty  ▸  │
 │                                                                            │
-│ COMING UP  (next 7 days)                                       8 items     │
+│ COMING UP  (open work next)                                   11 items     │
 │  ─────────────────────────────────────────────────────────────────────── │
 │  04 Oct  Result declared   SSC CGL 2026            result     ● live   ▸  │
 │  02 Oct  App closes        UP Police Constable     applic…    ● live   ▸  │
@@ -286,7 +362,7 @@ IndianExamInfo CMS
 │  bihar-mgnrega-rozgar-sewak              72 clicks   end-date? no  [open] │
 │   …  (none verifiable yet: application_end_date is empty — fill to Verify)│
 │                                                                            │
-│ BACKLOG  (older gaps)                                         405   → all  │
+│ BACKLOG  (older gaps)                                         548   → all  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -295,10 +371,10 @@ bordered **rows** separated by a single hairline — never cards, never tiles.
 Each row, left to right: the **date** (or age), the entity name, the target
 section, a **completeness signal** (`● live` when `has_content`, `○ empty`
 when not), a traffic number where relevant, and a chevron. Rows are **sortable**
-by date and by traffic, and the window/pillar/region are filters above the list.
+by date and by traffic, and the bucket/pillar/region are filters above the list.
 
 ```
-Vacancies                                          filter: ▾pillar ▾region ▾window
+Vacancies                                          filter: ▾pillar ▾region ▾bucket
 ──────────────────────────────────────────────────────────────────────────────
 Date        Entity                         Section        State     Traffic   ▸
 ──────────────────────────────────────────────────────────────────────────────
@@ -336,41 +412,56 @@ that made this row appear, and what is still missing):
 
 ## g. Build plan — each step ships alone
 
-Named as proposed files (`supabase/proposed/`, per AGENTS.md; never auto-applied;
-owner promotes to `migrations/` only after approval because a push applies the
-whole `migrations/` directory).
+Named as **PROPOSED** files under `supabase/proposed/` (per AGENTS.md; never
+auto-applied). The owner promotes to `supabase/migrations/` only after approval,
+because a push applies the whole `migrations/` directory. **Promotion rule (h):
+the `migrations/` version prefix is the UTC time of the promotion, assigned the
+moment the file is moved — never a placeholder or a future date.** So the
+proposed files carry descriptive names, not fake timestamps.
 
-1. **Traffic substrate.** `20261001120000_create_page_traffic.sql` — the
-   `page_traffic` table + RLS (read for all editors, write via a service role).
+**Steps 1–3 are written and verified** — each compiled and run inside a
+rolled-back transaction against live `cwbhhcqsrbuoybeaondk` (counts in §c).
+**Nothing applied, nothing promoted.**
+
+1. **Traffic substrate.** `supabase/proposed/page_traffic.sql` — the
+   `page_traffic` table + **permission-based RLS** (read = `edit_own_post`/
+   `edit_any_post`; write = `manage_settings` only, since the CMS "Import GSC
+   CSV" upload runs as a *user*, not the service role; **no delete policy**).
    Ships a table with no behaviour change; enables the CSV loader.
-   Frontend-independent.
-2. **Canonical existence rule.** `20261002120000_content_has_data_fn.sql` — the
-   SQL `content_has_data(exam_id, section)` function mirroring `sectionRegistry`.
-   Acceptance: the **parity test** (fixtures → identical booleans in SQL and TS).
-   Nothing consumes it yet.
-3. **Signal view.** `20261003120000_bulletin_signals_view.sql` —
-   `bulletin_signals` view (windows + target-section map + `has_content` via
-   step 2). Read-only; a CMS query against it is the first live use.
-4. **Editor state + RLS.** `20261004120000_bulletin_editor_state.sql` —
-   `bulletin_editor_state` table + the assign/snooze/done-by-hand policies
-   (intern acts, publishing stays gated by the M3 trigger). Independent.
+   Frontend-independent. ✅ built + verified.
+2. **Canonical existence rule.** `supabase/proposed/content_has_data_fn.sql` —
+   the SQL `content_has_data(view jsonb, section text)` function: a **pure jsonb**
+   mirror of `sectionRegistry` (the same `HasDataView` the TS uses), so ONE
+   evaluator serves both the bulk queue and the single-page site. Acceptance: the
+   **parity test** (`src/lib/contentHasData.parity.test.ts`, PGlite in CI) —
+   fixtures → identical booleans in SQL and TS. ✅ built, 68 parity assertions
+   pass in CI.
+3. **Offsets + signal view.** `supabase/proposed/bulletin_rules_and_signals.sql`
+   — the `bulletin_rules` offset table (§a.3) and the `bulletin_signals` view:
+   **bucket** (not `window`), `WITH (security_invoker = true)`, both date sources
+   UNION'd (exam editions + sarkari_naukri), `has_content` via step 2. Read-only;
+   a CMS query against it is the first live use. ✅ built + verified (§c counts).
+4. **Editor state + RLS.** `supabase/proposed/bulletin_editor_state.sql` —
+   `bulletin_editor_state` table + permission-based policies (§d): read =
+   `edit_own_post`/`edit_any_post`; write (insert/update) = `edit_any_post`;
+   **no delete**. Not yet written. Independent.
 5. **Bulletin home.** CMS: replace the default route with the bulletin
    (Just arrived / Coming up / Verification queue / Backlog) reading
    `bulletin_signals ⋈ page_traffic`, wired to `bulletin_editor_state`. The
    dashboard stays reachable at `/dashboard`. Ships the queue with no public
-   surface change.
-6. **Vacancy date backfill + list pattern.** CMS: shared bordered-row list
-   component reused by bulletin/vacancies/exams; and the sarkari_naukri editor
-   gains the typed date fields (§a.2) so the dormant vacancy signals light up and
-   unblock Verify (application_end_date). Frontend untouched.
+   surface change. Not yet built.
+6. **Shared row-list component.** CMS: the bordered **row** list (§f list-page
+   pattern) as ONE component reused by bulletin / vacancies / exams. (The
+   sarkari_naukri editor **already** has the typed date fields of §a.2, so the
+   earlier "add the date fields" item was stale and is removed — there is no
+   backfill step here.) Frontend untouched.
 7. **Traffic refresh path.** CMS "Import GSC CSV" upload (owner-driven, monthly)
    upserting `page_traffic`; reuses the existing export format so no new schema.
 8. **Optional column cache.** Only if step 3's bulk read is slow at scale:
-   `20261008120000_has_content_generated_columns.sql` — generated
-   `has_result`/`has_admit_card`/… columns maintained from step 2's function so
-   the queue scans an index instead of a jsonb eval. Kept as a proposal,
-   justified by a measured number, not assumed.
+   generated `has_result`/`has_admit_card`/… columns maintained from step 2's
+   function so the queue scans an index instead of a jsonb eval. Kept as a
+   proposal, justified by a measured number, not assumed.
 
-Steps 1–4 are pure data-layer and can land in any order after 1; 5 is the first
+Steps 1–3 are pure data-layer and land in any order after 1; 5 is the first
 user-visible screen; 6–8 refine. No step changes a public URL, so the
 `vacancy-tables.md` one-hop constraint is never threatened.

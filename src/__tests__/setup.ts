@@ -7,8 +7,11 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
 }
 
-// jsdom does not implement PointerEvent fully — required by dnd-kit
-if (!global.PointerEvent) {
+// jsdom does not implement PointerEvent fully — required by dnd-kit.
+// Guarded so `node`-environment tests (e.g. the PGlite parity test, which
+// declares `// @vitest-environment node`) can load this shared setup too: MouseEvent
+// exists only under jsdom, so the shim is defined only when it does.
+if (typeof MouseEvent !== 'undefined' && !global.PointerEvent) {
   class PointerEvent extends MouseEvent {
     constructor(type: string, params: PointerEventInit = {}) {
       super(type, params)
