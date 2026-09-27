@@ -83,28 +83,51 @@ CREATE TRIGGER sarkari_naukri_verify
 -- ── 2. Test harness ──────────────────────────────────────────────────────────
 CREATE TEMP TABLE _jt_results (seq int, name text, outcome text) ON COMMIT DROP;
 
+-- Resolve the two identities HERE, while still the table owner (RLS on the RBAC
+-- tables is bypassed), so the authenticated-role DML below needs no RBAC reads.
+--   editor: holds publish_post AND can write (create_post + edit_any_post)
+--   none  : can write (create_post + edit_any_post) but NOT publish_post
+CREATE TEMP TABLE _jt_ids (editor uuid, none uuid) ON COMMIT DROP;
+INSERT INTO _jt_ids
+SELECT
+  (SELECT up.id FROM user_profiles up
+     JOIN role_permissions rp ON rp.role_id = up.role_id
+     JOIN permissions p ON p.id = rp.permission_id
+    WHERE up.is_active AND p.slug = 'publish_post'
+      AND up.id IN (SELECT up2.id FROM user_profiles up2
+                      JOIN role_permissions rp2 ON rp2.role_id = up2.role_id
+                      JOIN permissions p2 ON p2.id = rp2.permission_id
+                     WHERE p2.slug IN ('create_post','edit_any_post')
+                     GROUP BY up2.id HAVING count(DISTINCT p2.slug) = 2)
+    LIMIT 1),
+  (SELECT up.id FROM user_profiles up
+    WHERE up.is_active
+      AND up.id IN (SELECT up2.id FROM user_profiles up2
+                      JOIN role_permissions rp2 ON rp2.role_id = up2.role_id
+                      JOIN permissions p2 ON p2.id = rp2.permission_id
+                     WHERE p2.slug IN ('create_post','edit_any_post')
+                     GROUP BY up2.id HAVING count(DISTINCT p2.slug) = 2)
+      AND NOT EXISTS (SELECT 1 FROM role_permissions rp
+                        JOIN permissions p ON p.id = rp.permission_id
+                       WHERE rp.role_id = up.role_id AND p.slug = 'publish_post')
+    LIMIT 1);
+
+-- Run the DML as the real API role `authenticated`, so the RLS write policies
+-- (staff_insert_sarkari: create_post; staff_update_sarkari: edit_any_post) apply
+-- rather than being bypassed by the owner. current_user_has_permission() is
+-- SECURITY DEFINER and reads auth.uid() from the JWT claim GUC, so the trigger's
+-- publish_post outcome still follows the claim set per case below.
+GRANT SELECT, INSERT ON _jt_results, _jt_ids TO authenticated;
+SET LOCAL ROLE authenticated;
+
 DO $$
 DECLARE
   v_editor   uuid;   -- a user who holds publish_post
-  v_none     uuid;   -- a user who does NOT hold publish_post
+  v_none     uuid;   -- can write, but does NOT hold publish_post
   v_id       uuid;
   v_verified timestamptz;
 begin
-  SELECT up.id INTO v_editor
-    FROM user_profiles up
-    JOIN role_permissions rp ON rp.role_id = up.role_id
-    JOIN permissions p       ON p.id = rp.permission_id
-   WHERE p.slug = 'publish_post' AND up.is_active = true
-   LIMIT 1;
-
-  SELECT up.id INTO v_none
-    FROM user_profiles up
-   WHERE up.is_active = true
-     AND NOT EXISTS (
-       SELECT 1 FROM role_permissions rp
-       JOIN permissions p ON p.id = rp.permission_id
-      WHERE rp.role_id = up.role_id AND p.slug = 'publish_post')
-   LIMIT 1;
+  SELECT editor, none INTO v_editor, v_none FROM _jt_ids;
 
   IF v_editor IS NULL OR v_none IS NULL THEN
     RAISE EXCEPTION 'need one user WITH and one WITHOUT publish_post (editor=%, none=%)', v_editor, v_none;

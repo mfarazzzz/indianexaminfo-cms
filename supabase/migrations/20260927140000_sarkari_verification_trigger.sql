@@ -18,7 +18,8 @@
 -- permission (verified live), as are Admin and Editor; Content Intern / Writer /
 -- Ad Manager / Viewer are not.
 --
--- DO NOT APPLY without owner approval.
+-- STATUS: APPLIED to the remote on 27 Sep 2026 via CLI (supabase_migrations row
+-- 20260927140000 has created_by = null, i.e. `supabase db push`, not MCP).
 -- Generated 2026-09-27 (J2 revision same day).
 
 CREATE OR REPLACE FUNCTION public.trg_sarkari_verify()
