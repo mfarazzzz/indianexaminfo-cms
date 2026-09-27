@@ -11,11 +11,11 @@ import {
 import { getRegions, type Region } from "@/services/regionService";
 
 // Verification is enforced server-side by the DB trigger (migration
-// 20260927140000_sarkari_verification_trigger.sql). Until that migration is
-// applied to the live database, the Verify action is HIDDEN — exposing it now
-// would let a client write verified_at with none of the trigger's guards.
-// Flip to true the moment the migration is applied.
-const VERIFICATION_ENABLED = false;
+// 20260927140000_sarkari_verification_trigger.sql). That migration is APPLIED to
+// the live database (verified 2026-09-28: constraint + trigger present, trigger
+// proven 8/8 as the authenticated role), so the Verify action is enabled. A
+// trigger refusal is surfaced to the editor in plain words (see humanizeVerifyError).
+const VERIFICATION_ENABLED = true;
 
 export function SarkariNaukriEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -38,6 +38,7 @@ export function SarkariNaukriEditPage() {
   });
 
   const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   const [verifiedAt, setVerifiedAt] = useState<string | null>(null);
 
   // Region vocabulary for the picker (states + UTs + all-india). Loaded once.
@@ -281,14 +282,22 @@ export function SarkariNaukriEditPage() {
           {!isNew && VERIFICATION_ENABLED && !verifiedAt && (
             <button type="button" disabled={verifying}
               onClick={async () => {
-                setVerifying(true);
+                setVerifying(true); setVerifyError(null);
                 try { const updated = await verifySarkariNaukri(id!); setVerifiedAt(updated.verifiedAt); toast.success("Verified"); }
-                catch (err) { toast.error(err instanceof Error ? err.message : "Verify failed"); }
+                catch (err) {
+                  // verifySarkariNaukri throws an Error whose message is already plain
+                  // words (humanizeVerifyError maps the trigger's refusals).
+                  const msg = err instanceof Error ? err.message : "Verification failed. Please try again.";
+                  setVerifyError(msg); toast.error(msg);
+                }
                 finally { setVerifying(false); }
               }}
               className="text-xs rounded border border-green-300 px-2 py-1 text-green-700 hover:bg-green-50 disabled:opacity-50">
               {verifying ? "Verifying…" : "Verify against official notification"}
             </button>
+          )}
+          {verifyError && (
+            <span className="text-xs text-red-600 font-medium">{verifyError}</span>
           )}
           {!VERIFICATION_ENABLED && !verifiedAt && (
             <span className="text-xs italic text-slate-400">verification not yet enabled</span>

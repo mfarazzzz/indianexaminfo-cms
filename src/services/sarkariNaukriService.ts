@@ -449,9 +449,33 @@ export async function updateSarkariNaukri(id: string, input: Partial<SarkariNauk
 // ── Verification ─────────────────────────────────────────────────────────────
 
 /**
+ * Translate a verification trigger refusal into plain words for the editor.
+ * The DB trigger (20260927140000) raises one of three guarded messages; we map
+ * each to a human instruction so the UI never shows a raw Postgres error. The
+ * PostgREST error is a plain object (NOT an instanceof Error), and its RAISE
+ * text arrives on `.message`, so we read it directly.
+ */
+export function humanizeVerifyError(
+  err: { message?: string; code?: string; details?: string; hint?: string } | null | undefined,
+): string {
+  const msg = String(err?.message ?? '')
+  if (err?.code === '42501' || /permission denied/i.test(msg) || /publish_post/i.test(msg)) {
+    return "You can’t verify this: your role doesn’t have the publish_post permission."
+  }
+  if (/official_notification_url/i.test(msg) || /notification url/i.test(msg)) {
+    return "Can’t verify yet: add the official notification link (an http/https URL) and save first."
+  }
+  if (/application_end_date/i.test(msg) || /end date/i.test(msg)) {
+    return "Can’t verify yet: set the application end date and save first."
+  }
+  return msg || 'Verification failed. Please try again.'
+}
+
+/**
  * Verify a recruitment against the official notification.
  * Sends a non-null verified_at value; the DB trigger replaces it with now()
  * and enforces preconditions (official_notification_url + application_end_date).
+ * A trigger refusal is surfaced as an Error whose `.message` is plain words.
  */
 export async function verifySarkariNaukri(id: string): Promise<SarkariNaukri> {
   const { data, error } = await db
@@ -459,8 +483,12 @@ export async function verifySarkariNaukri(id: string): Promise<SarkariNaukri> {
     .update({ verified_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('id', id)
     .select('*')
-  if (error) throw error
-  if (!data || data.length === 0) throw new Error('Verify failed: preconditions not met or insufficient role')
+  // The trigger RAISEs → PostgREST returns an error whose message is the guard
+  // text; humanize it so callers can show it directly.
+  if (error) throw new Error(humanizeVerifyError(error))
+  if (!data || data.length === 0) {
+    throw new Error('Verification was refused by the server (no rows updated). Check the official link, the application end date, and your publish permission.')
+  }
   const row = mapRow(data[0] as Record<string, unknown>)
   // L5: verification flips verified_at-gated UI (result/merit link, dates) —
   // the frontend must drop its cached render of this vacancy.

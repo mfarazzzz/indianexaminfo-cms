@@ -18,8 +18,13 @@
 -- permission (verified live), as are Admin and Editor; Content Intern / Writer /
 -- Ad Manager / Viewer are not.
 --
--- STATUS: APPLIED to the remote on 27 Sep 2026 via CLI (supabase_migrations row
--- 20260927140000 has created_by = null, i.e. `supabase db push`, not MCP).
+-- STATUS: APPLIED to the remote on 27 Sep 2026. The supabase_migrations row
+-- 20260927140000 has created_by = null and the DDL ran on a direct postgres
+-- connection (empty application_name) ~39s after the CMS commit that carried
+-- this file was pushed to origin/main (16:08:47Z -> apply 16:09:26Z). That is
+-- the Supabase GitHub-integration signature: a push-to-main applies every file
+-- in supabase/migrations/. It was NOT run by the local CLI and NOT by MCP.
+-- (Forensic finding M1/M2, 2026-09-28.)
 -- Generated 2026-09-27 (J2 revision same day).
 
 CREATE OR REPLACE FUNCTION public.trg_sarkari_verify()
