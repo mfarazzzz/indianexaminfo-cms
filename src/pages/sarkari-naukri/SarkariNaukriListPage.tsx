@@ -1,58 +1,53 @@
 /**
- * SarkariNaukriListPage — Independent list page for Government Jobs (Sarkari Naukri).
- * Same UX pattern as EntranceExamListPage but filtered to pillar='sarkari-naukri'.
+ * SarkariNaukriListPage — List of government job vacancies (`sarkari_naukri`).
+ * Reads the same table the editor writes (single source of truth).
+ * C4: "Dates missing" and "Unverified" badges + filters.
  */
-import React, { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Briefcase, Calendar, Trash2 } from "lucide-react";
+import { Plus, Search, Briefcase, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { getEntranceExams, type EntranceExamListItem } from "@/services/entranceExamService";
-import { getCategories, type Category } from "@/services/categoryService";
+import {
+  listSarkariNaukri, deleteSarkariNaukri,
+  type SarkariNaukri,
+} from "@/services/sarkariNaukriService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
-import { deleteExam } from "@/services/examService";
 import { getErrorMessage } from "@/lib/utils";
 
-const STATUS_COLORS: Record<string, string> = {
-  upcoming: "bg-yellow-100 text-yellow-700",
-  "notification-released": "bg-blue-100 text-blue-700",
-  "registration-open": "bg-green-100 text-green-700",
-  "registration-closed": "bg-red-100 text-red-700",
-  "admit-card-released": "bg-purple-100 text-purple-700",
-  "exam-conducted": "bg-indigo-100 text-indigo-700",
-  "answer-key-released": "bg-cyan-100 text-cyan-700",
-  "result-declared": "bg-emerald-100 text-emerald-700",
-  completed: "bg-gray-100 text-gray-500",
-};
+type FlagFilter = "" | "datesMissing" | "unverified";
+
+/** "Dates awaited" — no application dates recorded at all (matches D). */
+function datesMissing(item: SarkariNaukri): boolean {
+  return !item.notificationDate && !item.applicationStartDate && !item.applicationEndDate;
+}
 
 export function SarkariNaukriListPage() {
   const navigate = useNavigate();
-  const [exams, setExams] = useState<EntranceExamListItem[]>([]);
+  const [items, setItems] = useState<SarkariNaukri[]>([]);
+  const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [deleteTarget, setDeleteTarget] = useState<EntranceExamListItem | null>(null);
+  const [flag, setFlag] = useState<FlagFilter>("");
+  const [deleteTarget, setDeleteTarget] = useState<SarkariNaukri | null>(null);
   const [deleting, setDeleting] = useState(false);
-
-  useEffect(() => {
-    getCategories("sarkari-naukri").then(setCategories).catch(() => setCategories([]));
-  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const opts: { search?: string; categoryId?: string; pillar?: string } = { pillar: "sarkari-naukri" };
+      const opts: Parameters<typeof listSarkariNaukri>[0] = {};
       if (search) opts.search = search;
-      if (categoryId) opts.categoryId = categoryId;
-      const data = await getEntranceExams(opts);
-      setExams(data);
+      if (flag === "datesMissing") opts.datesMissing = true;
+      if (flag === "unverified") opts.unverified = true;
+      const res = await listSarkariNaukri(opts);
+      setItems(res.data);
+      setCount(res.count);
     } catch (err) {
       toast.error("Failed to load: " + getErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [search, categoryId]);
+  }, [search, flag]);
 
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
 
@@ -60,8 +55,8 @@ export function SarkariNaukriListPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await deleteExam(deleteTarget.id);
-      toast.success(`"${deleteTarget.name}" deleted.`);
+      await deleteSarkariNaukri(deleteTarget.id);
+      toast.success(`"${deleteTarget.title}" deleted.`);
       setDeleteTarget(null);
       load();
     } catch (err) { toast.error(getErrorMessage(err)); }
@@ -73,7 +68,7 @@ export function SarkariNaukriListPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Sarkari Naukri</h1>
-          <p className="text-sm text-slate-500">{exams.length} government jobs</p>
+          <p className="text-sm text-slate-500">{count} government jobs</p>
         </div>
         <button onClick={() => navigate("/sarkari-naukri/new")}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
@@ -87,63 +82,60 @@ export function SarkariNaukriListPage() {
           <input type="text" placeholder="Search jobs..." value={search} onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-md border border-slate-200 pl-9 pr-3 py-1.5 text-sm" />
         </div>
-        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
+        <select value={flag} onChange={(e) => setFlag(e.target.value as FlagFilter)}
           className="rounded-md border border-slate-200 px-3 py-1.5 text-sm">
-          <option value="">All Departments</option>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          <option value="">All vacancies</option>
+          <option value="datesMissing">Dates missing</option>
+          <option value="unverified">Unverified</option>
         </select>
       </div>
 
       {loading ? (
         <div className="flex justify-center py-12"><div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" /></div>
-      ) : exams.length === 0 ? (
+      ) : items.length === 0 ? (
         <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
           <Briefcase size={40} className="mx-auto text-slate-300 mb-3" />
           <p className="text-slate-500 text-sm">No government jobs found.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {exams.map((exam) => (
-            <div key={exam.id} onClick={() => navigate(`/sarkari-naukri/${exam.id}`)}
+          {items.map((item) => (
+            <div key={item.id} onClick={() => navigate(`/sarkari-naukri/${item.id}`)}
               className="bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm cursor-pointer group relative">
               <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-                <ViewOnSiteButton pillar="sarkari-naukri" category={exam.category} slug={exam.slug} isPublished={exam.isPublished} />
-                <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(exam); }}
+                <ViewOnSiteButton pillar="sarkari-naukri" category={item.category ?? ""} slug={item.slug} isPublished={item.workflowStatus === "published"} />
+                <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }}
                   className="p-1.5 rounded text-slate-300 hover:text-red-600 hover:bg-red-50"
                   title="Delete">
                   <Trash2 size={14} />
                 </button>
               </div>
-              <h3 className="font-medium text-slate-900 text-sm line-clamp-2 pr-6 mb-2">{exam.name}</h3>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">{exam.category.replace(/-/g, " ")}</span>
-                {exam.isPublished ? (
+              <h3 className="font-medium text-slate-900 text-sm line-clamp-2 pr-6 mb-2">{item.title}</h3>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                {item.category && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">{item.category.replace(/-/g, " ")}</span>
+                )}
+                {item.workflowStatus === "published" ? (
                   <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">● Live</span>
                 ) : (
                   <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">○ Draft</span>
                 )}
-                {exam.currentEdition && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_COLORS[exam.currentEdition.status] ?? "bg-gray-100 text-gray-600"}`}>
-                    {exam.currentEdition.status.replace(/-/g, " ")}
-                  </span>
+                {/* C4 badges */}
+                {datesMissing(item) && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-red-50 text-red-700 font-medium">Dates missing</span>
+                )}
+                {!item.verifiedAt && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-medium">Unverified</span>
                 )}
               </div>
-              {exam.currentEdition?.nextDate && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <Calendar size={12} />
-                  <span>{exam.currentEdition.nextDate.label}:</span>
-                  <span className="font-medium text-slate-700">
-                    {new Date(exam.currentEdition.nextDate.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                  </span>
-                </div>
-              )}
+              <p className="text-xs text-slate-500">{item.organization}</p>
             </div>
           ))}
         </div>
       )}
 
       <ConfirmDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="Delete Job" description={`Delete "${deleteTarget?.name}"? This cannot be undone.`}
+        title="Delete Job" description={`Delete "${deleteTarget?.title}"? This cannot be undone.`}
         confirmLabel="Delete" onConfirm={handleDelete} isLoading={deleting} confirmVariant="danger" />
     </div>
   );

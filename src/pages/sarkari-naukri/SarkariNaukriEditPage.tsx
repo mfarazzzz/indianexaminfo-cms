@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import {
   getSarkariNaukriById, createSarkariNaukri, updateSarkariNaukri,
-  deleteSarkariNaukri, type SarkariNaukri, type SarkariNaukriInput,
+  deleteSarkariNaukri, verifySarkariNaukri, type SarkariNaukri, type SarkariNaukriInput,
   type RecruitmentType,
 } from "@/services/sarkariNaukriService";
 import { getRegions, type Region } from "@/services/regionService";
@@ -30,6 +30,9 @@ export function SarkariNaukriEditPage() {
     workflowStatus: "draft",
   });
 
+  const [verifying, setVerifying] = useState(false);
+  const [verifiedAt, setVerifiedAt] = useState<string | null>(null);
+
   // Region vocabulary for the picker (states + UTs + all-india). Loaded once.
   useEffect(() => {
     getRegions().then(setRegions).catch(() => setRegions([]));
@@ -41,6 +44,7 @@ export function SarkariNaukriEditPage() {
         .then((data) => {
           if (!data) { toast.error("Entry not found"); navigate("/sarkari-naukri"); return; }
           setItem(data as any);
+          setVerifiedAt(data.verifiedAt ?? null);
         })
         .catch(() => toast.error("Failed to load"))
         .finally(() => setLoading(false));
@@ -70,6 +74,10 @@ export function SarkariNaukriEditPage() {
     // Validate date ordering: start must not be after end when both are present.
     if (item.applicationStartDate && item.applicationEndDate && item.applicationStartDate > item.applicationEndDate) {
       toast.error("Application start date must be on or before end date"); return;
+    }
+    // Publish warning (not a block): "dates awaited" is a legitimate state.
+    if (item.workflowStatus === "published" && !item.applicationEndDate) {
+      toast.warning("Publishing without an application end date — readers will see 'Dates awaited'.");
     }
 
     setSaving(true);
@@ -232,13 +240,7 @@ export function SarkariNaukriEditPage() {
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
-        </div>
-      </div>
-
-      {/* Dates Section */}
-      <div className="rounded-lg border border-slate-200 bg-white p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-slate-900">Important Dates</h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {/* Application dates — moved to top section; all optional ("dates awaited" is valid) */}
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">Notification Date</label>
             <input type="date" value={item.notificationDate ?? ""} onChange={(e) => handleChange("notificationDate", e.target.value || null)}
@@ -250,10 +252,37 @@ export function SarkariNaukriEditPage() {
               className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Application End</label>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Application End (Last Date)</label>
             <input type="date" value={item.applicationEndDate ?? ""} onChange={(e) => handleChange("applicationEndDate", e.target.value || null)}
               className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
           </div>
+        </div>
+        {/* Verification status */}
+        <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+          {verifiedAt ? (
+            <span className="text-xs text-green-700 font-medium">Verified {new Date(verifiedAt).toLocaleDateString("en-IN")}</span>
+          ) : (
+            <span className="text-xs text-amber-600 font-medium">Unverified</span>
+          )}
+          {!isNew && !verifiedAt && (
+            <button type="button" disabled={verifying}
+              onClick={async () => {
+                setVerifying(true);
+                try { const updated = await verifySarkariNaukri(id!); setVerifiedAt(updated.verifiedAt); toast.success("Verified"); }
+                catch (err) { toast.error(err instanceof Error ? err.message : "Verify failed"); }
+                finally { setVerifying(false); }
+              }}
+              className="text-xs rounded border border-green-300 px-2 py-1 text-green-700 hover:bg-green-50 disabled:opacity-50">
+              {verifying ? "Verifying…" : "Verify against official notification"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Other Dates — exam/direct-specific and result date */}
+      <div className="rounded-lg border border-slate-200 bg-white p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-slate-900">Other Dates</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {isExam && (
             <>
               <div>

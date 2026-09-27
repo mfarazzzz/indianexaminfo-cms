@@ -66,6 +66,7 @@ export interface SarkariNaukri {
   walkInDate: string | null
   walkInVenue: string | null
   // Status
+  verifiedAt: string | null
   status: SarkariStatus
   isNew: boolean
   isFeatured: boolean
@@ -154,6 +155,10 @@ export interface SarkariNaukriListOpts {
   isFeatured?: boolean
   isNew?: boolean
   workflowStatus?: string
+  // "Dates missing" = all three application dates null (matches derived
+  // "dates-awaited" status). "Unverified" = verified_at null.
+  datesMissing?: boolean
+  unverified?: boolean
   limit?: number
   offset?: number
 }
@@ -203,6 +208,7 @@ function mapRow(r: Record<string, unknown>): SarkariNaukri {
     joiningDetails:           r.joining_details as string | null,
     walkInDate:               r.walk_in_date as string | null,
     walkInVenue:              r.walk_in_venue as string | null,
+    verifiedAt:               (r.verified_at as string) ?? null,
     status:                   (r.status as SarkariStatus) ?? 'upcoming',
     isNew:                    (r.is_new as boolean) ?? false,
     isFeatured:               (r.is_featured as boolean) ?? false,
@@ -241,6 +247,8 @@ export async function listSarkariNaukri(
   if (opts.workflowStatus)  q = q.eq('workflow_status', opts.workflowStatus)
   if (opts.isFeatured !== undefined) q = q.eq('is_featured', opts.isFeatured)
   if (opts.isNew !== undefined)      q = q.eq('is_new', opts.isNew)
+  if (opts.datesMissing)             q = q.is('notification_date', null).is('application_start_date', null).is('application_end_date', null)
+  if (opts.unverified)               q = q.is('verified_at', null)
   if (opts.search)          q = q.ilike('title', `%${opts.search}%`)
   if (opts.limit)           q = q.limit(opts.limit)
   if (opts.offset)          q = q.range(opts.offset, opts.offset + (opts.limit ?? 50) - 1)
@@ -417,6 +425,24 @@ export async function updateSarkariNaukri(id: string, input: Partial<SarkariNauk
   // Zero rows under RLS = permission refusal (e.g. no edit_any_post and not the owner).
   assertAffected(data as unknown[] | null, 'edit this recruitment')
   return mapRow((data as Record<string, unknown>[])[0])
+}
+
+// ── Verification ─────────────────────────────────────────────────────────────
+
+/**
+ * Verify a recruitment against the official notification.
+ * Sends a non-null verified_at value; the DB trigger replaces it with now()
+ * and enforces preconditions (official_notification_url + application_end_date).
+ */
+export async function verifySarkariNaukri(id: string): Promise<SarkariNaukri> {
+  const { data, error } = await db
+    .from('sarkari_naukri')
+    .update({ verified_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+  if (error) throw error
+  if (!data || data.length === 0) throw new Error('Verify failed: preconditions not met or insufficient role')
+  return mapRow(data[0] as Record<string, unknown>)
 }
 
 // ── Publish / Archive / Delete ────────────────────────────────────────────────
