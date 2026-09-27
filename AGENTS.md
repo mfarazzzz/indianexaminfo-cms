@@ -8,6 +8,11 @@ before acting.
   migration up/repair, db reset --linked); migrations reach the remote only via
   MCP apply_migration after the owner's explicit approval; every applied file
   matches its remote version
+- Proposed migrations are written to supabase/proposed/, never supabase/migrations/.
+  A file moves into migrations/ only after the owner's approval, because a CMS push
+  may apply every file in migrations/. (Confirmed 2026-09-27: the Supabase GitHub
+  integration applies supabase/migrations/ to production on push-to-main — every
+  file in that directory, version taken from the filename, created_by left NULL.)
 - report before any destructive step, with live counts; no stale numbers
 - never push; the owner pushes
 - typecheck both repos and run tests after every change; local commits only
