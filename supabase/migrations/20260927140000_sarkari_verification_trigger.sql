@@ -1,7 +1,12 @@
 -- C3: sarkari_naukri verification workflow.
--- Adds trigger to: (1) set verified_at server-side on explicit verify action;
--- (2) auto-clear verified_at when dates or the official link change;
--- (3) gate verify to publish-permission holders via current_user_has_permission.
+-- Trigger (BEFORE INSERT OR UPDATE) that:
+--   (1) sets verified_at server-side (now()) on an explicit verify action;
+--   (2) enforces preconditions + the publish_post permission whenever a row
+--       becomes verified (including an INSERT that arrives already verified);
+--   (3) auto-clears verified_at when a gated field changes;
+--   (4) makes verified_at immutable to clients on a still-verified row whose
+--       gated fields did NOT change (blocks backdating / arbitrary writes);
+--   (5) still allows an explicit UN-verify (verified_at -> NULL).
 --
 -- PERMISSIONS, NOT ROLE NAMES. The gate is
 --   current_user_has_permission('publish_post')
@@ -14,63 +19,83 @@
 -- Ad Manager / Viewer are not.
 --
 -- DO NOT APPLY without owner approval.
--- Generated 2026-09-27.
+-- Generated 2026-09-27 (J2 revision same day).
 
--- Verification trigger function: BEFORE UPDATE on sarkari_naukri.
---   - If verified_at is being SET from NULL → require publish_post permission +
---     official_notification_url non-null + application_end_date non-null.
---   - If verified_at is already set and a gated field changes → auto-clear.
--- Runs as SECURITY INVOKER (the caller's identity) so auth.uid() is the real
--- CMS user performing the verify; the permission helper is itself SECURITY
--- DEFINER and can read the RBAC tables without recursing into RLS.
 CREATE OR REPLACE FUNCTION public.trg_sarkari_verify()
 RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 BEGIN
-  -- Verify being SET (NULL → non-NULL): enforce preconditions.
-  IF OLD.verified_at IS NULL AND NEW.verified_at IS NOT NULL THEN
-    -- Set server clock; ignore any client-supplied value.
-    NEW.verified_at := now();
+  -- ── INSERT ──────────────────────────────────────────────────────────────
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.verified_at IS NOT NULL THEN
+      -- A row cannot be born verified without clearing the same bar as verify.
+      NEW.verified_at := now();
+      IF NEW.official_notification_url IS NULL
+         OR NEW.official_notification_url !~* '^https?://' THEN
+        RAISE EXCEPTION 'Cannot verify: official_notification_url must be an http(s) URL';
+      END IF;
+      IF NEW.application_end_date IS NULL THEN
+        RAISE EXCEPTION 'Cannot verify: application_end_date must be set';
+      END IF;
+      IF NOT current_user_has_permission('publish_post') THEN
+        RAISE EXCEPTION 'permission denied: verifying requires the publish_post permission'
+          USING ERRCODE = '42501';
+      END IF;
+    END IF;
+    RETURN NEW;
+  END IF;
 
-    -- Preconditions: must have official link + application_end_date.
-    IF NEW.official_notification_url IS NULL OR NEW.official_notification_url = '' THEN
-      RAISE EXCEPTION 'Cannot verify: official_notification_url must be set';
+  -- ── UPDATE ──────────────────────────────────────────────────────────────
+  -- (a) Being verified now (NULL -> non-NULL): enforce the full bar.
+  IF OLD.verified_at IS NULL AND NEW.verified_at IS NOT NULL THEN
+    NEW.verified_at := now();  -- server clock; ignore any client-supplied value
+    IF NEW.official_notification_url IS NULL
+       OR NEW.official_notification_url !~* '^https?://' THEN
+      RAISE EXCEPTION 'Cannot verify: official_notification_url must be an http(s) URL';
     END IF;
     IF NEW.application_end_date IS NULL THEN
       RAISE EXCEPTION 'Cannot verify: application_end_date must be set';
     END IF;
-    -- Permission gate: only publish-permission holders may verify.
-    -- Evaluated on auth.uid(); Super Admin / Admin / Editor pass.
     IF NOT current_user_has_permission('publish_post') THEN
       RAISE EXCEPTION 'permission denied: verifying requires the publish_post permission'
         USING ERRCODE = '42501';
     END IF;
+    RETURN NEW;
   END IF;
 
-  -- Auto-clear: if any of the three dates or official link changed and the
-  -- row was previously verified, clear verified_at automatically.
+  -- (b) Explicit UN-verify (non-NULL -> NULL): always allowed.
+  IF OLD.verified_at IS NOT NULL AND NEW.verified_at IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- (c) Still verified (non-NULL -> non-NULL): gated field changed => auto-clear;
+  --     otherwise the client may NOT rewrite verified_at — keep the OLD value.
   IF OLD.verified_at IS NOT NULL AND NEW.verified_at IS NOT NULL THEN
-    IF (OLD.notification_date IS DISTINCT FROM NEW.notification_date
-        OR OLD.application_start_date IS DISTINCT FROM NEW.application_start_date
-        OR OLD.application_end_date IS DISTINCT FROM NEW.application_end_date
+    IF (OLD.notification_date          IS DISTINCT FROM NEW.notification_date
+        OR OLD.application_start_date  IS DISTINCT FROM NEW.application_start_date
+        OR OLD.application_end_date    IS DISTINCT FROM NEW.application_end_date
         OR OLD.official_notification_url IS DISTINCT FROM NEW.official_notification_url)
     THEN
-      NEW.verified_at := NULL;
+      NEW.verified_at := NULL;              -- content moved → verification void
+    ELSE
+      NEW.verified_at := OLD.verified_at;   -- immutable to clients (blocks backdating)
     END IF;
+    RETURN NEW;
   END IF;
 
+  -- (d) NULL -> NULL: nothing to enforce.
   RETURN NEW;
 END;
 $$;
 
 DROP TRIGGER IF EXISTS sarkari_naukri_verify ON public.sarkari_naukri;
 CREATE TRIGGER sarkari_naukri_verify
-  BEFORE UPDATE ON public.sarkari_naukri
+  BEFORE INSERT OR UPDATE ON public.sarkari_naukri
   FOR EACH ROW
   EXECUTE FUNCTION public.trg_sarkari_verify();
 
--- RLS note: the existing staff_update_sarkari policy already governs who may
--- UPDATE a row at all (edit_any_post / edit_own_post). The verify-specific
--- permission (publish_post) and preconditions are enforced in the trigger above
--- — Supabase RLS has no column-level policies, so the trigger is the
--- enforcement point for verified_at. No additional RLS is introduced here.
+-- RLS note: the existing staff_insert_sarkari / staff_update_sarkari policies
+-- already govern who may write a row at all (create_post / edit_any_post /
+-- edit_own_post, and publish_post for the published workflow state). This
+-- trigger is the enforcement point for verified_at specifically — Supabase RLS
+-- has no column-level policies. No additional RLS is introduced here.
