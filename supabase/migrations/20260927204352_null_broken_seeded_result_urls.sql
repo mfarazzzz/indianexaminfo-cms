@@ -1,7 +1,4 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- PROPOSED — DO NOT move into supabase/migrations/ without the owner's approval
--- (AGENTS.md: a CMS push may apply every file in migrations/).
---
 -- M4: neutralise broken seeded result_url values.
 --
 -- Background: all 361 sarkari_naukri rows carry a seeded result_url. Once a row
@@ -23,9 +20,14 @@
 -- gated field, so nulling it never clears/forces verified_at.
 --
 -- Expected: 74 dead-domain + 13 confirmed-404 = 87 distinct rows (disjoint).
+--
+-- The backup table gets RLS enabled with NO policies (deny-all through the API),
+-- per the 26 Sep rule for backup tables — service role / direct SQL can still
+-- read it for any rollback, but anon/authenticated cannot.
+--
+-- NOTE: no BEGIN/COMMIT here — the migration runner wraps each file in a
+-- transaction, so the DO block's RAISE EXCEPTION aborts the whole change.
 -- ─────────────────────────────────────────────────────────────────────────────
-
-BEGIN;
 
 DO $$
 DECLARE
@@ -103,6 +105,9 @@ BEGIN
     backed_up_at timestamptz NOT NULL DEFAULT now()
   );
 
+  -- Deny-all through the API: enable RLS with no policies (26 Sep backup rule).
+  ALTER TABLE public.broken_result_urls_backup_20260928 ENABLE ROW LEVEL SECURITY;
+
   INSERT INTO public.broken_result_urls_backup_20260928 (id, slug, result_url, reason)
   SELECT id, slug, result_url,
          CASE WHEN is_dead THEN 'nxdomain-dead-host' ELSE 'confirmed-404-deeplink' END
@@ -123,5 +128,3 @@ BEGIN
   RAISE NOTICE 'M4 complete: nullified result_url on % rows; backup table has % rows.',
     n_updated, (SELECT count(*) FROM public.broken_result_urls_backup_20260928);
 END $$;
-
-COMMIT;
