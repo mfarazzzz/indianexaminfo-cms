@@ -140,6 +140,9 @@ const EntranceExamListPage  = lazyPage(() => import("@/pages/entrance-exams/Entr
 const EntranceExamEditorPage = lazyPage(() => import("@/pages/entrance-exams/EntranceExamEditorPage"), "EntranceExamEditorPage");
 // Sarkari Bharti (State Recruitments)
 const SarkariBhartiListPage = lazyPage(() => import("@/pages/sarkari-bharti/SarkariBhartiListPage"), "SarkariBhartiListPage");
+// Vacancy Pages — editor for `sarkari_naukri` (the 361 rows the public site serves at /sarkari-naukri/{slug})
+const VacancyListPage = lazyPage(() => import("@/pages/sarkari-naukri/SarkariNaukriListPage"), "SarkariNaukriListPage");
+const VacancyEditPage = lazyPage(() => import("@/pages/sarkari-naukri/SarkariNaukriEditPage"), "SarkariNaukriEditPage");
 // University Exams
 const UniversityExamsListPage = lazyPage(() => import("@/pages/university-exams/UniversityExamsListPage"), "UniversityExamsListPage");
 // Board Exams
@@ -209,10 +212,14 @@ export const router = createBrowserRouter([
           { path: "/govt-exam",            element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><GovtExamListPage /></RequirePermission> },
           { path: "/govt-exam/new",        element: <RequirePermission anyOf={[P.CREATE_EXAM]}><GovtExamEditorPage /></RequirePermission> },
           { path: "/govt-exam/:id",        element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><GovtExamEditorPage /></RequirePermission> },
-          // Legacy Sarkari Naukri redirects → Govt Exam
-          { path: "/sarkari-naukri",       element: <Navigate to="/govt-exam" replace /> },
-          { path: "/sarkari-naukri/new",   element: <Navigate to="/govt-exam/new" replace /> },
-          { path: "/sarkari-naukri/:id",   element: <Navigate to="/govt-exam" replace /> },
+          // Vacancy Pages — editor for `sarkari_naukri` (public: /sarkari-naukri/{slug})
+          { path: "/vacancies",            element: <RequirePermission anyOf={[P.CREATE_POST, P.EDIT_ANY_POST, P.EDIT_OWN_POST]}><VacancyListPage /></RequirePermission> },
+          { path: "/vacancies/new",        element: <RequirePermission anyOf={[P.CREATE_POST]}><VacancyEditPage /></RequirePermission> },
+          { path: "/vacancies/:id",        element: <RequirePermission anyOf={[P.CREATE_POST, P.EDIT_ANY_POST, P.EDIT_OWN_POST]}><VacancyEditPage /></RequirePermission> },
+          // Legacy Sarkari Naukri routes → Vacancy Pages
+          { path: "/sarkari-naukri",       element: <Navigate to="/vacancies" replace /> },
+          { path: "/sarkari-naukri/new",   element: <Navigate to="/vacancies/new" replace /> },
+          { path: "/sarkari-naukri/:id",   element: <Navigate to="/vacancies" replace /> },
           // Entrance Exams (dedicated editorial workflow)
           { path: "/entrance-exams",       element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntranceExamListPage /></RequirePermission> },
           { path: "/entrance-exams/new",   element: <RequirePermission anyOf={[P.CREATE_EXAM]}><EntranceExamEditorPage /></RequirePermission> },

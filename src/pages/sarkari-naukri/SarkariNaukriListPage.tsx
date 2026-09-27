@@ -67,12 +67,16 @@ export function SarkariNaukriListPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Sarkari Naukri</h1>
-          <p className="text-sm text-slate-500">{count} government jobs</p>
+          <h1 className="text-xl font-semibold text-slate-900">Vacancy Pages</h1>
+          <p className="text-sm text-slate-500">
+            {count} job pages — these are the rows the public site serves live at{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">/sarkari-naukri/&lt;slug&gt;</code>.
+            (Separate from <span className="font-medium">Govt Vacancy Exams</span> and <span className="font-medium">Govt Exams</span>.)
+          </p>
         </div>
-        <button onClick={() => navigate("/sarkari-naukri/new")}
+        <button onClick={() => navigate("/vacancies/new")}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-          <Plus size={16} /> New Job
+          <Plus size={16} /> New Vacancy
         </button>
       </div>
 
@@ -100,7 +104,7 @@ export function SarkariNaukriListPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {items.map((item) => (
-            <div key={item.id} onClick={() => navigate(`/sarkari-naukri/${item.id}`)}
+            <div key={item.id} onClick={() => navigate(`/vacancies/${item.id}`)}
               className="bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm cursor-pointer group relative">
               <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
                 <ViewOnSiteButton pillar="sarkari-naukri" category={item.category ?? ""} slug={item.slug} isPublished={item.workflowStatus === "published"} />

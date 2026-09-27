@@ -249,7 +249,8 @@ export async function listSarkariNaukri(
   if (opts.isNew !== undefined)      q = q.eq('is_new', opts.isNew)
   if (opts.datesMissing)             q = q.is('notification_date', null).is('application_start_date', null).is('application_end_date', null)
   if (opts.unverified)               q = q.is('verified_at', null)
-  if (opts.search)          q = q.ilike('title', `%${opts.search}%`)
+  // Search matches title OR slug (J3b — GSC clicks surface slugs the CMS must find).
+  if (opts.search)          q = q.or(`title.ilike.%${opts.search}%,slug.ilike.%${opts.search}%`)
   if (opts.limit)           q = q.limit(opts.limit)
   if (opts.offset)          q = q.range(opts.offset, opts.offset + (opts.limit ?? 50) - 1)
 

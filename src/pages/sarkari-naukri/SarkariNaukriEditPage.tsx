@@ -10,6 +10,13 @@ import {
 } from "@/services/sarkariNaukriService";
 import { getRegions, type Region } from "@/services/regionService";
 
+// Verification is enforced server-side by the DB trigger (migration
+// 20260927140000_sarkari_verification_trigger.sql). Until that migration is
+// applied to the live database, the Verify action is HIDDEN — exposing it now
+// would let a client write verified_at with none of the trigger's guards.
+// Flip to true the moment the migration is applied.
+const VERIFICATION_ENABLED = false;
+
 export function SarkariNaukriEditPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -42,7 +49,7 @@ export function SarkariNaukriEditPage() {
     if (!isNew && id) {
       getSarkariNaukriById(id)
         .then((data) => {
-          if (!data) { toast.error("Entry not found"); navigate("/sarkari-naukri"); return; }
+          if (!data) { toast.error("Entry not found"); navigate("/vacancies"); return; }
           setItem(data as any);
           setVerifiedAt(data.verifiedAt ?? null);
         })
@@ -88,7 +95,7 @@ export function SarkariNaukriEditPage() {
           createdBy: user?.id ?? null,
         });
         toast.success("Created successfully");
-        navigate(`/sarkari-naukri/${created.id}`);
+        navigate(`/vacancies/${created.id}`);
       } else {
         await updateSarkariNaukri(id!, item);
         toast.success("Saved");
@@ -105,7 +112,7 @@ export function SarkariNaukriEditPage() {
     try {
       await deleteSarkariNaukri(id!);
       toast.success("Deleted");
-      navigate("/sarkari-naukri");
+      navigate("/vacancies");
     } catch (err) {
       toast.error("Delete failed");
     }
@@ -120,7 +127,7 @@ export function SarkariNaukriEditPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate("/sarkari-naukri")} className="rounded p-1 hover:bg-slate-100">
+          <button onClick={() => navigate("/vacancies")} className="rounded p-1 hover:bg-slate-100">
             <ArrowLeft size={20} />
           </button>
           <h1 className="text-xl font-semibold text-slate-900">{isNew ? "New Government Job" : "Edit Entry"}</h1>
@@ -136,6 +143,28 @@ export function SarkariNaukriEditPage() {
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {isNew ? "Create" : "Save"}
           </button>
+        </div>
+      </div>
+
+      {/* Key Dates — the three dates that drive the reader-facing status badge */}
+      <div className="rounded-lg border border-slate-200 bg-white p-5">
+        <h2 className="mb-3 text-sm font-semibold text-slate-900">Key Dates</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Notification Date</label>
+            <input type="date" value={item.notificationDate ?? ""} onChange={(e) => handleChange("notificationDate", e.target.value || null)}
+              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Application Start</label>
+            <input type="date" value={item.applicationStartDate ?? ""} onChange={(e) => handleChange("applicationStartDate", e.target.value || null)}
+              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Application End (Last Date)</label>
+            <input type="date" value={item.applicationEndDate ?? ""} onChange={(e) => handleChange("applicationEndDate", e.target.value || null)}
+              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
+          </div>
         </div>
       </div>
 
@@ -240,22 +269,7 @@ export function SarkariNaukriEditPage() {
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
-          {/* Application dates — moved to top section; all optional ("dates awaited" is valid) */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Notification Date</label>
-            <input type="date" value={item.notificationDate ?? ""} onChange={(e) => handleChange("notificationDate", e.target.value || null)}
-              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Application Start</label>
-            <input type="date" value={item.applicationStartDate ?? ""} onChange={(e) => handleChange("applicationStartDate", e.target.value || null)}
-              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Application End (Last Date)</label>
-            <input type="date" value={item.applicationEndDate ?? ""} onChange={(e) => handleChange("applicationEndDate", e.target.value || null)}
-              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
-          </div>
+          {/* Application dates live in the "Key Dates" card at the top. */}
         </div>
         {/* Verification status */}
         <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
@@ -264,7 +278,7 @@ export function SarkariNaukriEditPage() {
           ) : (
             <span className="text-xs text-amber-600 font-medium">Unverified</span>
           )}
-          {!isNew && !verifiedAt && (
+          {!isNew && VERIFICATION_ENABLED && !verifiedAt && (
             <button type="button" disabled={verifying}
               onClick={async () => {
                 setVerifying(true);
@@ -275,6 +289,9 @@ export function SarkariNaukriEditPage() {
               className="text-xs rounded border border-green-300 px-2 py-1 text-green-700 hover:bg-green-50 disabled:opacity-50">
               {verifying ? "Verifying…" : "Verify against official notification"}
             </button>
+          )}
+          {!VERIFICATION_ENABLED && !verifiedAt && (
+            <span className="text-xs italic text-slate-400">verification not yet enabled</span>
           )}
         </div>
       </div>

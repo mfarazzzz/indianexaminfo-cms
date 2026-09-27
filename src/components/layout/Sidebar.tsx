@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileText, BookOpen, Users, Tag, Link2,
   FileCode, Image, BarChart2, Megaphone, Palette, MapPin,
   TrendingUp, Settings, ClipboardList, LogOut, ExternalLink,
-  X, Shield, Building2, GraduationCap, Navigation,
+  X, Shield, Building2, GraduationCap, Navigation, Briefcase,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -34,8 +34,9 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Dashboard", to: "/dashboard", icon: <LayoutDashboard size={ICON_SIZE} /> },
       { label: "Entrance Exams", to: "/entrance-exams", icon: <GraduationCap size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
-      { label: "Govt Exam", to: "/govt-exam", icon: <ClipboardList size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
-      { label: "Govt Vacancy", to: "/govt-vacancy", icon: <Shield size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      { label: "Govt Exams", to: "/govt-exam", icon: <ClipboardList size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      { label: "Vacancy Pages", to: "/vacancies", icon: <Briefcase size={ICON_SIZE} />, permissions: [P.CREATE_POST, P.EDIT_ANY_POST, P.EDIT_OWN_POST] },
+      { label: "Govt Vacancy Exams", to: "/govt-vacancy", icon: <Shield size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
       { label: "Board Exams", to: "/board-exams", icon: <BookOpen size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
       { label: "University Exams", to: "/university-exams", icon: <Building2 size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
       { label: "Content", to: "/content", icon: <FileCode size={ICON_SIZE} />, permissions: [P.CREATE_POST, P.EDIT_ANY_POST] },
