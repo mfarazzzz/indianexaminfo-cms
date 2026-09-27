@@ -6,6 +6,7 @@
 import { db } from '@/lib/supabase/client'
 import { assertPermission, assertAffected } from '@/lib/auth/permissionGuard'
 import { P } from '@/config/permissions'
+import { revalidateAfterSarkariNaukriSave } from '@/lib/revalidation/revalidationService'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -359,13 +360,23 @@ export async function createSarkariNaukri(input: SarkariNaukriInput): Promise<Sa
     .single()
 
   if (error) throw error
-  return mapRow(data as Record<string, unknown>)
+  const created = mapRow(data as Record<string, unknown>)
+  // L5: saves must refresh the frontend's tagged caches (debounced batch —
+  // silently skipped until the frontend integration is configured in settings).
+  revalidateAfterSarkariNaukriSave({ slug: created.slug, state: created.state })
+  return created
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
 
 export async function updateSarkariNaukri(id: string, input: Partial<SarkariNaukriInput>): Promise<SarkariNaukri> {
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+
+  // Slug/state changes move the row between cache tags. Read the OLD identity
+  // first (only on saves that touch them) so the previous tags are invalidated
+  // too — otherwise a renamed slug stays stale on the frontend until timed ISR.
+  const identityChanging = input.slug !== undefined || input.state !== undefined
+  const oldRow = identityChanging ? await getSarkariNaukriById(id) : null
 
   const fieldMap: Record<string, string> = {
     slug: 'slug', recruitmentType: 'recruitment_type',
@@ -425,7 +436,14 @@ export async function updateSarkariNaukri(id: string, input: Partial<SarkariNauk
   if (error) throw error
   // Zero rows under RLS = permission refusal (e.g. no edit_any_post and not the owner).
   assertAffected(data as unknown[] | null, 'edit this recruitment')
-  return mapRow((data as Record<string, unknown>[])[0])
+  const row = mapRow((data as Record<string, unknown>[])[0])
+  // L5: revalidate the NEW identity, plus the OLD one when slug/state changed.
+  // enqueueTags dedupes within the debounce window, so double-calls are free.
+  revalidateAfterSarkariNaukriSave({ slug: row.slug, state: row.state })
+  if (oldRow && (oldRow.slug !== row.slug || (oldRow.state ?? null) !== (row.state ?? null))) {
+    revalidateAfterSarkariNaukriSave({ slug: oldRow.slug, state: oldRow.state })
+  }
+  return row
 }
 
 // ── Verification ─────────────────────────────────────────────────────────────
@@ -443,7 +461,11 @@ export async function verifySarkariNaukri(id: string): Promise<SarkariNaukri> {
     .select('*')
   if (error) throw error
   if (!data || data.length === 0) throw new Error('Verify failed: preconditions not met or insufficient role')
-  return mapRow(data[0] as Record<string, unknown>)
+  const row = mapRow(data[0] as Record<string, unknown>)
+  // L5: verification flips verified_at-gated UI (result/merit link, dates) —
+  // the frontend must drop its cached render of this vacancy.
+  revalidateAfterSarkariNaukriSave({ slug: row.slug, state: row.state })
+  return row
 }
 
 // ── Publish / Archive / Delete ────────────────────────────────────────────────
@@ -457,33 +479,49 @@ export async function archiveSarkariNaukri(id: string): Promise<SarkariNaukri> {
 }
 
 export async function deleteSarkariNaukri(id: string): Promise<void> {
-  const { data, error } = await db.from('sarkari_naukri').delete().eq('id', id).select('id')
+  // Select the identity being deleted so the frontend caches can be dropped.
+  const { data, error } = await db.from('sarkari_naukri').delete().eq('id', id).select('id, slug, state')
   if (error) throw error
   assertAffected(data as unknown[] | null, 'delete this recruitment')
+  for (const r of (data ?? []) as { slug: string; state: string | null }[]) {
+    revalidateAfterSarkariNaukriSave({ slug: r.slug, state: r.state })
+  }
 }
 
 // ── Bulk operations ───────────────────────────────────────────────────────────
 
 export async function bulkPublish(ids: string[]): Promise<void> {
   assertPermission(P.PUBLISH_POST, 'publish recruitments')
-  const { error } = await db
+  // Select the changed identity so every caller gets revalidation for free.
+  const { data, error } = await db
     .from('sarkari_naukri')
     .update({ workflow_status: 'published', published_at: new Date().toISOString() })
     .in('id', ids)
+    .select('slug, state')
   if (error) throw error
+  for (const r of (data ?? []) as { slug: string; state: string | null }[]) {
+    revalidateAfterSarkariNaukriSave({ slug: r.slug, state: r.state })
+  }
 }
 
 export async function bulkArchive(ids: string[]): Promise<void> {
-  const { error } = await db
+  const { data, error } = await db
     .from('sarkari_naukri')
     .update({ workflow_status: 'archived' })
     .in('id', ids)
+    .select('slug, state')
   if (error) throw error
+  for (const r of (data ?? []) as { slug: string; state: string | null }[]) {
+    revalidateAfterSarkariNaukriSave({ slug: r.slug, state: r.state })
+  }
 }
 
 export async function bulkDelete(ids: string[]): Promise<void> {
-  const { error } = await db.from('sarkari_naukri').delete().in('id', ids)
+  const { data, error } = await db.from('sarkari_naukri').delete().in('id', ids).select('slug, state')
   if (error) throw error
+  for (const r of (data ?? []) as { slug: string; state: string | null }[]) {
+    revalidateAfterSarkariNaukriSave({ slug: r.slug, state: r.state })
+  }
 }
 
 // ── Search ────────────────────────────────────────────────────────────────────
