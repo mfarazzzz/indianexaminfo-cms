@@ -98,24 +98,36 @@ other's columns without schema work.
 
 ## 5. Every surface reading each table
 
-`sarkari_naukri`:
+Surfaces corrected per G4 (the two CMS list pages were mis-filed in the first
+draft; each `pillar:` value below is read straight from the call site).
+
+`sarkari_naukri` (the flat one-pager table):
 - Frontend: `/sarkari-naukri/[...segments]` depth-1 detail
   (`SarkariNaukriDetailView`, `SarkariNaukriContentTypeView`);
   `SarkariNaukriList` + `sortRecruitmentsOpenFirst` in category listings and the
   homepage "latest jobs" blocks; `/sarkari-naukri/bharti`, `/state/[state]`,
   `/department/[dept]`, `/exam` hub routes.
 - CMS: `src/pages/sarkari-naukri/SarkariNaukriListPage.tsx`,
-  `SarkariNaukriEditPage.tsx` (the Verify action from M3);
-  `src/pages/sarkari-bharti/SarkariBhartiListPage.tsx`.
+  `SarkariNaukriEditPage.tsx` (the Verify action from M3).
 - Service: `sarkariNaukriService` (both repos).
 
-`exams govt-vacancy`:
+`exams govt-vacancy` (the `exams` table, `pillar = 'govt-vacancy'`):
 - Frontend: `/sarkari-naukri/[...segments]` depth-2/3 → `EntityDetailPage`,
   `ExamListRow`, edition dispatch, content-type pages.
-- CMS: `src/pages/govt-exam/GovtExamListPage.tsx`, `GovtExamEditorPage.tsx`;
-  the generic Exam Manager `exams/ExamsListPage.tsx` / `ExamEditorPage.tsx`;
-  `entities/EntityEditorPage.tsx`.
-- Service: `examService` (`getExamBySlug`, `getRelatedExams`, …).
+- CMS: `src/pages/sarkari-bharti/SarkariBhartiListPage.tsx:28` —
+  `getEntranceExams({ pillar: "govt-vacancy", … })`, mounted at `/govt-vacancy`
+  with the header "Govt Vacancy" (this is a vacancy surface, **not** a
+  `sarkari_naukri` one — it was mis-listed under `sarkari_naukri` before);
+  the generic Exam Manager `src/pages/exams/ExamsListPage.tsx:47`
+  (`opts.pillar = pillar`, pillar-agnostic — lists govt-vacancy when that pillar
+  is selected in its filter); `entities/EntityEditorPage.tsx`.
+- Service: `examService` / `entranceExamService.getEntranceExams` (reads `exams`).
+
+**Not** a govt-vacancy surface: `src/pages/govt-exam/GovtExamListPage.tsx:48`
+reads `pillar: "government-exam"` — a **government-exam** surface that the first
+draft mis-listed under `exams govt-vacancy`. `GovtExamEditorPage.tsx:3` is only a
+re-export of `EntranceExamEditorPage` (pillar auto-detected from the URL), so it
+is not itself a govt-vacancy reader either.
 
 ## 6. Options
 
@@ -181,3 +193,54 @@ to unify two shapes that serve different jobs. Instead:
 
 Do nothing to the 678-click URLs in any option; the one-hop constraint is
 satisfied trivially by C and must be explicitly engineered in A.
+
+## 8. N1 follow-up — classify the 100 `govt-vacancy` exams
+
+Report only, from live data on `cwbhhcqsrbuoybeaondk` (2026-09-28) plus
+`gsc-pages-2026-09-27.csv`. Full per-row detail in
+[`govt-vacancy-classification.csv`](./govt-vacancy-classification.csv)
+(slug, name, editions_count, cycle_frequency, gsc_clicks, classification);
+generator `scripts/govt-vacancy-classify.mjs`.
+
+Rule applied — a row is **recurring** if it has more than one edition, **or**
+`cycle_frequency` is a real periodicity (`annual`/`biannual`/…, i.e. **not**
+`irregular`, which is the "no cycle" sentinel); otherwise **single notice**.
+
+| Signal | Value |
+|---|---|
+| Editions > 1 | **0 rows** — every one of the 100 has exactly 1 `exam_editions` row |
+| `cycle_frequency` distribution | 92 `irregular`, 4 `annual`, 4 `biannual` |
+| **Recurring** | **8** (4 annual + 4 biannual) — **0 GSC clicks** |
+| **Single notice** | **92** — **1 GSC click** total (`up-swasthya-vibhag-2026`, 1) |
+
+The recurring 8: `india-post-gds-2026`, `karnataka-fda-sda-2026`,
+`kerala-ldc-2026`, `uksssc-group-c-scaler` (annual); `army-rally-{bihar,mp,rajasthan,up}-2026`
+(biannual). None has a second edition yet, so none actually exercises the
+`exams` edition/stage machinery today.
+
+### 8.1 Boundary answer — does the govt-vacancy pillar still have a job?
+
+Per §6 C's boundary rule (*editions/cycle → `exams`; single notice →
+`sarkari_naukri`*), applied to the real data:
+
+- **92 single notices** belong in **`sarkari_naukri`**, not `exams`.
+- **8 recurring drives** belong in **`exams`** — but as `government-exam`-style
+  recurring programmes, not under a `govt-vacancy` label (a recurring drive *is*
+  a government exam; `govt-vacancy` adds nothing `government-exam` lacks).
+
+So the `govt-vacancy` pillar **has essentially no distinct job**: nothing in it
+is a multi-edition programme (0 rows with >1 edition), and the single-notice rows
+are exactly what `sarkari_naukri` already models. The pillar is a candidate for
+absorption, not retention.
+
+**URL impact of the moves (GSC clicks per affected URL) — the reason this is a
+modelling cleanup, not an SEO risk:**
+
+| Move | Rows | URLs with clicks | Clicks at risk | One-hop status |
+|---|---|---|---|---|
+| single → `sarkari_naukri` flat `{slug}` | 92 | 1 (`up-swasthya-vibhag-2026`) | **1** | That page is *already served* at `/sarkari-naukri/up-swasthya-vibhag-2026` (the depth-1 fallback); moving the row into `sarkari_naukri` keeps the identical URL — **0 redirects, 0 loss** |
+| recurring → `government-exam` | 8 | 0 | **0** | Would relocate `/sarkari-naukri/{category}/{slug}` → `/government-exam/{category}/{slug}`; none of the 8 has any recorded click, so the whole 8-row move risks **0 clicks** |
+
+Total GSC clicks across all 100 = **1**, and it is URL-neutral under the moves.
+**No moves now** (per instruction); this is the evidence the owner needs to
+decide whether `govt-vacancy` survives as a pillar.
