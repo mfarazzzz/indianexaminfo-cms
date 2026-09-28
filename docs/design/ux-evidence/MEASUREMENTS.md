@@ -169,6 +169,11 @@ Third-party / analytics probe:
                               FAQPage: {faqCount:15, withVisibleText:0}
 /board-exam/state/cbse/cbse-class-12  206 KB · 163 words · alerts block "Get instant alerts — … Telegram · WhatsApp"
 /about 175 words · /disclaimer 195 · /privacy-policy 218 · /contact 42 words (scripts removed, then counted)
+/about verbatim, its "Editorial Policy" section (the claim that contradicts is_verified 0/361):
+  "All information on IndianExamInfo is sourced directly from official exam body websites.
+   We verify dates and notifications before publishing."
+/about also: "operated by IndianExamInfo Media Pvt Ltd, based in New Delhi" (no person named),
+  "helping millions of students" (vs 712 clicks measured in the GSC period)
 /contact form: action="(none)" · inputs [name, email, subject, message, BUTTON] · mailto: links on 4 pages = 0
 Alert links present: header ×2 (aria-label "Join WhatsApp Channel", y=10) + footer ×2 on every page —
   t.me/indianexaminfo and whatsapp.com/channel/0029Vb… ; per-record alerts do not exist
