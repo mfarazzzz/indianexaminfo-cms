@@ -1,0 +1,214 @@
+{
+  "$comment": "CANONICAL CONTRACT — frozen expected booleans for the content-presence rule, GENERATED from the FRONTEND implementation (indianexaminfo-frontend/lib/sectionRegistry.ts hasData/contentTypeHasData over contract/content-has-data.fixtures.json). The frontend TS is the site rule and the anchor of truth; the CMS TS mirror and the SQL mirror (supabase/proposed/content_has_data_fn.sql) must produce exactly these booleans. VENDORED byte-identical into indianexaminfo-cms/contract/. sha256 of this file and of the fixtures file are embedded in BOTH repos' test files; re-baking requires updating the hashes in both, so silent drift fails CI everywhere.",
+  "generatedBy": "indianexaminfo-frontend/lib/sectionRegistry.ts (REGEN_CONTENT_HAS_DATA=1)",
+  "cases": [
+    {
+      "id": "overview-body",
+      "expected": true
+    },
+    {
+      "id": "overview-empty",
+      "expected": false
+    },
+    {
+      "id": "overview-disabled-by-config",
+      "expected": false
+    },
+    {
+      "id": "overview-enabled-in-config",
+      "expected": true
+    },
+    {
+      "id": "overview-empty-config-fresh",
+      "expected": true
+    },
+    {
+      "id": "app-process-steps",
+      "expected": true
+    },
+    {
+      "id": "admit-card-release",
+      "expected": true
+    },
+    {
+      "id": "result-checklink-only",
+      "expected": true
+    },
+    {
+      "id": "answer-key-blank",
+      "expected": false
+    },
+    {
+      "id": "merit-list-url",
+      "expected": true
+    },
+    {
+      "id": "interview-rounds",
+      "expected": true
+    },
+    {
+      "id": "doc-verification-venue",
+      "expected": true
+    },
+    {
+      "id": "final-selection-url",
+      "expected": true
+    },
+    {
+      "id": "seat-allot-uni",
+      "expected": true
+    },
+    {
+      "id": "seat-allot-govt-na-pillar",
+      "expected": false
+    },
+    {
+      "id": "news-titled",
+      "expected": true
+    },
+    {
+      "id": "news-untitled",
+      "expected": false
+    },
+    {
+      "id": "salary-default-editorial",
+      "expected": true
+    },
+    {
+      "id": "important-dates-present",
+      "expected": true
+    },
+    {
+      "id": "eligibility-qual",
+      "expected": true
+    },
+    {
+      "id": "eligibility-blank",
+      "expected": false
+    },
+    {
+      "id": "vacancy-pos",
+      "expected": true
+    },
+    {
+      "id": "vacancy-zero",
+      "expected": false
+    },
+    {
+      "id": "vacancy-entrance-na-pillar",
+      "expected": false
+    },
+    {
+      "id": "fee-pos",
+      "expected": true
+    },
+    {
+      "id": "fee-zero",
+      "expected": false
+    },
+    {
+      "id": "selection-process",
+      "expected": true
+    },
+    {
+      "id": "syllabus-structured",
+      "expected": true
+    },
+    {
+      "id": "syllabus-false",
+      "expected": false
+    },
+    {
+      "id": "academic-info",
+      "expected": true
+    },
+    {
+      "id": "key-highlights-vacancy",
+      "expected": true
+    },
+    {
+      "id": "key-highlights-none",
+      "expected": false
+    },
+    {
+      "id": "previous-papers-items",
+      "expected": true
+    },
+    {
+      "id": "previous-papers-notes-only",
+      "expected": true
+    },
+    {
+      "id": "previous-papers-empty",
+      "expected": false
+    },
+    {
+      "id": "previous-papers-body-not-counted",
+      "expected": false
+    },
+    {
+      "id": "previous-papers-entrance-ok",
+      "expected": true
+    },
+    {
+      "id": "previous-papers-uni-na-pillar",
+      "expected": false
+    },
+    {
+      "id": "study-material-items",
+      "expected": true
+    },
+    {
+      "id": "study-material-notes",
+      "expected": true
+    },
+    {
+      "id": "study-material-empty",
+      "expected": false
+    },
+    {
+      "id": "faqs-quirk-always-false",
+      "expected": false
+    },
+    {
+      "id": "unknown-slug",
+      "expected": false
+    },
+    {
+      "id": "ct-notification",
+      "expected": true
+    },
+    {
+      "id": "ct-application",
+      "expected": true
+    },
+    {
+      "id": "ct-cutoff",
+      "expected": true
+    },
+    {
+      "id": "ct-previous-papers",
+      "expected": true
+    },
+    {
+      "id": "ct-previous-papers-empty",
+      "expected": false
+    },
+    {
+      "id": "ct-study-material",
+      "expected": true
+    },
+    {
+      "id": "ct-date-sheet-absent",
+      "expected": false
+    },
+    {
+      "id": "ct-faqs-quirk",
+      "expected": false
+    },
+    {
+      "id": "ct-mock-test-unknown",
+      "expected": false
+    }
+  ]
+}

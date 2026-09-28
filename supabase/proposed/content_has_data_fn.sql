@@ -108,6 +108,8 @@ BEGIN
     ('syllabus',             'column',    ARRAY['government-exam','govt-vacancy','entrance-exam','university-exam','board-exam']),
     ('cut-off',              'editorial', ARRAY['government-exam','govt-vacancy','entrance-exam']),
     ('answer-key',           'editorial', ARRAY['government-exam','govt-vacancy','entrance-exam']),
+    ('previous-papers',      'editorial', ARRAY['government-exam','govt-vacancy','entrance-exam']),
+    ('study-material',       'editorial', ARRAY['government-exam','govt-vacancy','entrance-exam']),
     ('news',                 'editorial', ARRAY['government-exam','govt-vacancy','entrance-exam','university-exam','board-exam']),
     ('merit-list',           'editorial', ARRAY['government-exam','govt-vacancy']),
     ('document-verification','editorial', ARRAY['government-exam','govt-vacancy']),
@@ -217,6 +219,15 @@ BEGIN
 
   IF section = 'seat-allotment' THEN
     RETURN _chd_arr(mod,'rounds') OR _chd_str(mod,'allotmentResultUrl') OR _chd_str(mod,'acceptanceProcess');
+  END IF;
+
+  -- Previous Papers / Study Material: substantive when they have items OR notes
+  -- (mirrors the frontend editorial rule; shape mirrors sample-papers).
+  IF section = 'previous-papers' THEN
+    RETURN _chd_arr(mod,'papers') OR _chd_str(mod,'notes');
+  END IF;
+  IF section = 'study-material' THEN
+    RETURN _chd_arr(mod,'materials') OR _chd_str(mod,'notes');
   END IF;
 
   -- default editorial (salary, age-limit, documents-required, reservation, …)

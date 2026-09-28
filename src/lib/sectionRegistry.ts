@@ -101,8 +101,14 @@ export const SECTION_REGISTRY: SectionDef[] = [
   { slug: "syllabus",            label: "Syllabus",            source: "column",    appliesTo: ALL_PILLARS, order: 200, placement: "tab", showAsTab: true },
   { slug: "cut-off",             label: "Cut Off Marks",       source: "editorial", appliesTo: ["government-exam", "govt-vacancy", "entrance-exam"], order: 210, placement: "tab", showAsTab: true },
   { slug: "answer-key",          label: "Answer Key",          source: "editorial", appliesTo: ["government-exam", "govt-vacancy", "entrance-exam"], order: 220, placement: "tab", showAsTab: true },
-  // previous-papers + study-material RETIRED (2026-09-10) — content moved to the exam_resources
-  // library (rendered by ResourceLibrary, not an editorial section). news KEPT (Related News pending).
+  // previous-papers: an editorial content type again (pilot). Its page exists ONLY where the
+  // record has previous-papers content — the presence rule below reads real content, never
+  // enablement. (study-material gets the same treatment — see order 240 below.)
+  { slug: "previous-papers",     label: "Previous Papers",     source: "editorial", appliesTo: ["government-exam", "govt-vacancy", "entrance-exam"], order: 230, placement: "tab", showAsTab: true },
+  // study-material: an editorial content type again (pilot), same treatment as
+  // previous-papers. Its page exists ONLY where the record has study-material content —
+  // the presence rule below reads real content, never enablement.
+  { slug: "study-material",      label: "Study Material",      source: "editorial", appliesTo: ["government-exam", "govt-vacancy", "entrance-exam"], order: 240, placement: "tab", showAsTab: true },
   { slug: "news",                label: "News & Updates",      source: "editorial", appliesTo: ALL_PILLARS, order: 250, placement: "tab", showAsTab: true },
 
   // ── Selection-outcome sections (content_modules-backed, 2026-09-11) ─────────
@@ -247,6 +253,14 @@ function editorialHasData(exam: HasDataView, slug: string): boolean {
       return nonEmptyStr(d.finalListUrl) || nonEmptyStr(d.releaseDate);
     case "seat-allotment":
       return nonEmptyArr(d.rounds) || nonEmptyStr(d.allotmentResultUrl) || nonEmptyStr(d.acceptanceProcess);
+    // Previous Papers is substantive when it has at least one paper OR preparation notes.
+    // (Shape mirrors sample-papers: { papers: [{title, year, downloadLink}], notes }.)
+    case "previous-papers":
+      return nonEmptyArr(d.papers) || nonEmptyStr(d.notes);
+    // Study Material is substantive when it has at least one material OR preparation notes.
+    // (Shape: { materials: [{title, type, downloadLink}], notes }.)
+    case "study-material":
+      return nonEmptyArr(d.materials) || nonEmptyStr(d.notes);
     default:
       return nonEmptyStr(d.body) || nonEmptyStr(d.content) || nonEmptyStr(d.description) || nonEmptyStr(d.summary);
   }
@@ -332,10 +346,11 @@ export const CONTENT_TYPE_TO_SECTION: Record<string, string> = {
   "answer-key": "answer-key",
   syllabus: "syllabus",
   cutoff: "cut-off",
-  // "date-sheet" intentionally absent: board/university concept only.
-  // Must NOT fall through to "admit-card" — that caused recruitment exams with
-  // admit-card content to show a Date Sheet tab.
-  // previous-papers / study-material removed — retired sections (now the exam_resources library).
+  "previous-papers": "previous-papers",
+  "study-material": "study-material",
+  // "date-sheet" intentionally absent: it is a board/university concept with no
+  // dedicated section in the registry. It must NOT fall through to "admit-card"
+  // (that caused recruitment exams with admit-card content to show a Date Sheet tab).
   faqs: "faqs",
   news: "news",
 };
@@ -344,8 +359,8 @@ export const CONTENT_TYPE_TO_SECTION: Record<string, string> = {
  * THE gate for a content-type URL. True iff the exam has data for the section
  * that URL maps to. Used by: tab rows, sitemap CT emission, sub-page routes
  * (notFound when false), and content-hub link lists. content types not in the
- * bridge (previous-papers, mock-test, study-material, books) have no backing
- * store today and are always false — they were never real pages.
+ * bridge (mock-test, books) have no backing store today and are always false —
+ * they were never real pages.
  */
 export function contentTypeHasData(exam: HasDataView, contentType: string): boolean {
   const section = CONTENT_TYPE_TO_SECTION[contentType];
