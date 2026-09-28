@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Vendored cross-repo contract files must stay byte-identical (pinned sha256 in tests)
+contract/*.json text eol=lf

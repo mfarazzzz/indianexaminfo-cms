@@ -19,8 +19,9 @@
  * both repos. Re-baking expected.json (see the frontend test docblock) changes
  * its hash and forces a deliberate, visible hash update in BOTH test files.
  *
- * pinned hashes below MUST equal the frontend test's constants:
- *   FIXTURES c04e46cb14054704e9cb96e20468a7b647425f2b0618490feb1efa1c4535c009
+ * pinned hashes below MUST equal the frontend test's constants (LF-normalized
+ * bytes; .gitattributes pins contract/*.json to eol=lf in both repos):
+ *   FIXTURES 2590900cdc2f7d7d6b688f98772f0390707b9a55fb13cada2aeb782d328ec108
  *   EXPECTED 05b95987a5419d65f3ace35fae6c27714b6e19357c82f6fc6fb2498a6c07f3b8
  * (baked 2026-09-28 from the frontend rule; the quirk-pinned cases
  * faqs-quirk-always-false / ct-faqs-quirk expect FALSE — the always-false FAQs
@@ -39,7 +40,7 @@ import {
   type HasDataView,
 } from '@/lib/sectionRegistry';
 
-const FIXTURES_SHA256 = 'c04e46cb14054704e9cb96e20468a7b647425f2b0618490feb1efa1c4535c009';
+const FIXTURES_SHA256 = '2590900cdc2f7d7d6b688f98772f0390707b9a55fb13cada2aeb782d328ec108';
 const EXPECTED_SHA256 = '05b95987a5419d65f3ace35fae6c27714b6e19357c82f6fc6fb2498a6c07f3b8';
 
 const CONTRACT_DIR = path.resolve(process.cwd(), 'contract');
