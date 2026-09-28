@@ -118,10 +118,11 @@ export function MenusPage() {
     try {
       await saveMenuItems(selected, items, user?.id);
       toast.success("Menu saved. Revalidating…");
-      const url = getSetting("frontend_url", SITE.frontendUrl) as string;
-      const token = getSetting("revalidate_token", "") as string;
-      if (token) await revalidateMenus(url, token);
-      toast.success("Frontend updated.");
+      // The refresh goes to the Edge Function; it reports honestly, so the
+      // "Frontend updated" toast is only shown when the refresh actually worked.
+      const result = await revalidateMenus();
+      if (result.success) toast.success("Frontend updated.");
+      else toast.error(`Menu saved. The live site didn't refresh — ${result.error ?? "tell the admin."}`);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {

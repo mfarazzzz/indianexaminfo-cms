@@ -1,19 +1,25 @@
 /**
- * AIProviderManager — Complete admin UI for multi-provider AI key management.
- * Includes: provider list, add/edit form, test button, drag-and-drop reorder, health dashboard.
+ * AIProviderManager — which AI model the CMS uses, in what order.
+ *
+ * This panel no longer stores keys. A key saved in the `ai_providers` table was
+ * readable by the browser under the public read policy and got inlined into the
+ * built bundle, so anyone who opened the login page could take it and spend the
+ * quota. The key is now an Edge Function secret (`AI_KEY_GROQ` etc.) that only
+ * the `ai-fill` function reads; this screen only chooses provider and model and
+ * shows the health board the function writes.
  */
 import React, { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, GripVertical, TestTube2, Loader2, Edit2, Power, AlertCircle, CheckCircle } from "lucide-react";
+import { Plus, Trash2, TestTube2, Loader2, Edit2, Power, AlertCircle, CheckCircle, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { getAllProviders, createProvider, updateProvider, deleteProvider, updateProviderPriorities, getRecentLogs } from "@/services/aiProviderService";
-import { generateWithFallback } from "@/lib/ai/fallbackWrapper";
+import { generateTextWithProvider } from "@/lib/ai/aiFillClient";
 import type { AIProvider, AIProviderInsert, AIProviderName, AIRequestLog } from "@/types/aiProvider";
 import { PROVIDER_LABELS, PROVIDER_MODELS } from "@/types/aiProvider";
 import { getErrorMessage } from "@/lib/utils";
 
-function maskKey(key: string): string {
-  if (!key || key.length <= 8) return "••••••••";
-  return `${key.slice(0, 4)}${"•".repeat(Math.min(key.length - 8, 16))}${key.slice(-4)}`;
+/** Secret name the owner must set for a provider - name only, never a value. */
+function secretNameFor(provider: AIProviderName): string {
+  return `AI_KEY_${provider.toUpperCase()}`;
 }
 
 export function AIProviderManager() {
@@ -22,7 +28,7 @@ export function AIProviderManager() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -47,24 +53,25 @@ export function AIProviderManager() {
     try {
       await deleteProvider(id);
       setProviders((prev) => prev.filter((p) => p.id !== id));
-      toast.success("Key deleted.");
+      toast.success("Provider removed.");
     } catch (err) { toast.error(getErrorMessage(err)); }
   };
 
-  const handleTest = async (provider: AIProvider) => {
-    setTestingId(provider.id);
+  // One test for the whole chain, not per key: ai-fill walks the enabled rows in
+  // priority order itself, so "test this row" would only ever test the first one.
+  const handleTest = async () => {
+    setTesting(true);
     try {
-      const { OpenAICompatibleAdapter } = await import("@/lib/ai/adapters/openai-compatible");
-      const { GeminiAdapter } = await import("@/lib/ai/adapters/gemini");
-      const adapter = provider.provider === "gemini" ? new GeminiAdapter() : new OpenAICompatibleAdapter(provider.provider);
-      await adapter.generate({ prompt: "Say 'connected' in one word.", apiKey: provider.apiKey, model: provider.model });
-      toast.success(`${provider.label}: ✅ Connected`);
-      setProviders((prev) => prev.map((p) => p.id === provider.id ? { ...p, lastError: null } : p));
+      const { content, provider, model } = await generateTextWithProvider(
+        "Reply with the single word: connected",
+        "settings-test",
+      );
+      toast.success(`AI is working (${provider} / ${model}). Reply: ${content.trim().slice(0, 30)}`);
+      await load();
     } catch (err) {
-      const msg = getErrorMessage(err);
-      toast.error(`${provider.label}: ❌ ${msg}`);
-      setProviders((prev) => prev.map((p) => p.id === provider.id ? { ...p, lastError: msg } : p));
-    } finally { setTestingId(null); }
+      toast.error(getErrorMessage(err));
+      await load();
+    } finally { setTesting(false); }
   };
 
   const handleMoveUp = async (index: number) => {
@@ -88,22 +95,39 @@ export function AIProviderManager() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-slate-900">AI Providers</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Keys are tried in priority order. If one fails, the next is used automatically.</p>
+          <p className="text-xs text-slate-500 mt-0.5">Models are tried in this order. If one fails, the next is used automatically.</p>
         </div>
-        <button onClick={() => { setShowForm(true); setEditingId(null); }}
-          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700">
-          <Plus size={14} /> Add Key
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleTest} disabled={testing}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            {testing ? <Loader2 size={14} className="animate-spin" /> : <TestTube2 size={14} />} Test AI
+          </button>
+          <button onClick={() => { setShowForm(true); setEditingId(null); }}
+            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700">
+            <Plus size={14} /> Add model
+          </button>
+        </div>
+      </div>
+
+      {/* Where the key lives now - the value is never shown or entered here. */}
+      <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        <KeyRound size={14} className="mt-0.5 shrink-0" />
+        <div>
+          API keys are stored as Supabase Edge Function secrets, not in this app. The
+          server reads them only while making the call, so no key appears in the CMS,
+          its build or this screen. Ask the admin to set{" "}
+          <span className="font-mono">{secretNameFor("groq")}</span>{" "}
+          (and one per extra provider you enable) in the Supabase dashboard.
+          A provider whose secret is not set is skipped.
+        </div>
       </div>
 
       {/* Stats bar */}
-      <div className="flex gap-4 text-xs text-slate-500">
-        <span>{providers.filter((p) => p.isEnabled).length} enabled / {providers.length} total</span>
-        <span>•</span>
-        <span>{providers.reduce((s, p) => s + p.usageCount, 0)} total requests served</span>
+      <div className="text-xs text-slate-500">
+        {providers.filter((p) => p.isEnabled).length} enabled / {providers.length} total
       </div>
 
       {/* Provider list */}
@@ -129,30 +153,26 @@ export function AIProviderManager() {
                 "bg-pink-100 text-pink-700"
               }`}>{PROVIDER_LABELS[p.provider]}</span>
 
-              {/* Label + key */}
+              {/* Label + secret name */}
               <div className="flex-1 min-w-0">
                 <span className="text-sm font-medium text-slate-700">{p.label}</span>
-                <span className="text-xs text-slate-400 ml-2 font-mono">{maskKey(p.apiKey)}</span>
+                <span className="text-xs text-slate-400 ml-2 font-mono">{secretNameFor(p.provider)}</span>
               </div>
 
               {/* Model */}
               <span className="text-xs text-slate-500 hidden sm:inline">{p.model}</span>
 
-              {/* Status */}
+              {/* Status - written by the Edge Function after real calls */}
               {p.lastError ? (
                 <span className="text-red-500" title={p.lastError}><AlertCircle size={14} /></span>
               ) : p.lastUsedAt ? (
-                <span className="text-green-500" title="Working"><CheckCircle size={14} /></span>
+                <span className="text-green-500" title={`Last used ${new Date(p.lastUsedAt).toLocaleString()}`}><CheckCircle size={14} /></span>
               ) : null}
 
               {/* Actions */}
               <button onClick={() => handleToggle(p.id, !p.isEnabled)} title={p.isEnabled ? "Disable" : "Enable"}
                 className={`p-1.5 rounded ${p.isEnabled ? "text-green-600 hover:bg-green-50" : "text-slate-400 hover:bg-slate-100"}`}>
                 <Power size={14} />
-              </button>
-              <button onClick={() => handleTest(p)} disabled={testingId === p.id} title="Test connection"
-                className="p-1.5 rounded text-slate-500 hover:bg-slate-100 disabled:opacity-50">
-                {testingId === p.id ? <Loader2 size={14} className="animate-spin" /> : <TestTube2 size={14} />}
               </button>
               <button onClick={() => { setEditingId(p.id); setShowForm(true); }} title="Edit"
                 className="p-1.5 rounded text-slate-500 hover:bg-slate-100">
@@ -167,7 +187,9 @@ export function AIProviderManager() {
           </div>
         ))}
         {providers.length === 0 && (
-          <div className="text-center py-8 text-sm text-slate-400">No AI keys configured. Click "Add Key" to get started.</div>
+          <div className="text-center py-8 text-sm text-slate-400">
+            No models listed. The server uses its fallback provider until you add one.
+          </div>
         )}
       </div>
 
@@ -177,7 +199,7 @@ export function AIProviderManager() {
           <h3 className="text-xs font-semibold text-slate-600 mb-2">Recent Requests</h3>
           <div className="border border-slate-200 rounded overflow-hidden">
             <table className="w-full text-xs">
-              <thead className="bg-slate-50"><tr><th className="px-2 py-1.5 text-left text-slate-500">Time</th><th className="px-2 py-1.5 text-left text-slate-500">Status</th><th className="px-2 py-1.5 text-left text-slate-500">Latency</th><th className="px-2 py-1.5 text-left text-slate-500">Consumer</th></tr></thead>
+              <thead className="bg-slate-50"><tr><th className="px-2 py-1.5 text-left text-slate-500">Time</th><th className="px-2 py-1.5 text-left text-slate-500">Status</th><th className="px-2 py-1.5 text-left text-slate-500">Latency</th><th className="px-2 py-1.5 text-left text-slate-500">Feature</th></tr></thead>
               <tbody>
                 {logs.map((log) => (
                   <tr key={log.id} className="border-t border-slate-100">
@@ -206,7 +228,7 @@ export function AIProviderManager() {
             setShowForm(false);
             setEditingId(null);
             await load();
-            toast.success(editingId ? "Key updated." : "Key added.");
+            toast.success(editingId ? "Model updated." : "Model added.");
           }}
           onCancel={() => { setShowForm(false); setEditingId(null); }}
         />
@@ -220,17 +242,16 @@ export function AIProviderManager() {
 function ProviderFormModal({ editing, onSave, onCancel }: { editing?: AIProvider; onSave: (data: AIProviderInsert) => Promise<void>; onCancel: () => void }) {
   const [provider, setProvider] = useState<AIProviderName>(editing?.provider ?? "groq");
   const [label, setLabel] = useState(editing?.label ?? "");
-  const [apiKey, setApiKey] = useState(editing?.apiKey ?? "");
   const [model, setModel] = useState(editing?.model ?? "openai/gpt-oss-120b");
   const [saving, setSaving] = useState(false);
 
   const models = PROVIDER_MODELS[provider] ?? [];
 
   const handleSubmit = async () => {
-    if (!label.trim() || !apiKey.trim()) { toast.error("Label and API key are required."); return; }
+    if (!label.trim()) { toast.error("A label is required."); return; }
     setSaving(true);
     try {
-      await onSave({ provider, label: label.trim(), apiKey: apiKey.trim(), model });
+      await onSave({ provider, label: label.trim(), model });
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setSaving(false); }
   };
@@ -238,7 +259,7 @@ function ProviderFormModal({ editing, onSave, onCancel }: { editing?: AIProvider
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-5 space-y-4 mx-4">
-        <h3 className="font-semibold text-slate-900">{editing ? "Edit AI Key" : "Add AI Key"}</h3>
+        <h3 className="font-semibold text-slate-900">{editing ? "Edit AI model" : "Add AI model"}</h3>
 
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Provider</label>
@@ -250,14 +271,8 @@ function ProviderFormModal({ editing, onSave, onCancel }: { editing?: AIProvider
 
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Label</label>
-          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. My Groq Key 1"
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Groq primary"
             className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">API Key</label>
-          <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="gsk_... or AIza..."
-            type="password" className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-mono" />
         </div>
 
         <div>
@@ -268,11 +283,16 @@ function ProviderFormModal({ editing, onSave, onCancel }: { editing?: AIProvider
           </select>
         </div>
 
+        <p className="text-[11px] text-slate-500">
+          No API key field here by design - the server holds keys as secrets
+          (<span className="font-mono">{secretNameFor(provider)}</span>).
+        </p>
+
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded">Cancel</button>
           <button onClick={handleSubmit} disabled={saving}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50">
-            {saving ? "Saving..." : (editing ? "Update" : "Add Key")}
+            {saving ? "Saving..." : (editing ? "Update" : "Add model")}
           </button>
         </div>
       </div>

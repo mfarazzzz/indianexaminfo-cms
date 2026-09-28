@@ -1,14 +1,21 @@
 /**
  * frontend.ts — Frontend revalidation client.
  *
- * SPEC (matches app/api/revalidate/route.ts exactly):
- *   - POST to {frontendUrl}/api/revalidate
- *   - Header: x-revalidate-token (NOT Authorization: Bearer)
- *   - Body: { path: string } | { tag: string } | {}
- *   - One path per request
- *   - 100ms delay between batched requests
- *   - Empty body = revalidate all critical paths (frontend decides which)
+ * The browser does NOT call the frontend any more. It calls the
+ * `revalidate-frontend` edge function, which holds the token and forwards the
+ * request. Reason: the token used to live in the CMS `.env`
+ * (VITE_REVALIDATE_TOKEN), and Vite inlines `import.meta.env.*` into the built
+ * bundle - so every visitor of the CMS had the cache-busting secret. S0-1d of
+ * the 28 Sep brief. The token is now read from settings by the function.
+ *
+ * Contract with supabase/functions/revalidate-frontend:
+ *   body { tag }        → revalidate one cache tag
+ *   body { path }       → revalidate one path   (authenticated callers only)
+ *   body {}             → revalidate the critical paths (authenticated only)
+ *   reply { ok, status, type }
  */
+
+import { db } from "@/lib/supabase/client";
 
 export interface RevalidateResult {
   success: boolean;
@@ -26,68 +33,63 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function revalidateOne(
-  frontendUrl: string,
-  token: string,
-  body: { path?: string; tag?: string }
-): Promise<RevalidateResult> {
-  try {
-    const res = await fetch(`${frontendUrl}/api/revalidate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-revalidate-token": token,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      return { success: false, error: `${res.status} — ${text}` };
+/** Pull the function's own error text out of a FunctionsHttpError, if present. */
+async function messageFrom(error: unknown): Promise<string | null> {
+  const ctx = (error as { context?: unknown } | null)?.context;
+  if (typeof Response !== "undefined" && ctx instanceof Response) {
+    try {
+      const body = (await ctx.json()) as { error?: unknown };
+      if (typeof body?.error === "string" && body.error.trim()) return body.error;
+    } catch {
+      return null;
     }
-    const data = await res.json();
-    return { success: true, type: data.type };
+  }
+  const msg = (error as { message?: unknown } | null)?.message;
+  return typeof msg === "string" && msg.trim() ? msg : null;
+}
+
+async function invokeRevalidate(payload: { tag?: string; path?: string }): Promise<RevalidateResult> {
+  try {
+    const { data, error } = await db.functions.invoke("revalidate-frontend", { body: payload });
+    if (error) {
+      return { success: false, error: (await messageFrom(error)) ?? "Revalidation request failed." };
+    }
+    const res = (data ?? {}) as { ok?: boolean; status?: number; type?: string; error?: string };
+    if (res.ok === false) {
+      return {
+        success: false,
+        error: res.error ?? `The live site did not accept the refresh${res.status ? ` (status ${res.status})` : ""}.`,
+      };
+    }
+    const type = res.type === "tag" || res.type === "path" || res.type === "all" ? res.type : undefined;
+    return { success: true, type };
   } catch (err) {
-    return { success: false, error: String(err) };
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
 /** Revalidate a single path */
-export async function revalidatePath(
-  path: string,
-  frontendUrl: string,
-  token: string
-): Promise<RevalidateResult> {
-  return revalidateOne(frontendUrl, token, { path });
+export async function revalidatePath(path: string): Promise<RevalidateResult> {
+  return invokeRevalidate({ path });
 }
 
 /** Revalidate by tag */
-export async function revalidateTag(
-  tag: string,
-  frontendUrl: string,
-  token: string
-): Promise<RevalidateResult> {
-  return revalidateOne(frontendUrl, token, { tag });
+export async function revalidateTag(tag: string): Promise<RevalidateResult> {
+  return invokeRevalidate({ tag });
 }
 
-/** Revalidate all critical paths — sends empty body, frontend handles it */
-export async function revalidateAll(
-  frontendUrl: string,
-  token: string
-): Promise<RevalidateResult> {
-  return revalidateOne(frontendUrl, token, {});
+/** Revalidate all critical paths — the function decides which, with the frontend */
+export async function revalidateAll(): Promise<RevalidateResult> {
+  return invokeRevalidate({});
 }
 
 /** Revalidate all paths for an exam (pillar + category + exam + each content type) */
-export async function revalidateExamPaths(
-  exam: {
-    pillar: string;
-    categorySlug: string;
-    examSlug: string;
-    enabledContentTypes: string[];
-  },
-  frontendUrl: string,
-  token: string
-): Promise<BatchResult> {
+export async function revalidateExamPaths(exam: {
+  pillar: string;
+  categorySlug: string;
+  examSlug: string;
+  enabledContentTypes: string[];
+}): Promise<BatchResult> {
   const paths = [
     `/${exam.pillar}`,
     `/${exam.pillar}/${exam.categorySlug}`,
@@ -100,7 +102,7 @@ export async function revalidateExamPaths(
   const result: BatchResult = { total: paths.length, succeeded: 0, failed: [] };
 
   for (const path of paths) {
-    const r = await revalidateOne(frontendUrl, token, { path });
+    const r = await invokeRevalidate({ path });
     if (r.success) {
       result.succeeded++;
     } else {
@@ -113,17 +115,13 @@ export async function revalidateExamPaths(
 }
 
 /** Revalidate a specific content post */
-export async function revalidateContentPost(
-  post: {
-    pillar: string;
-    categorySlug: string;
-    examSlug: string;
-    contentType: string;
-    postSlug: string;
-  },
-  frontendUrl: string,
-  token: string
-): Promise<BatchResult> {
+export async function revalidateContentPost(post: {
+  pillar: string;
+  categorySlug: string;
+  examSlug: string;
+  contentType: string;
+  postSlug: string;
+}): Promise<BatchResult> {
   const paths = [
     `/${post.pillar}/${post.categorySlug}/${post.examSlug}/${post.contentType}`,
     `/${post.pillar}/${post.categorySlug}/${post.examSlug}/${post.contentType}/${post.postSlug}`,
@@ -133,7 +131,7 @@ export async function revalidateContentPost(
   const result: BatchResult = { total: paths.length, succeeded: 0, failed: [] };
 
   for (const path of paths) {
-    const r = await revalidateOne(frontendUrl, token, { path });
+    const r = await invokeRevalidate({ path });
     if (r.success) result.succeeded++;
     else result.failed.push(`${path}: ${r.error}`);
     await delay(100);
@@ -143,12 +141,7 @@ export async function revalidateContentPost(
 }
 
 /** Revalidate a blog post */
-export async function revalidateBlogPost(
-  section: string,
-  slug: string,
-  frontendUrl: string,
-  token: string
-): Promise<BatchResult> {
+export async function revalidateBlogPost(section: string, slug: string): Promise<BatchResult> {
   const paths = [
     "/blog",
     `/blog/${section}`,
@@ -158,7 +151,7 @@ export async function revalidateBlogPost(
   const result: BatchResult = { total: paths.length, succeeded: 0, failed: [] };
 
   for (const path of paths) {
-    const r = await revalidateOne(frontendUrl, token, { path });
+    const r = await invokeRevalidate({ path });
     if (r.success) result.succeeded++;
     else result.failed.push(`${path}: ${r.error}`);
     await delay(100);
@@ -168,9 +161,6 @@ export async function revalidateBlogPost(
 }
 
 /** Revalidate menus — they're in root layout so revalidate all */
-export async function revalidateMenus(
-  frontendUrl: string,
-  token: string
-): Promise<RevalidateResult> {
-  return revalidateAll(frontendUrl, token);
+export async function revalidateMenus(): Promise<RevalidateResult> {
+  return revalidateAll();
 }

@@ -5,9 +5,6 @@
 import React, { useState } from "react";
 import { Sparkles, Loader2, X, Clipboard } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useSettings } from "@/hooks/useSettings";
-import { setAutofillApiKey } from "@/lib/ai/autofill";
-import { db } from "@/lib/supabase/client";
 
 interface AIAutoFillDialogProps {
   open: boolean;
@@ -26,7 +23,6 @@ export function AIAutoFillDialog({
   title = "AI Auto-Fill",
   placeholder = "Paste the raw exam notification, official PDF text, or any content here...",
 }: AIAutoFillDialogProps) {
-  const { getSetting, isLoading: settingsLoading } = useSettings();
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,39 +37,10 @@ export function AIAutoFillDialog({
 
   const handleExtract = async () => {
     if (!text.trim()) return;
-    
-    // Check if the text is valid JSON — if so, no API key needed
-    const trimmed = text.trim();
-    const looksLikeJson = trimmed.startsWith("{") || /```(?:json)?\s*\{/.test(trimmed);
-    
-    // Helper: get API key from settings context OR fallback to direct DB read
-    const resolveApiKey = async (): Promise<string> => {
-      const fromCtx = (getSetting("gemini_api_key", "") as string || "").replace(/^["']|["']$/g, "").trim();
-      if (fromCtx) return fromCtx;
-      // Fallback: settings might not have loaded yet — read directly
-      try {
-        const { data } = await db.from("settings").select("value").eq("key", "gemini_api_key").single();
-        const val = typeof data?.value === "string" ? data.value : "";
-        return val.replace(/^["']|["']$/g, "").trim();
-      } catch {
-        return "";
-      }
-    };
 
-    // Only require API key if text is NOT JSON (needs AI processing)
-    if (!looksLikeJson) {
-      const apiKey = await resolveApiKey();
-      if (!apiKey) {
-        setError("API key required for raw text extraction. Go to Settings → AI to add your Groq/Gemini key, or paste JSON directly (no key needed).");
-        return;
-      }
-      setAutofillApiKey(apiKey);
-    } else {
-      // Still set key in case tryDirectParse fails and it falls through to AI
-      const apiKey = await resolveApiKey();
-      if (apiKey) setAutofillApiKey(apiKey);
-    }
-    
+    // No key is looked up here. Raw text is sent to the ai-fill Edge Function
+    // by the caller (`extractFn`), which holds the provider key server-side;
+    // pasted JSON is parsed in the browser and needs no AI at all.
     setLoading(true);
     setError(null);
     try {
@@ -147,9 +114,9 @@ export function AIAutoFillDialog({
             disabled={loading}
           />
           <p className="text-xs text-slate-400">
-            <strong>JSON:</strong> Paste structured JSON (from ChatGPT/Claude/Perplexity) — fills instantly, no API key needed.
+            <strong>JSON:</strong> Paste structured JSON (from ChatGPT/Claude/Perplexity) — fills instantly, no AI call.
             <br />
-            <strong>Raw text:</strong> Paste notification text, PDF content, or exam details — AI extracts fields (requires API key in Settings → AI).
+            <strong>Raw text:</strong> Paste notification text, PDF content, or exam details — AI extracts the fields on the server.
           </p>
           {error && (
             <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>

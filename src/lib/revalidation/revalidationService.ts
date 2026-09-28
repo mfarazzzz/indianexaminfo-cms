@@ -7,8 +7,14 @@
  * - A debounce window (4 seconds) groups rapid saves into one batch
  * - Only unique, affected tags are sent — no duplicates, no unrelated pages
  * - Failed batches retry automatically with exponential backoff (3 attempts)
- * - Config is read from the settings table and cached for 5 minutes
- * - If frontend isn't configured, everything is silently skipped
+ * - Configuration is read from the settings table and cached for 5 minutes
+ * - If the frontend isn't configured, everything is silently skipped
+ *
+ * The request itself goes to the `revalidate-frontend` Edge Function (see
+ * src/lib/api/frontend.ts). This module used to read `revalidate_token` out of
+ * settings into the browser and call the frontend with it; the token is a
+ * secret and has no business in a page, so it does not come back here. See
+ * S0-1d of the 28 Sep brief.
  *
  * FLOW:
  *   save() → enqueue tags → debounce timer resets
@@ -24,6 +30,7 @@
  */
 
 import { db } from "@/lib/supabase/client";
+import { revalidateTag as revalidateTagOnFunction } from "@/lib/api/frontend";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TYPES
@@ -32,8 +39,9 @@ import { db } from "@/lib/supabase/client";
 export type RevalidationStatus = "idle" | "publishing" | "live" | "failed";
 
 interface RevalidationConfig {
-  frontendUrl: string;
-  token: string;
+  /** Present only as the "is revalidation set up at all?" switch. The Edge
+   *  Function decides which site to call; the browser does not. */
+  configured: boolean;
 }
 
 interface PendingBatch {
@@ -62,19 +70,12 @@ async function getConfig(): Promise<RevalidationConfig | null> {
     const { data } = await db
       .from("settings")
       .select("key, value")
-      .in("key", ["frontend_url", "revalidate_token"]);
+      .eq("key", "frontend_url");
 
-    if (!data || data.length < 2) return null;
+    const row = (data ?? []).find((r: { key: string }) => r.key === "frontend_url");
+    const url = typeof row?.value === "string" ? row.value : String(row?.value ?? "").replace(/^"|"$/g, "");
 
-    const map: Record<string, string> = {};
-    for (const row of data) {
-      const val = row.value;
-      map[row.key] = typeof val === "string" ? val : String(val).replace(/^"|"$/g, "");
-    }
-
-    if (!map.frontend_url || !map.revalidate_token) return null;
-
-    cachedConfig = { frontendUrl: map.frontend_url, token: map.revalidate_token };
+    cachedConfig = { configured: url.trim().length > 0 };
     configLoadedAt = now;
     return cachedConfig;
   } catch {
@@ -120,9 +121,9 @@ async function flushBatch(): Promise<void> {
   if (tags.length === 0) return;
 
   const config = await getConfig();
-  if (!config) return; // Frontend not configured — skip silently
+  if (!config?.configured) return; // Frontend not configured — skip silently
 
-  const success = await executeBatch(tags, config);
+  const success = await executeBatch(tags);
 
   if (!success) {
     // Queue for retry — don't log noise for transient failures
@@ -134,25 +135,14 @@ async function flushBatch(): Promise<void> {
 // BATCH EXECUTION — sends deduplicated tags in one pass
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async function executeBatch(tags: string[], config: RevalidationConfig): Promise<boolean> {
+async function executeBatch(tags: string[]): Promise<boolean> {
   let allSuccess = true;
 
   // Send each tag as its own revalidation call
-  // (Next.js revalidateTag is per-tag, the API route processes one at a time)
+  // (Next.js revalidateTag is per-tag, the endpoint processes one at a time)
   for (const tag of tags) {
-    try {
-      const res = await fetch(`${config.frontendUrl}/api/revalidate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-revalidate-token": config.token,
-        },
-        body: JSON.stringify({ tag }),
-      });
-      if (!res.ok) allSuccess = false;
-    } catch {
-      allSuccess = false;
-    }
+    const result = await revalidateTagOnFunction(tag);
+    if (!result.success) allSuccess = false;
   }
 
   return allSuccess;
@@ -185,13 +175,13 @@ async function processRetries(): Promise<void> {
   if (retryQueue.length === 0) return;
 
   const config = await getConfig();
-  if (!config) { scheduleNextRetry(); return; }
+  if (!config?.configured) { scheduleNextRetry(); return; }
 
   // Process up to 3 jobs per cycle
   const batch = retryQueue.splice(0, 3);
 
   for (const job of batch) {
-    const success = await executeBatch(job.tags, config);
+    const success = await executeBatch(job.tags);
     if (!success) {
       if (job.attempt < MAX_ATTEMPTS) {
         job.attempt++;

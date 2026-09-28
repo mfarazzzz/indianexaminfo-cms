@@ -4,8 +4,6 @@ import { Eye, EyeOff, Loader2, Check, X, RefreshCw, TestTube2 } from "lucide-rea
 import { useSettings } from "@/hooks/useSettings";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllSettings, updateSettingsBulk, testSupabaseConnection } from "@/services/settingsService";
-import { generateWithGemini, listAvailableModels } from "@/lib/gemini/client";
-import { clearApiKeyCache, setAutofillApiKey } from "@/lib/ai/autofill";
 import { AIProviderManager } from "@/components/settings/AIProviderManager";
 import { GscTrafficImportCard } from "@/components/settings/GscTrafficImportCard";
 import {
@@ -20,7 +18,7 @@ type Tab = { id: SettingGroup | "integrations"; label: string; icon: string };
 const TABS: Tab[] = [
   { id: "general",      label: "General",           icon: "⚙️" },
   { id: "database",     label: "Database",          icon: "🗄️" },
-  { id: "ai",           label: "AI (Gemini)",       icon: "✨" },
+  { id: "ai",           label: "AI Providers",       icon: "✨" },
   { id: "seo",          label: "SEO",               icon: "🔍" },
   { id: "notifications",label: "Notifications",     icon: "🔔" },
   { id: "integrations", label: "Frontend",          icon: "🔗" },
@@ -93,10 +91,6 @@ export function SettingsPage() {
     try {
       await updateSettingsBulk(keys.map((k) => ({ key: k, value: local[k] as never })), user?.id);
       await refreshSettings();
-      // If AI key was saved, update the autofill module with the new key
-      if (keys.includes("gemini_api_key")) {
-        setAutofillApiKey(local["gemini_api_key"] as string);
-      }
       toast.success("Settings saved.");
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -124,63 +118,25 @@ export function SettingsPage() {
     }
   };
 
-  // AI test state
-  const [aiStatus, setAiStatus] = useState<"idle"|"testing"|"ok"|"fail">("idle");
-  const [aiError, setAiError] = useState("");
-  const [testingKey, setTestingKey] = useState<string | null>(null);
-  const [keyStatuses, setKeyStatuses] = useState<Record<string, "idle"|"ok"|"fail">>({});
-
-  const testSingleKey = async (key: string, keyLabel: string) => {
-    if (!key) return;
-    setTestingKey(keyLabel);
-    try {
-      await generateWithGemini("Say 'connected' in one word.", key, undefined);
-      setKeyStatuses((prev) => ({ ...prev, [keyLabel]: "ok" }));
-      toast.success(`${keyLabel}: Connected ✅`);
-    } catch (err) {
-      setKeyStatuses((prev) => ({ ...prev, [keyLabel]: "fail" }));
-      toast.error(`${keyLabel}: ${getErrorMessage(err)}`);
-    } finally {
-      setTestingKey(null);
-    }
-  };
-
-  const testAi = async () => {
-    setAiStatus("testing");
-    setAiError("");
-    const apiKey = get("gemini_api_key","") as string;
-    const model = get("gemini_model","gemini-2.5-flash") as string;
-    
-    try {
-      await generateWithGemini("Say 'connected' in one word.", apiKey, model);
-      setAiStatus("ok");
-    } catch (err) {
-      const msg = getErrorMessage(err);
-      // If 404, try listing models to help debug
-      if (msg.includes("not found")) {
-        const models = await listAvailableModels(apiKey);
-        if (models.length > 0) {
-          const flash = models.find(m => m.includes("flash") && !m.includes("lite") && !m.includes("image"));
-          setAiError(`Model "${model}" not available. Your key has access to: ${models.slice(0, 5).join(", ")}${flash ? `. Try: ${flash}` : ""}`);
-        } else {
-          setAiError(msg + " Could not list models — check if your API key is valid.");
-        }
-      } else {
-        setAiError(msg);
-      }
-      setAiStatus("fail");
-    }
-  };
-
-  // Revalidation
-  const frontendUrl = get("frontend_url", SITE.frontendUrl) as string;
-  const revalToken = get("revalidate_token", "") as string;
+  // Revalidation. The browser holds no token: the request goes to the
+  // `revalidate-frontend` Edge Function, which reads the token from settings
+  // with the service role and calls the frontend itself (S0-1d).
   const [revalResults, setRevalResults] = useState<Record<string, "idle"|"ok"|"fail">>({});
 
   const revalidate = async (label: string, fn: () => Promise<unknown>) => {
     setRevalResults((p) => ({ ...p, [label]: "idle" }));
-    try { await fn(); setRevalResults((p) => ({ ...p, [label]: "ok" })); }
-    catch { setRevalResults((p) => ({ ...p, [label]: "fail" })); }
+    try {
+      // The revalidation helpers resolve with a result instead of throwing, so
+      // the tick is only shown when the refresh actually succeeded - a green
+      // tick on a failed refresh is how stale pages got reported as live.
+      const r = (await fn()) as { success?: boolean; failed?: unknown[] } | undefined;
+      const ok = !!r && (r.success === true || (Array.isArray(r.failed) && r.failed.length === 0));
+      setRevalResults((p) => ({ ...p, [label]: ok ? "ok" : "fail" }));
+      if (!ok) toast.error(`${label} did not go through: ${(r as { error?: string })?.error ?? "the live site refused the refresh"}.`);
+    } catch (err) {
+      setRevalResults((p) => ({ ...p, [label]: "fail" }));
+      toast.error(`${label} did not go through: ${getErrorMessage(err)}`);
+    }
   };
 
   return (
@@ -242,14 +198,19 @@ export function SettingsPage() {
                 placeholder="https://xxxx.supabase.co"
                 className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500" />
             </Field>
-            <Field label="Supabase Anon Key" hint="Safe to expose in browser">
+            <Field label="Supabase Anon Key" hint="Public by design - the same key the site already ships with">
               <MaskedInput value={(get("supabase_anon_key","") as string)} onChange={(v) => set("supabase_anon_key", v)} placeholder="eyJ..." />
             </Field>
-            <Field label="Service Role Key" hint="Never expose to frontend">
-              <MaskedInput value={(get("supabase_service_key","") as string)} onChange={(v) => set("supabase_service_key", v)} placeholder="eyJ..." />
-            </Field>
+            {/* No Service Role Key field. A service key stored in this table would
+                be readable by every admin session and has no use here - Edge
+                Functions already receive it from the project's own secrets. */}
+            <p className="mb-4 text-xs text-slate-500">
+              These values are used only by the connection test below; the app itself
+              reads its Supabase URL and anon key from its build environment. The
+              service-role key is never stored in settings.
+            </p>
             <div className="mt-4 flex items-center gap-3">
-              <button onClick={() => save(["supabase_url","supabase_anon_key","supabase_service_key"])} disabled={saving}
+              <button onClick={() => save(["supabase_url","supabase_anon_key"])} disabled={saving}
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
                 Save
               </button>
@@ -343,7 +304,7 @@ export function SettingsPage() {
               <input value={(get("frontend_url",SITE.frontendUrl) as string)} onChange={(e) => set("frontend_url", e.target.value)}
                 className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500" />
             </Field>
-            <Field label="Revalidate Token" hint="Must match REVALIDATE_TOKEN in frontend .env">
+            <Field label="Revalidate Token" hint="Server-side only. Must match REVALIDATE_TOKEN in the frontend's environment. The Edge Function reads this value when it refreshes the site; it is never sent to a browser. Rotate it in both places at once.">
               <MaskedInput value={(get("revalidate_token","") as string)} onChange={(v) => set("revalidate_token", v)} placeholder="secret-token-here" />
             </Field>
             <Field label="Auto-Revalidate on Publish">
@@ -358,16 +319,16 @@ export function SettingsPage() {
 
             <h3 className="mb-3 text-sm font-semibold text-slate-900">Manual Revalidation</h3>
             <p className="mb-3 text-xs text-slate-500">
-              Uses <code className="bg-slate-100 px-1 rounded">x-revalidate-token</code> header. One request per path, 100ms delay between batches.
+              Sent to the <code className="bg-slate-100 px-1 rounded">revalidate-frontend</code> Edge Function, which calls the live site with the token. One request per path.
             </p>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: "Revalidate Homepage",        fn: () => revalidatePath("/", frontendUrl, revalToken) },
-                { label: "Revalidate All Admit Cards", fn: () => revalidatePath("/admit-card", frontendUrl, revalToken) },
-                { label: "Revalidate All Results",     fn: () => revalidatePath("/results", frontendUrl, revalToken) },
-                { label: "Revalidate Answer Keys",     fn: () => revalidatePath("/answer-key", frontendUrl, revalToken) },
-                { label: "Revalidate Sitemap",         fn: () => revalidatePath("/sitemap.xml", frontendUrl, revalToken) },
-                { label: "Revalidate Everything",      fn: () => revalidateAll(frontendUrl, revalToken) },
+                { label: "Revalidate Homepage",        fn: () => revalidatePath("/") },
+                { label: "Revalidate All Admit Cards", fn: () => revalidatePath("/admit-card") },
+                { label: "Revalidate All Results",     fn: () => revalidatePath("/results") },
+                { label: "Revalidate Answer Keys",     fn: () => revalidatePath("/answer-key") },
+                { label: "Revalidate Sitemap",         fn: () => revalidatePath("/sitemap.xml") },
+                { label: "Revalidate Everything",      fn: () => revalidateAll() },
               ].map(({ label, fn }) => (
                 <button key={label} onClick={() => revalidate(label, fn)}
                   className="flex items-center justify-between rounded border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-colors">

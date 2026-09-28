@@ -62,9 +62,8 @@ export function PageEditPage() {
         await updatePage(id!, payload as Partial<Page>, user?.id);
         toast.success("Page saved.");
 
-        const url = getSetting("frontend_url", SITE.frontendUrl) as string;
-        const token = getSetting("revalidate_token", "") as string;
-        if (token) await revalidatePath(`/${data.slug}`, url, token);
+        // Refresh goes through the Edge Function - no token in the browser.
+        await revalidatePath(`/${data.slug}`);
       }
     } catch (err) {
       toast.error(getErrorMessage(err));

@@ -2,14 +2,14 @@
  * tabAI.ts — Tab-scoped AI generation for the entrance exam editor.
  *
  * Each function generates data for ONE specific tab only.
- * Never touches other tabs' data. Reuses generateWithGemini from client.ts.
+ * Never touches other tabs' data. The model call goes to the ai-fill Edge Function.
  *
  * Level 2 of the 3-level AI system:
  *   Level 1 = Full page (entranceExamAI.ts — existing, enhanced)
  *   Level 2 = Tab-level (this file)
  *   Level 3 = Module-level (moduleAI.ts — existing)
  */
-import { generateWithGemini } from "./client";
+import { generateText } from "@/lib/ai/aiFillClient";
 import { validateAndFixDate, INDIAN_DATE_PROMPT_RULES } from "@/lib/utils/indianDateParser";
 
 function cleanJSON(raw: string): unknown {
@@ -43,8 +43,6 @@ export interface IdentityAIData {
 export async function aiFillIdentityTab(
   examName: string,
   rawContent: string,
-  apiKey: string,
-  model?: string
 ): Promise<IdentityAIData> {
   const hasRaw = rawContent && rawContent.trim().length > 10;
   const prompt = hasRaw
@@ -74,7 +72,7 @@ Return ONLY a valid JSON object:
 
 Return ONLY the JSON. No markdown, no explanation.`;
 
-  const raw = await generateWithGemini(prompt, apiKey, model);
+  const raw = await generateText(prompt, "tab-ai");
   const data = cleanJSON(raw) as any;
   return {
     shortName: data.shortName ?? "",
@@ -104,8 +102,6 @@ export async function aiFillDatesTab(
   examName: string,
   year: number,
   rawContent: string,
-  apiKey: string,
-  model?: string
 ): Promise<DatesAIData> {
   const prompt = `Extract ALL dates, status, and vacancy for the entrance exam "${examName}" ${year} from this raw data.
 
@@ -151,7 +147,7 @@ Return ONLY valid JSON:
 
 Return ONLY the JSON.`;
 
-  const raw = await generateWithGemini(prompt, apiKey, model);
+  const raw = await generateText(prompt, "tab-ai");
   const data = cleanJSON(raw) as any;
 
   // Deterministic label → type map. These labels are the hardcoded ones in the
@@ -211,8 +207,6 @@ export async function aiFillSEOTab(
   examName: string,
   year: number,
   rawContent: string,
-  apiKey: string,
-  model?: string
 ): Promise<SEOAIData> {
   const prompt = `Generate SEO data for the entrance exam "${examName}" ${year}.
 ${rawContent ? `\nContext from raw data:\n---\n${rawContent.slice(0, 6000)}\n---` : ""}
@@ -242,7 +236,7 @@ RULES:
 - Use real data from the raw content where available
 Return ONLY the JSON.`;
 
-  const raw = await generateWithGemini(prompt, apiKey, model);
+  const raw = await generateText(prompt, "tab-ai");
   const data = cleanJSON(raw) as any;
   return {
     seoTitle: data.seoTitle ?? "",
@@ -266,8 +260,6 @@ export async function aiFillNewsTab(
   examName: string,
   year: number,
   rawContent: string,
-  apiKey: string,
-  model?: string
 ): Promise<NewsItemAI[]> {
   const prompt = `Extract or generate news updates for the entrance exam "${examName}" ${year} from this raw data.
 
@@ -290,7 +282,7 @@ Return ONLY valid JSON — an array of news items:
 Generate 2-4 news items based on the raw data. If specific news is not available, generate general exam updates.
 Return ONLY the JSON array.`;
 
-  const raw = await generateWithGemini(prompt, apiKey, model);
+  const raw = await generateText(prompt, "tab-ai");
   const data = cleanJSON(raw) as any;
   return Array.isArray(data) ? data : [];
 }
@@ -306,8 +298,6 @@ export async function aiFillModulesTab(
   examName: string,
   year: number,
   rawContent: string,
-  apiKey: string,
-  model?: string
 ): Promise<ModulesAIData> {
   const prompt = `Generate all content module data for the entrance exam "${examName}" ${year}.
 ${rawContent ? `\nRAW DATA:\n---\n${rawContent.slice(0, 8000)}\n---` : ""}
@@ -379,7 +369,7 @@ RULES:
 - Fill with real data from raw content where available
 Return ONLY the JSON.`;
 
-  const raw = await generateWithGemini(prompt, apiKey, model);
+  const raw = await generateText(prompt, "tab-ai");
   const data = cleanJSON(raw) as any;
   return {
     contentModules: data.contentModules ?? {},

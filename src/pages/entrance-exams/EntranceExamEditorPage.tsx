@@ -31,7 +31,6 @@ import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { ResourcesTab } from "@/components/entrance-exams/ResourcesTab";
 import { SyllabusResourcePicker } from "@/components/entrance-exams/SyllabusResourcePicker";
 import { SyllabusTab } from "@/components/entrance-exams/SyllabusTab";
-import { useSettings } from "@/hooks/useSettings";
 
 // EDITION_STATUSES dropdown options REMOVED (2026-09-19) with the manual status
 // field. The EditionStatus type is retained (form value + AI-fill still carry the
@@ -187,7 +186,6 @@ export function EntranceExamEditorPage() {
     | null
   >(null);
   const [guardSaving, setGuardSaving] = useState(false);
-  const { getSetting } = useSettings();
 
   const form = useForm<FormData>({
     defaultValues: {
@@ -602,17 +600,12 @@ export function EntranceExamEditorPage() {
       return;
     }
 
-    const apiKey = getSetting("gemini_api_key", "");
-    const model = getSetting("gemini_model", "");
-    if (!apiKey) {
-      toast.error("No AI API key configured. Go to Settings → AI.");
-      return;
-    }
-
+    // No key and no model here: the ai-fill Edge Function picks the provider
+    // server-side, so the browser never holds or reads a credential.
     setAiGenerating(true);
     setShowAIDialog(false);
     try {
-      const data = await generateExamDataWithAI(examName, year, apiKey as string, model as string || undefined, rawContent);
+      const data = await generateExamDataWithAI(examName, year, rawContent);
 
       // No-op on empty — computed BEFORE any write. This is the "Fill Entire Exam"
       // header button: the one that once overwrote a real Notification Date and
@@ -766,24 +759,16 @@ export function EntranceExamEditorPage() {
   };
 
   // ── Tab-Level AI Handlers ─────────────────────────────────────────────────
-
-  const getAICredentials = () => {
-    const apiKey = getSetting("gemini_api_key", "") as string;
-    const model = getSetting("gemini_model", "") as string || undefined;
-    const fallbackKey = getSetting("ai_fallback_key", "") as string || undefined;
-    const fallbackModel = getSetting("ai_fallback_model", "") as string || undefined;
-    const key3 = getSetting("ai_key_3", "") as string || undefined;
-    if (!apiKey) throw new Error("No AI API key configured. Go to Settings → AI.");
-    return { apiKey, model, fallbackKey, fallbackModel, key3 };
-  };
+  //
+  // These used to read the provider key out of `settings` and pass it down. The
+  // key now lives only as an Edge Function secret, so nothing is read here.
 
   const handleAIFillIdentity = async (rawContent: string) => {
     const examName = form.getValues("name");
     if (!examName) { toast.error("Enter exam name first."); return; }
     setTabAiFilling("identity");
     try {
-      const { apiKey, model } = getAICredentials();
-      const data = await aiFillIdentityTab(examName, rawContent, apiKey, model);
+      const data = await aiFillIdentityTab(examName, rawContent);
       // No-op on empty: if the AI extracted nothing usable, change NOTHING and say so.
       const gotAnything = !!data.shortName || !!data.conductingBody || !!data.officialWebsite;
       if (!gotAnything) {
@@ -820,8 +805,7 @@ export function EntranceExamEditorPage() {
     if (!examName) { toast.error("Enter exam name first."); return; }
     setTabAiFilling("edition");
     try {
-      const { apiKey, model } = getAICredentials();
-      const data = await aiFillDatesTab(examName, year, rawContent, apiKey, model);
+      const data = await aiFillDatesTab(examName, year, rawContent);
 
       // No-op on empty: only count a field as extracted when it carries a real value.
       // Historically this handler always toasted "filled and saved" and unconditionally
@@ -891,8 +875,7 @@ export function EntranceExamEditorPage() {
     if (!examName) { toast.error("Enter exam name first."); return; }
     setTabAiFilling("seo");
     try {
-      const { apiKey, model } = getAICredentials();
-      const data = await aiFillSEOTab(examName, year, rawContent, apiKey, model);
+      const data = await aiFillSEOTab(examName, year, rawContent);
       // No-op on empty: change nothing (no form.setValue, no DB write) when the AI
       // returned nothing usable, and report it honestly instead of a false success.
       const gotAnything = !!data.seoTitle || !!data.seoDescription || data.tags.length > 0 || data.faqs.length > 0;
@@ -927,8 +910,7 @@ export function EntranceExamEditorPage() {
     const year = form.getValues("editionYear") || new Date().getFullYear();
     setTabAiFilling("news");
     try {
-      const { apiKey, model } = getAICredentials();
-      const items = await aiFillNewsTab(examName, year, rawContent, apiKey, model);
+      const items = await aiFillNewsTab(examName, year, rawContent);
       if (items.length > 0) {
         const { updateEdition: updateEd } = await import("@/services/entranceExamService");
         const existing = (currentEdition.contentModules ?? {}) as Record<string, any>;
@@ -962,8 +944,7 @@ export function EntranceExamEditorPage() {
     const year = form.getValues("editionYear") || new Date().getFullYear();
     setTabAiFilling("modules");
     try {
-      const { apiKey, model } = getAICredentials();
-      const data = await aiFillModulesTab(examName, year, rawContent, apiKey, model);
+      const data = await aiFillModulesTab(examName, year, rawContent);
       if (Object.keys(data.contentModules).length > 0) {
         const { updateEdition: updateEd } = await import("@/services/entranceExamService");
         const existing = (currentEdition.contentModules ?? {}) as Record<string, unknown>;

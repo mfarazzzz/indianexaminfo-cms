@@ -1,5 +1,11 @@
 /**
- * AI Provider types for multi-provider key management.
+ * AI Provider types.
+ *
+ * A provider row is a MODEL SELECTION, not a credential. There is deliberately no
+ * apiKey field: a key stored in this table was readable by the browser and shipped
+ * inside the built bundle. Keys now live only as Edge Function secrets (AI_KEY_<SLUG>)
+ * set by the owner, and the `ai_providers.api_key` / `api_key_encrypted` columns are
+ * dropped by supabase/proposed/settings_allow_list_and_key_removal.sql.
  */
 
 export type AIProviderName = "groq" | "gemini" | "cerebras" | "mistral" | "openrouter";
@@ -8,13 +14,11 @@ export interface AIProvider {
   id: string;
   provider: AIProviderName;
   label: string;
-  apiKey: string;
   model: string;
   isEnabled: boolean;
   priority: number;
   lastUsedAt: string | null;
   lastError: string | null;
-  usageCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,7 +26,6 @@ export interface AIProvider {
 export interface AIProviderInsert {
   provider: AIProviderName;
   label: string;
-  apiKey: string;
   model: string;
   isEnabled?: boolean;
   priority?: number;
@@ -30,7 +33,6 @@ export interface AIProviderInsert {
 
 export interface AIProviderUpdate {
   label?: string;
-  apiKey?: string;
   model?: string;
   isEnabled?: boolean;
   priority?: number;
@@ -39,6 +41,7 @@ export interface AIProviderUpdate {
 export interface AIRequestLog {
   id: string;
   providerId: string | null;
+  userId: string | null;
   promptHash: string;
   status: "success" | "error";
   errorMessage: string | null;

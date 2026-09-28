@@ -342,7 +342,7 @@ export function BlogEditPage() {
           {!isNew && (
             <div className="rounded-lg border border-slate-200 bg-white p-4">
               <h3 className="mb-2 text-sm font-semibold">Frontend Sync</h3>
-              <FrontendSync onSync={(url, token) => revalidateBlogPost(watchedSection, watchedSlug, url, token)} />
+              <FrontendSync onSync={() => revalidateBlogPost(watchedSection, watchedSlug)} />
             </div>
           )}
         </div>

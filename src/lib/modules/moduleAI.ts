@@ -3,7 +3,7 @@
  *
  * Generates focused content for a specific module type using the exam context.
  */
-import { generateWithGemini } from "@/lib/gemini/client";
+import { generateText } from "@/lib/ai/aiFillClient";
 import { validateAndFixDate, INDIAN_DATE_PROMPT_SHORT } from "@/lib/utils/indianDateParser";
 import type { ExamIdentity, ExamEdition } from "@/services/entranceExamService";
 
@@ -21,14 +21,12 @@ export async function aiGenerateForModule(
   examName: string,
   year: number,
   context: ModuleAIContext,
-  apiKey: string,
-  model?: string,
   rawContent?: string
 ): Promise<Record<string, unknown>> {
   const prompt = getModulePrompt(moduleSlug, examName, year, context, rawContent);
   if (!prompt) throw new Error(`No AI prompt defined for module: ${moduleSlug}`);
 
-  const raw = await generateWithGemini(prompt, apiKey, model);
+  const raw = await generateText(prompt, `module-${moduleSlug}`);
 
   let cleaned = raw.trim();
   if (cleaned.startsWith("```")) {

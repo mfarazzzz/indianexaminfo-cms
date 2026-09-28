@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { RefreshCw, Check, X, Loader2 } from "lucide-react";
-import { useSettings } from "@/hooks/useSettings";
 import type { BatchResult } from "@/lib/api/frontend";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -8,32 +7,24 @@ import { cn } from "@/lib/utils";
 type SyncState = "idle" | "syncing" | "success" | "error";
 
 interface FrontendSyncProps {
-  onSync: (frontendUrl: string, token: string) => Promise<BatchResult>;
+  /** Runs the revalidation. Takes no arguments: the refresh token lives in the
+   *  `revalidate-frontend` Edge Function, not in this browser. */
+  onSync: () => Promise<BatchResult>;
   className?: string;
 }
 
 export function FrontendSync({ onSync, className }: FrontendSyncProps) {
-  const { getSetting } = useSettings();
   const [state, setState] = useState<SyncState>("idle");
   const [result, setResult] = useState<BatchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
 
   const handleSync = async () => {
-    const frontendUrl = getSetting("frontend_url", "https://www.indianexaminfo.com");
-    const token = getSetting("revalidate_token", "");
-
-    if (!token) {
-      setError("Revalidate token not configured. Set it in Settings → Frontend Integration.");
-      setState("error");
-      return;
-    }
-
     setState("syncing");
     setError(null);
 
     try {
-      const r = await onSync(frontendUrl as string, token as string);
+      const r = await onSync();
       setResult(r);
       setLastSynced(new Date().toISOString());
       const nextState = r.failed.length === 0 ? "success" : "error";

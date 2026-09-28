@@ -33,14 +33,14 @@ export type SettingsMap = {
   telegram_channel: string;
   youtube_channel: string;
   posts_per_page: number;
-  // Database
+  // Database. There is no service-role key entry on purpose: a service key in
+  // this table would be readable by every admin session and was never needed -
+  // the Edge Functions get it from project secrets.
   supabase_url: string;
   supabase_anon_key: string;
-  supabase_service_key: string;
   db_status: "connected" | "disconnected";
-  // AI
-  gemini_api_key: string;
-  gemini_model: string;
+  // AI. No API key belongs here - keys are Edge Function secrets (AI_KEY_*),
+  // and the model choice lives in the ai_providers table.
   ai_enabled: boolean;
   ai_auto_seo: boolean;
   ai_auto_summary: boolean;

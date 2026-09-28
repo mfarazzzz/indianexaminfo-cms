@@ -19,7 +19,6 @@ import type { SelectionModel } from "@/types/selection";
 import { isModuleApplicable, MODULE_REGISTRY } from "@/config/moduleRegistry";
 import { getErrorMessage } from "@/lib/utils";
 import { hasData, SECTION_BY_SLUG, type HasDataView } from "@/lib/sectionRegistry";
-import { useSettings } from "@/hooks/useSettings";
 import { useAuth } from "@/hooks/useAuth";
 
 /**
@@ -135,7 +134,6 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
   const [pendingBySlug, setPendingBySlug] = useState<Record<string, boolean>>({});
   const [aiLoadingSlug, setAiLoadingSlug] = useState<string | null>(null);
   const [allCollapsed, setAllCollapsed] = useState(false);
-  const { getSetting } = useSettings();
   const { user } = useAuth();
 
   // Step 4 (2026-09-19): the per-module Auto/Hybrid/Manual mode is an EDITOR-VIEW
@@ -235,13 +233,16 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
 
   const handleAIFill = useCallback(async (slug: string) => {
     if (!editionId || !exam) return;
-    const apiKey = getSetting("gemini_api_key", "");
-    const model = getSetting("gemini_model", "");
-    if (!apiKey) { toast.error("No AI API key. Go to Settings → AI."); return; }
 
     setAiLoadingSlug(slug);
     try {
-      const result = await aiGenerateForModule(slug, exam.name, edition?.year ?? new Date().getFullYear(), { identity: exam, edition: edition ?? null as any }, apiKey as string, model as string || undefined);
+      // No key and no model here - the ai-fill Edge Function picks the provider.
+      const result = await aiGenerateForModule(
+        slug,
+        exam.name,
+        edition?.year ?? new Date().getFullYear(),
+        { identity: exam, edition: edition ?? null as any },
+      );
       await saveModuleContent(editionId, slug, result, user?.id ?? "system");
       setContentModules((prev) => ({ ...prev, [slug]: { ...result, _meta: { updatedAt: new Date().toISOString(), updatedBy: user?.id ?? "" } } }));
       toast.success(`AI generated content for ${modules.find((m) => m.slug === slug)?.name ?? slug}`);
@@ -250,7 +251,7 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
     } finally {
       setAiLoadingSlug(null);
     }
-  }, [editionId, exam, edition, modules, getSetting, user]);
+  }, [editionId, exam, edition, modules, user]);
 
   const handleSync = useCallback(async (slug: string) => {
     if (!editionId) return;

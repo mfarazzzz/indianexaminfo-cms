@@ -1,35 +1,17 @@
 /**
- * autofill.ts — AI form auto-fill using Gemini.
- * 
+ * autofill.ts — AI form auto-fill.
+ *
  * KEY FEATURE: If you paste JSON directly (from ChatGPT/Perplexity/Claude),
  * it skips the API call entirely and fills forms instantly. No tokens used.
- * 
- * Only calls Gemini when you paste raw text (not JSON).
- * 
- * The API key is passed in from the calling component (via SettingsContext).
- * This avoids separate DB reads and RLS issues with sensitive settings.
+ *
+ * Only calls the model when you paste raw text (not JSON).
+ *
+ * There is no key here, and there never was a good reason for one: the model
+ * call goes to the `ai-fill` Edge Function, which holds the key as a server-side
+ * secret. See src/lib/ai/aiFillClient.ts.
  */
 import { validateAndFixDate, INDIAN_DATE_PROMPT_RULES } from "@/lib/utils/indianDateParser";
-
-/** Module-level API key set by the consuming component before calling autofill */
-let _activeKey: string = ''
-
-/** Set the Gemini API key for autofill operations. Call this before using autofill. */
-export function setAutofillApiKey(key: string): void {
-  _activeKey = (key ?? '').replace(/^["']|["']$/g, '').trim()
-}
-
-/** @deprecated Use setAutofillApiKey instead */
-export function clearApiKeyCache(): void {
-  _activeKey = ''
-}
-
-function getApiKey(): string {
-  if (!_activeKey) {
-    throw new Error('Gemini API key not configured. Go to Settings → AI and enter your key.')
-  }
-  return _activeKey
-}
+import { generateText } from "@/lib/ai/aiFillClient";
 
 // ── Try to parse input as JSON directly (no API call needed) ─────────────────
 
@@ -52,88 +34,21 @@ function tryDirectParse(text: string): Record<string, unknown> | null {
   return null;
 }
 
-// ── Gemini API call (only for raw text, not JSON) ────────────────────────────
+// ── Model call (only for raw text, not JSON) ─────────────────────────────────
 
-async function callGemini(prompt: string, maxTokens = 8192): Promise<Record<string, unknown>> {
-  const apiKey = getApiKey()
-  const isGroq = apiKey.startsWith("gsk_");
-  
-  if (isGroq) {
-    // Use Groq (OpenAI-compatible)
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-oss-120b",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.05,
-        max_tokens: maxTokens,
-        response_format: { type: "json_object" },
-      }),
-    });
-    
-    if (res.status === 429) throw new Error("Rate limited. Wait a moment and try again.");
-    if (!res.ok) {
-      const err = await res.text().catch(() => "");
-      console.error("[AI] Groq error:", res.status, err.slice(0, 200));
-      throw new Error(`AI error (${res.status}). Try pasting JSON directly.`);
-    }
-    
-    const data = await res.json();
-    const text = data.choices?.[0]?.message?.content ?? "";
-    if (!text) throw new Error("Empty AI response");
-    try { return JSON.parse(text); }
-    catch {
-      const m = text.match(/\{[\s\S]*\}/);
-      if (m) try { return JSON.parse(m[0]); } catch {}
-      throw new Error("AI response was not valid JSON. Try pasting JSON directly.");
-    }
-  }
-  
-  // Gemini path
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
-  
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.05, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
-    }),
-  });
-
-  if (res.status === 429) {
-    throw new Error("Rate limited by Google. Wait 60 seconds and try again. Or paste JSON directly — it works instantly without API.");
-  }
-
-  if (res.status === 400 || res.status === 401 || res.status === 403) {
-    // Don't clear the key — this could be a transient provider error, not necessarily a bad key.
-    // Only surface the error to the user; they can manually re-enter if needed.
-    const err = await res.text().catch(() => "");
-    console.error("[AI] Auth error:", res.status, err.slice(0, 300));
-    throw new Error(`Gemini API key error (${res.status}). Go to Settings → AI and verify your key, then try again.`);
-  }
-
-  if (!res.ok) {
-    const err = await res.text();
-    console.error("[AI] Error:", res.status, err.slice(0, 200));
-    throw new Error(`Gemini error ${res.status}. Try pasting JSON directly instead.`);
-  }
-
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  if (!text) throw new Error("Empty AI response");
-
-  try { return JSON.parse(text); }
-  catch {
+async function callAI(prompt: string, consumer = "autofill"): Promise<Record<string, unknown>> {
+  const text = await generateText(prompt, consumer, true);
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
     const m = text.match(/\{[\s\S]*\}/);
-    if (m) try { return JSON.parse(m[0]); } catch {}
+    if (m) {
+      try {
+        return JSON.parse(m[0]) as Record<string, unknown>;
+      } catch {
+        /* fall through to the message below */
+      }
+    }
     throw new Error("AI response was not valid JSON. Try pasting JSON directly.");
   }
 }
@@ -224,7 +139,7 @@ export async function autoFillExam(rawText: string): Promise<ExamAutoFillResult>
   if (direct) return postProcessDates(direct);
 
   // Otherwise call AI to extract from raw text with comprehensive prompt
-  const result = await callGemini(`You are an expert at extracting structured data from Indian exam/recruitment notifications. Extract ALL possible information from the given text and return comprehensive JSON.
+  const result = await callAI(`You are an expert at extracting structured data from Indian exam/recruitment notifications. Extract ALL possible information from the given text and return comprehensive JSON.
 
 CRITICAL RULES:
 1. Dates must be in YYYY-MM-DD format
@@ -320,7 +235,7 @@ COMPLETE JSON SCHEMA (fill every field possible):
 IMPORTANT: Generate 6-8 high-quality FAQs. Each FAQ answer must be 2-3 sentences with SPECIFIC data (exact numbers, names, percentages extracted from the text). Do NOT generate generic answers. Quality over quantity.
 
 Text to extract from:
-${rawText}`, 8192);
+${rawText}`, "autofill-exam");
 
   return postProcessDates(result);
 }
@@ -335,7 +250,7 @@ export async function autoFillContentPost(rawText: string): Promise<ContentPostA
   const direct = tryDirectParse(rawText);
   if (direct) return postProcessDates(direct);
 
-  const result = await callGemini(`You are an expert at extracting content post data from Indian exam notifications. Return comprehensive JSON.
+  const result = await callAI(`You are an expert at extracting content post data from Indian exam notifications. Return comprehensive JSON.
 
 RULES:
 1. dates=YYYY-MM-DD
@@ -369,7 +284,7 @@ SCHEMA:
   "contentTypeData": {}
 }
 
-Text: ${rawText}`, 8192);
+Text: ${rawText}`, "autofill-content-post");
 
   return postProcessDates(result);
 }
@@ -384,7 +299,7 @@ export async function autoFillBlogPost(rawText: string): Promise<BlogAutoFillRes
   const direct = tryDirectParse(rawText);
   if (direct) return direct;
 
-  return callGemini(`Create a comprehensive blog post from this text for an Indian education portal. Return JSON only.
+  return callAI(`Create a comprehensive blog post from this text for an Indian education portal. Return JSON only.
 
 RULES:
 1. section MUST be one of: education-news|exam-prep|career-guidance|scholarship|study-abroad|edtech|student-life|opinion
@@ -409,5 +324,5 @@ SCHEMA:
   ]
 }
 
-Text: ${rawText}`, 8192);
+Text: ${rawText}`, "autofill-blog-post");
 }

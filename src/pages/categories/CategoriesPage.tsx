@@ -99,10 +99,9 @@ export function CategoriesPage() {
       setShowForm(false);
       load();
 
-      // Revalidate (fire-and-forget — don't block on failure)
-      const url = getSetting("frontend_url", SITE.frontendUrl) as string;
-      const token = getSetting("revalidate_token", "") as string;
-      if (token) revalidateAll(url, token).catch(() => {/* non-critical */});
+      // Revalidate (fire-and-forget — don't block on failure). The refresh token
+      // lives in the Edge Function, so nothing is read from settings here.
+      revalidateAll().catch(() => {/* non-critical */});
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {

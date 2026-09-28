@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Sparkles, Loader2, RefreshCw } from "lucide-react";
-import { generateWithGemini } from "@/lib/gemini/client";
+import { generateText } from "@/lib/ai/aiFillClient";
 import { DEFAULT_PROMPTS, type PromptVars, type PromptKey } from "@/lib/gemini/prompts";
 import { useSettings } from "@/hooks/useSettings";
 import { cn } from "@/lib/utils";
@@ -27,16 +27,10 @@ export function AISuggestion({
   const [error, setError] = useState<string | null>(null);
 
   const generate = async () => {
-    const apiKey = getSetting("gemini_api_key", "");
-    const model = getSetting("gemini_model", "gemini-2.5-flash");
     const enabled = getSetting("ai_enabled", true);
 
     if (!enabled) {
       setError("AI features are disabled in Settings.");
-      return;
-    }
-    if (!apiKey) {
-      setError("No Gemini API key. Configure in Settings → AI.");
       return;
     }
 
@@ -45,7 +39,8 @@ export function AISuggestion({
     try {
       const promptFn = DEFAULT_PROMPTS[promptKey];
       const prompt = promptFn(vars);
-      const result = await generateWithGemini(prompt, apiKey as string, model as string);
+      // No key, no provider: the ai-fill Edge Function holds both.
+      const result = await generateText(prompt, `ai-suggestion:${promptKey}`);
       onResult(result.trim());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

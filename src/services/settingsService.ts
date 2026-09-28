@@ -10,10 +10,15 @@ function mapRow(row: any): Setting {
   };
 }
 
-/** Map of setting keys → their group and label (for upsert when row doesn't exist) */
+/**
+ * Map of setting keys → their group and label (for upsert when row doesn't exist).
+ *
+ * No API key belongs in this list. Provider keys used to be stored as ordinary
+ * settings rows and read by the browser; they are now Edge Function secrets
+ * (`AI_KEY_GROQ` …) that only the `ai-fill` function can see, so there is nothing
+ * here for the app to write.
+ */
 const SETTING_META: Record<string, { group: SettingGroup; label: string; is_sensitive?: boolean }> = {
-  gemini_api_key:      { group: "ai", label: "Gemini API Key", is_sensitive: true },
-  gemini_model:        { group: "ai", label: "Gemini Model" },
   ai_enabled:          { group: "ai", label: "Enable AI Features" },
   ai_auto_seo:         { group: "ai", label: "Auto-generate SEO" },
   ai_auto_summary:     { group: "ai", label: "Auto-generate Summary Box" },
@@ -30,7 +35,6 @@ const SETTING_META: Record<string, { group: SettingGroup; label: string; is_sens
   posts_per_page:      { group: "general", label: "Posts Per Page" },
   supabase_url:        { group: "database", label: "Supabase URL" },
   supabase_anon_key:   { group: "database", label: "Supabase Anon Key", is_sensitive: true },
-  supabase_service_key:{ group: "database", label: "Service Role Key", is_sensitive: true },
   db_status:           { group: "database", label: "DB Status" },
   frontend_url:        { group: "integrations", label: "Frontend Base URL" },
   revalidate_token:    { group: "integrations", label: "Revalidate Token", is_sensitive: true },

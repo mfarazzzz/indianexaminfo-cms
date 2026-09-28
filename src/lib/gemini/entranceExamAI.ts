@@ -8,7 +8,7 @@
  * This ensures dates/fees are extracted accurately (focused prompt) while
  * content generation gets full creative freedom.
  */
-import { generateWithGemini } from "./client";
+import { generateText } from "@/lib/ai/aiFillClient";
 import { parseDateText, INDIAN_DATE_PROMPT_RULES } from "@/lib/utils/indianDateParser";
 
 export interface AIExamData {
@@ -80,10 +80,8 @@ async function runStage1(
   examName: string,
   year: number,
   rawContent: string,
-  apiKey: string,
-  model?: string
 ): Promise<Stage1Result> {
-  const raw = await generateWithGemini(STAGE1_PROMPT(examName, year, rawContent), apiKey, model);
+  const raw = await generateText(STAGE1_PROMPT(examName, year, rawContent), "entrance-exam-ai-stage1");
   let cleaned = raw.trim();
   if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
   const lastBrace = cleaned.lastIndexOf("}");
@@ -185,15 +183,13 @@ IMPORTANT: Leave all date values as EMPTY STRINGS — dates must be filled from 
 export async function generateExamDataWithAI(
   examName: string,
   year: number,
-  apiKey: string,
-  model?: string,
   rawContent?: string
 ): Promise<AIExamData> {
 
   if (!rawContent || rawContent.trim().length < 50) {
     // No raw data — generate from AI knowledge BUT mark dates as unverified/TBA
     // Google YMYL policy: never publish unverified exam dates
-    const raw = await generateWithGemini(GENERATE_PROMPT(examName, year), apiKey, model);
+    const raw = await generateText(GENERATE_PROMPT(examName, year), "entrance-exam-ai-no-raw");
     const result = parseAIResponse(raw);
     // Clear all dates — AI-fabricated dates are YMYL-dangerous
     // Editors MUST fill these from official sources
@@ -205,7 +201,7 @@ export async function generateExamDataWithAI(
   }
 
   // ── STAGE 1: Extract facts (small, focused call) ──
-  const facts = await runStage1(examName, year, rawContent, apiKey, model);
+  const facts = await runStage1(examName, year, rawContent);
 
   // Convert extracted date texts to YYYY-MM-DD using deterministic code
   const importantDates = processStage1Dates(facts.dates, year);
@@ -218,7 +214,7 @@ export async function generateExamDataWithAI(
   let contentModules: Record<string, unknown> = {};
 
   try {
-    const raw = await generateWithGemini(STAGE2_PROMPT(examName, year, rawContent, facts), apiKey, model);
+    const raw = await generateText(STAGE2_PROMPT(examName, year, rawContent, facts), "entrance-exam-ai-stage2");
     let cleaned = raw.trim();
     if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
     const lastBrace = cleaned.lastIndexOf("}");

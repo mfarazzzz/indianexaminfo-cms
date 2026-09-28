@@ -1,5 +1,11 @@
 /**
- * aiProviderService.ts — CRUD for ai_providers table + request logging.
+ * aiProviderService.ts — CRUD for the ai_providers table (which model to use, in
+ * what order) plus the request log board.
+ *
+ * No function here reads, writes or returns a key. The key is an Edge Function
+ * secret, and the only component that calls the AI is the `ai-fill` function, so
+ * these browser helpers deal with metadata only. Health columns (last_used_at,
+ * last_error) are written by the function, not from here.
  */
 import { db } from "@/lib/supabase/client";
 import type { AIProvider, AIProviderInsert, AIProviderUpdate, AIRequestLog } from "@/types/aiProvider";
@@ -9,13 +15,11 @@ function mapRow(row: any): AIProvider {
     id: row.id,
     provider: row.provider,
     label: row.label,
-    apiKey: row.api_key,
     model: row.model,
     isEnabled: row.is_enabled,
     priority: row.priority,
     lastUsedAt: row.last_used_at,
     lastError: row.last_error,
-    usageCount: row.usage_count,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -25,6 +29,7 @@ function mapLogRow(row: any): AIRequestLog {
   return {
     id: row.id,
     providerId: row.provider_id,
+    userId: row.user_id ?? null,
     promptHash: row.prompt_hash,
     status: row.status,
     errorMessage: row.error_message,
@@ -40,17 +45,10 @@ export async function getAllProviders(): Promise<AIProvider[]> {
   return (data ?? []).map(mapRow);
 }
 
-export async function getEnabledProviders(): Promise<AIProvider[]> {
-  const { data, error } = await db.from("ai_providers").select("*").eq("is_enabled", true).order("priority");
-  if (error) throw error;
-  return (data ?? []).map(mapRow);
-}
-
 export async function createProvider(input: AIProviderInsert): Promise<AIProvider> {
   const { data, error } = await db.from("ai_providers").insert({
     provider: input.provider,
     label: input.label,
-    api_key: input.apiKey,
     model: input.model,
     is_enabled: input.isEnabled ?? true,
     priority: input.priority ?? 0,
@@ -62,7 +60,6 @@ export async function createProvider(input: AIProviderInsert): Promise<AIProvide
 export async function updateProvider(id: string, input: AIProviderUpdate): Promise<AIProvider> {
   const updates: Record<string, unknown> = {};
   if (input.label !== undefined) updates.label = input.label;
-  if (input.apiKey !== undefined) updates.api_key = input.apiKey;
   if (input.model !== undefined) updates.model = input.model;
   if (input.isEnabled !== undefined) updates.is_enabled = input.isEnabled;
   if (input.priority !== undefined) updates.priority = input.priority;
@@ -83,39 +80,12 @@ export async function updateProviderPriorities(orderedIds: string[]): Promise<vo
   }
 }
 
-export async function recordProviderSuccess(id: string): Promise<void> {
-  await db.rpc("increment_usage", { provider_id: id }).catch(() => {
-    // Fallback if RPC not available
-    db.from("ai_providers").update({ last_used_at: new Date().toISOString(), last_error: null, usage_count: db.raw ? undefined : 0 }).eq("id", id).then(() => {});
-  });
-  // Simple update without RPC
-  await db.from("ai_providers").update({ last_used_at: new Date().toISOString(), last_error: null }).eq("id", id).catch(() => {});
-}
-
-export async function recordProviderError(id: string, error: string): Promise<void> {
-  await db.from("ai_providers").update({ last_error: error }).eq("id", id).catch(() => {});
-}
-
-export async function insertRequestLog(log: { providerId: string | null; promptHash: string; status: string; errorMessage: string | null; latencyMs: number; consumerName: string }): Promise<void> {
-  await db.from("ai_request_logs").insert({
-    provider_id: log.providerId,
-    prompt_hash: log.promptHash,
-    status: log.status,
-    error_message: log.errorMessage,
-    latency_ms: log.latencyMs,
-    consumer_name: log.consumerName,
-  }).catch(() => {}); // Fire-and-forget
-}
-
+/**
+ * Recent AI calls, for the health board. Written by the `ai-fill` Edge Function,
+ * read here. `prompt_hash` is a fingerprint, never the text.
+ */
 export async function getRecentLogs(limit = 20): Promise<AIRequestLog[]> {
   const { data, error } = await db.from("ai_request_logs").select("*").order("created_at", { ascending: false }).limit(limit);
   if (error) throw error;
   return (data ?? []).map(mapLogRow);
-}
-
-export async function getDashboardStats(): Promise<{ totalRequests: number; enabledKeys: number }> {
-  const providers = await getAllProviders();
-  const totalRequests = providers.reduce((sum, p) => sum + p.usageCount, 0);
-  const enabledKeys = providers.filter((p) => p.isEnabled).length;
-  return { totalRequests, enabledKeys };
 }
