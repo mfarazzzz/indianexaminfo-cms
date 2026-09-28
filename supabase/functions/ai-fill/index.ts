@@ -10,12 +10,23 @@
 //    line or the built CMS bundle. It is read from project secrets only.
 //  - verify_jwt = true: the platform rejects an unauthenticated call before this
 //    runs. The caller is then identified with their own JWT and authorised against
-//    the DATABASE (roles -> role_permissions -> permissions), not a UI flag. A
-//    caller without edit_any_post / create_exam / create_post is refused.
+//    the DATABASE through public.current_user_has_permission() called WITH THE
+//    CALLER'S OWN CLIENT (their JWT sets auth.uid() inside the SECURITY DEFINER
+//    helper) - one rule, one place, no re-implemented join in this function.
+//  - CORS is restricted to the CMS origins listed in the ALLOWED_ORIGINS secret
+//    (comma-separated; include http://localhost:5177 for dev). Not "*".
 //  - Input is capped, the provider call has a timeout, and the failure message is
 //    plain words an intern can act on.
 //  - Every call is recorded in ai_request_logs with the caller id, so the rate
-//    limit holds across isolates and the quota has an audit trail.
+//    limit holds across isolates and the quota has an audit trail. The log and
+//    health-board writes are AWAITED before the response is returned - a
+//    fire-and-forget promise can be dropped when the isolate freezes, and then
+//    the rate limit counts nothing.
+//
+// SPRINT-1 NOTE (owner F2d, deliberately NOT built now): the browser still sends
+// the whole prompt, so any user who passes the permission check can use this as
+// a general model proxy inside the rate limits. In AI Fill v2 the prompt
+// templates move server-side and the client sends { template, sourceText }.
 //
 // Secrets the OWNER sets (Dashboard -> Project Settings -> Edge Functions -> Secret
 // keys, or `supabase secrets set --name AI_KEY_GROQ`):
@@ -27,6 +38,10 @@
 //   AI_KEY_OPENAI      only if an openai provider row is enabled
 //   AI_BASE_URL_<SLUG> optional override, e.g. AI_BASE_URL_GROQ
 //   AI_MODEL           optional fallback model when no provider row is usable
+//   ALLOWED_ORIGINS    comma-separated CMS origins, e.g.
+//                      "https://cms.indianexaminfo.com,http://localhost:5177".
+//                      Missing or empty => every browser cross-origin request is
+//                      refused (fail closed).
 // A provider row whose secret is missing is skipped, never guessed at.
 //
 // Body:  { prompt: string, consumer?: string, jsonMode?: boolean }
@@ -44,6 +59,18 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
+/**
+ * F2c: the only browser origins allowed to call this function, from the
+ * ALLOWED_ORIGINS secret (comma-separated; include http://localhost:5177 for
+ * dev). Missing or empty => every browser cross-origin call is refused (fail
+ * closed). An absent Origin header (curl, health probes) is not a browser and
+ * passes; a PRESENT Origin that is not listed is refused.
+ */
+const ALLOWED_ORIGINS: string[] = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 /** The prompt cap. The largest real prompt here is a notification plus a schema. */
 const MAX_INPUT_CHARS = 20_000;
 /** Provider call budget. The browser used 30s; 25s leaves room to answer cleanly. */
@@ -52,7 +79,7 @@ const PROVIDER_TIMEOUT_MS = 25_000;
 const MAX_CALLS_PER_5_MIN = 15;
 const MAX_CALLS_PER_DAY = 150;
 
-/** Permissions that unlock AI Fill - the same set the editor routes require. */
+/** Permissions that unlock AI Fill - checked via current_user_has_permission(). */
 const REQUIRED_PERMISSIONS = ["edit_any_post", "create_exam", "create_post"];
 
 /** provider slug in ai_providers -> name of the secret that holds its key */
@@ -85,16 +112,29 @@ function baseUrlFor(slug: string): string {
   return base;
 }
 
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+/**
+ * F2c: CORS is NOT "*". The origin is checked per request against
+ * ALLOWED_ORIGINS; a disallowed browser origin gets no
+ * Access-Control-Allow-Origin header at all (the browser then blocks the call)
+ * and OPTIONS preflights from it are refused outright.
+ */
+function corsFor(req: Request): { headers: Record<string, string>; allowed: boolean } {
+  const origin = req.headers.get("Origin");
+  const allowed = origin === null || origin === "" || ALLOWED_ORIGINS.includes(origin);
+  return {
+    allowed,
+    headers: {
+      ...(allowed && origin ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : {}),
+      "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+    },
+  };
+}
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...cors, "Content-Type": "application/json" },
+    headers: { ...headers, "Content-Type": "application/json" },
   });
 }
 
@@ -218,39 +258,46 @@ async function callOne(target: Resolved, prompt: string, jsonMode: boolean, sign
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
-  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) return json({ error: "AI is not wired up on the server yet." }, 500);
+  // F2c: origin gate first — a browser on a foreign origin gets nothing.
+  const cors = corsFor(req);
+  if (!cors.allowed) return json({ error: "Origin not allowed" }, 403, cors.headers);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors.headers });
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405, cors.headers);
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) return json({ error: "AI is not wired up on the server yet." }, 500, cors.headers);
 
   const authHeader = req.headers.get("Authorization") ?? "";
-  if (!authHeader.startsWith("Bearer ")) return json({ error: "Please sign in to the CMS first." }, 401);
+  if (!authHeader.startsWith("Bearer ")) return json({ error: "Please sign in to the CMS first." }, 401, cors.headers);
 
   // 1. Who is calling?
   const caller = createClient(SUPABASE_URL, ANON_KEY, {
     global: { headers: { Authorization: authHeader } },
   });
   const { data: userData, error: userErr } = await caller.auth.getUser();
-  if (userErr || !userData.user) return json({ error: "Your session expired. Sign in again." }, 401);
+  if (userErr || !userData.user) return json({ error: "Your session expired. Sign in again." }, 401, cors.headers);
   const userId = userData.user.id;
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-  // 2. Are they allowed to edit content? Checked in the database, not in the UI.
-  const { data: profile, error: profileErr } = await admin
+  const { data: profile } = await admin
     .from("user_profiles")
-    .select("is_active, role_id, roles!inner( role_permissions!inner( permissions!inner( slug ) ) )")
+    .select("is_active")
     .eq("id", userId)
     .single();
-  if (profileErr || !profile) return json({ error: "Could not check your permissions. Try again." }, 403);
-  if (profile.is_active === false) return json({ error: "This account is disabled." }, 403);
+  if (profile?.is_active === false) return json({ error: "This account is disabled." }, 403, cors.headers);
 
-  const held: string[] = [];
-  for (const rp of ((profile as any)?.roles?.role_permissions ?? [])) {
-    const slug = rp?.permissions?.slug;
-    if (slug) held.push(slug);
+  // 2. Are they allowed to edit content? One rule, one place: the SAME database
+  // helper the RLS policies use, called on the CALLER's client so their JWT sets
+  // auth.uid() inside it (SECURITY DEFINER). No re-implemented join here.
+  let held = false;
+  for (const perm of REQUIRED_PERMISSIONS) {
+    const { data, error } = await caller.rpc("current_user_has_permission", { perm_slug: perm });
+    if (error) {
+      return json({ error: "Could not check your permissions. Try again." }, 403, cors.headers);
+    }
+    if (data === true) { held = true; break; }
   }
-  if (!REQUIRED_PERMISSIONS.some((p) => held.includes(p))) {
-    return json({ error: "AI Fill needs content-editing rights, which this account does not have." }, 403);
+  if (!held) {
+    return json({ error: "AI Fill needs content-editing rights, which this account does not have." }, 403, cors.headers);
   }
 
   // 3. Rate limit per user, counted in the database so it survives new isolates.
@@ -261,10 +308,10 @@ Deno.serve(async (req) => {
     admin.from("ai_request_logs").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", sinceDay),
   ]);
   if ((recent ?? 0) >= MAX_CALLS_PER_5_MIN) {
-    return json({ error: "Too many AI requests in the last few minutes. Wait a moment and try again." }, 429);
+    return json({ error: "Too many AI requests in the last few minutes. Wait a moment and try again." }, 429, cors.headers);
   }
   if ((today ?? 0) >= MAX_CALLS_PER_DAY) {
-    return json({ error: "This account has used its AI allowance for today. Ask the admin if you need more." }, 429);
+    return json({ error: "This account has used its AI allowance for today. Ask the admin if you need more." }, 429, cors.headers);
   }
 
   // 4. Input cap.
@@ -272,12 +319,12 @@ Deno.serve(async (req) => {
   try {
     body = await req.json();
   } catch {
-    return json({ error: "The request was not valid JSON." }, 400);
+    return json({ error: "The request was not valid JSON." }, 400, cors.headers);
   }
   const prompt = typeof body.prompt === "string" ? body.prompt : "";
-  if (!prompt.trim()) return json({ error: "There was nothing to send. Paste the notification text first." }, 400);
+  if (!prompt.trim()) return json({ error: "There was nothing to send. Paste the notification text first." }, 400, cors.headers);
   if (prompt.length > MAX_INPUT_CHARS) {
-    return json({ error: `That text is too long for AI Fill (${prompt.length} characters, limit ${MAX_INPUT_CHARS}). Shorten it to the parts that matter.` }, 400);
+    return json({ error: `That text is too long for AI Fill (${prompt.length} characters, limit ${MAX_INPUT_CHARS}). Shorten it to the parts that matter.` }, 400, cors.headers);
   }
   const consumer = typeof body.consumer === "string" && body.consumer.trim() ? body.consumer.slice(0, 60) : "ai-fill";
   const jsonMode = body.jsonMode === true;
@@ -285,7 +332,7 @@ Deno.serve(async (req) => {
   // 5. Call the provider, walking enabled rows in priority order.
   const targets = await resolveProviders(admin);
   if (targets.length === 0) {
-    return json({ error: "AI is not configured on the server yet. The admin must set the AI_KEY_GROQ secret." }, 500);
+    return json({ error: "AI is not configured on the server yet. The admin must set the AI_KEY_GROQ secret." }, 500, cors.headers);
   }
 
   const hash = await promptHash(prompt);
@@ -300,27 +347,32 @@ Deno.serve(async (req) => {
       try {
         const content = await callOne(target, prompt, jsonMode, controller.signal);
         const latency = Date.now() - started;
-        admin.from("ai_request_logs").insert({
+        clearTimeout(timer);
+        // F2a: AWAITED, not fire-and-forget — if the isolate is frozen after the
+        // response, an un-awaited promise never lands and the rate limit would
+        // count nothing.
+        await admin.from("ai_request_logs").insert({
           provider_id: target.providerId, user_id: userId, prompt_hash: hash,
           status: "success", error_message: null, latency_ms: latency, consumer_name: consumer,
-        }).then(() => {});
+        });
         // Health board: only when the call came from a real provider row.
         if (target.providerId) {
-          admin.from("ai_providers")
+          await admin.from("ai_providers")
             .update({ last_used_at: new Date().toISOString(), last_error: null })
-            .eq("id", target.providerId).then(() => {});
+            .eq("id", target.providerId);
         }
-        return json({ content, provider: target.provider, model: target.model });
+        return json({ content, provider: target.provider, model: target.model }, 200, cors.headers);
       } catch (err) {
         const aborted = controller.signal.aborted;
         lastMessage = aborted ? "timed out" : (err instanceof Error ? err.message : String(err));
-        admin.from("ai_request_logs").insert({
+        if (aborted) clearTimeout(timer); // do not let the abort kill the DB writes below
+        await admin.from("ai_request_logs").insert({
           provider_id: target.providerId, user_id: userId, prompt_hash: hash,
           status: "error", error_message: lastMessage.slice(0, 500),
           latency_ms: Date.now() - attemptStart, consumer_name: consumer,
-        }).then(() => {});
+        });
         if (target.providerId) {
-          admin.from("ai_providers").update({ last_error: lastMessage.slice(0, 500) }).eq("id", target.providerId).then(() => {});
+          await admin.from("ai_providers").update({ last_error: lastMessage.slice(0, 500) }).eq("id", target.providerId);
         }
         if (aborted) break; // no point trying the next provider with no time left
       }
@@ -330,7 +382,7 @@ Deno.serve(async (req) => {
   }
 
   if (lastMessage === "timed out") {
-    return json({ error: "AI took too long to answer and the request was stopped. Your typing is safe - try again, or fill the fields yourself." }, 504);
+    return json({ error: "AI took too long to answer and the request was stopped. Your typing is safe - try again, or fill the fields yourself." }, 504, cors.headers);
   }
-  return json({ error: `AI could not complete the request (${lastMessage}). Nothing was saved.` }, 502);
+  return json({ error: `AI could not complete the request (${lastMessage}). Nothing was saved.` }, 502, cors.headers);
 });
