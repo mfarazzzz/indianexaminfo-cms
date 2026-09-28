@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileText, BookOpen, Users, Tag, Link2,
   FileCode, Image, BarChart2, Megaphone, Palette, MapPin,
   TrendingUp, Settings, ClipboardList, LogOut, ExternalLink,
-  X, Shield, Building2, GraduationCap, Navigation, Briefcase,
+  X, Shield, Building2, GraduationCap, Navigation, Briefcase, Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -29,6 +29,16 @@ interface NavGroup {
 const ICON_SIZE = 15;
 
 const NAV_GROUPS: NavGroup[] = [
+  {
+    // Step 5: the bulletin is reachable but NOT the default screen yet. It
+    // becomes the home route only after bulletin_signals and
+    // bulletin_editor_state are promoted and applied (§g steps 3–4).
+    title: "Overview",
+    permissions: [P.EDIT_OWN_POST, P.EDIT_ANY_POST],
+    items: [
+      { label: "Bulletin", to: "/bulletin", icon: <Inbox size={ICON_SIZE} />, permissions: [P.EDIT_OWN_POST, P.EDIT_ANY_POST] },
+    ],
+  },
   {
     title: "Content",
     items: [

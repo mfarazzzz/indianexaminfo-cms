@@ -105,6 +105,10 @@ function lazyPage(
 }
 
 const DashboardPage     = lazyPage(() => import("@/pages/dashboard/DashboardPage"),     "DashboardPage");
+// Bulletin home (build step 5) — a preview route. "/" keeps redirecting to
+// /dashboard until bulletin_signals + bulletin_editor_state are promoted and
+// applied, so the default screen never depends on un-applied DB objects.
+const BulletinPage      = lazyPage(() => import("@/pages/bulletin/BulletinPage"),        "BulletinPage");
 // M3.8: Pillar-agnostic entity pages
 const EntityListPage    = lazyPage(() => import("@/pages/entities/EntityListPage"),     "EntityListPage");
 const EntityEditorPage  = lazyPage(() => import("@/pages/entities/EntityEditorPage"),   "EntityEditorPage");
@@ -165,6 +169,7 @@ export const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { path: "/dashboard",         element: <DashboardPage /> },
+          { path: "/bulletin",          element: <RequirePermission anyOf={[P.EDIT_OWN_POST, P.EDIT_ANY_POST]}><BulletinPage /></RequirePermission> },
           // M3.8: Pillar-agnostic entity routes (zero code change for new pillars)
           { path: "/entities",             element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntityListPage /></RequirePermission> },
           { path: "/entities/:pillar",     element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntityListPage /></RequirePermission> },
