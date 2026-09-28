@@ -243,7 +243,7 @@ from ( /* exam_editions ⋈ exams ⋈ bulletin_rules  UNION ALL  sarkari_naukri
 ```sql
 -- Editor state only. Content lives elsewhere; this is who is on it.
 create table public.bulletin_editor_state (
-  signal_key   text primary key,   -- edition_id || ':' || event_type || ':' || event_date
+  signal_key   text primary key,   -- bulletin_signals.signal_key, 5-part (see §c view)
   assignee     uuid references auth.users(id),
   status       text not null default 'open'
                check (status in ('open','snoozed','done-by-hand')),
@@ -284,6 +284,27 @@ create policy editor_state_update on public.bulletin_editor_state
 
 `bulletin_rules` uses the same shape: read for `edit_own_post`/`edit_any_post`,
 insert/update/delete for `edit_any_post` (senior editors tune the offsets).
+
+**Written and verified (Q4).** The proposal now exists as
+`supabase/proposed/bulletin_editor_state.sql` (proposed only — NOT in
+`migrations/`, so the CLI never runs it). It adds two things beyond the sketch
+above: a `check (status <> 'snoozed' or snooze_until is not null)` guard and a
+`before update` trigger that owns `updated_at`. Verified by compiling the whole
+file inside a rolled-back transaction on the live DB (2026-09-28), then probing
+it as the `authenticated` role with no permissions granted:
+
+| check | result |
+| --- | --- |
+| table + RLS enabled, exactly 3 policies (`SELECT`/`INSERT`/`UPDATE`) | ✅ |
+| **no `DELETE` policy exists**; a DELETE as `authenticated` removes **0 rows**; seeded rows survive every attempted write | ✅ |
+| read policy = `edit_own_post` OR `edit_any_post`; insert/update = `edit_any_post` only (no `edit_own_post` path) | ✅ |
+| all policies `to authenticated`; every clause uses `current_user_has_permission()` — no `auth.jwt`/`auth.role`/claim sniffing | ✅ |
+| `status='resolved'` rejected by CHECK; `snoozed` with NULL `snooze_until` rejected by CHECK | ✅ |
+| trigger rewrites a forced `updated_at='2020-01-01'` back to now() | ✅ |
+| as `authenticated` without permissions: SELECT sees 0 rows, UPDATE touches 0 rows, INSERT raises 42501 | ✅ |
+
+Nothing was left applied: a follow-up query confirms 0 tables / 0 policies /
+0 functions for `bulletin_editor_state` in the live database.
 
 ## e. Priority — `page_traffic`
 
@@ -432,16 +453,22 @@ the `migrations/` version prefix is the UTC time of the promotion, assigned the
 moment the file is moved — never a placeholder or a future date.** So the
 proposed files carry descriptive names, not fake timestamps.
 
-**Steps 1–3 are written and verified** — each compiled and run inside a
-rolled-back transaction against live `cwbhhcqsrbuoybeaondk` (counts in §c).
-**Nothing applied, nothing promoted.**
+**Steps 1–4 are written and verified** — each compiled and run inside a
+rolled-back transaction against live `cwbhhcqsrbuoybeaondk` (counts in §c,
+editor-state probes in §d). **Step 1 has since been PROMOTED (Q3)** —
+`supabase/migrations/20260928042556_page_traffic.sql`, the version being the UTC
+minute of the move — so the owner's next push applies it. Steps 2–4 are still
+proposals only: nothing else applied.
 
-1. **Traffic substrate.** `supabase/proposed/page_traffic.sql` — the
-   `page_traffic` table + **permission-based RLS** (read = `edit_own_post`/
+1. **Traffic substrate.** `supabase/migrations/20260928042556_page_traffic.sql`
+   (promoted from `proposed/page_traffic.sql` in Q3) — the `page_traffic` table +
+   **permission-based RLS** (read = `edit_own_post`/
    `edit_any_post`; write = `manage_settings` only, since the CMS "Import GSC
    CSV" upload runs as a *user*, not the service role; **no delete policy**).
    Ships a table with no behaviour change; enables the CSV loader.
-   Frontend-independent. ✅ built + verified.
+   Frontend-independent. ✅ built + verified + **PROMOTED**; the loader ships as
+   Settings → SEO → "Import Search Console pages CSV" (`GscTrafficImportCard`,
+   `src/lib/gscCsv.ts`, `pageTrafficService.importPageTraffic`).
 2. **Canonical existence rule.** `supabase/proposed/content_has_data_fn.sql` —
    the SQL `content_has_data(view jsonb, section text)` function: a **pure jsonb**
    mirror of `sectionRegistry` (the same `HasDataView` the TS uses), so ONE
@@ -457,7 +484,8 @@ rolled-back transaction against live `cwbhhcqsrbuoybeaondk` (counts in §c).
 4. **Editor state + RLS.** `supabase/proposed/bulletin_editor_state.sql` —
    `bulletin_editor_state` table + permission-based policies (§d): read =
    `edit_own_post`/`edit_any_post`; write (insert/update) = `edit_any_post`;
-   **no delete**. Not yet written. Independent.
+   **no delete**. ✅ written + compiled/probed in a rolled-back transaction
+   (§d). Independent.
 5. **Bulletin home.** CMS: replace the default route with the bulletin
    (Just arrived / Coming up / Verification queue / Backlog) reading
    `bulletin_signals ⋈ page_traffic`, wired to `bulletin_editor_state`. The
@@ -470,6 +498,8 @@ rolled-back transaction against live `cwbhhcqsrbuoybeaondk` (counts in §c).
    backfill step here.) Frontend untouched.
 7. **Traffic refresh path.** CMS "Import GSC CSV" upload (owner-driven, monthly)
    upserting `page_traffic`; reuses the existing export format so no new schema.
+   ✅ built in Q3 (parser unit-tested against the real export
+   `docs/seo/gsc-pages-2026-09-27.csv`: 315 rows, 0 skipped).
 8. **Optional column cache.** Only if step 3's bulk read is slow at scale:
    generated `has_result`/`has_admit_card`/… columns maintained from step 2's
    function so the queue scans an index instead of a jsonb eval. Kept as a
