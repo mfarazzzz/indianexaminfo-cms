@@ -53,9 +53,13 @@ Live state today: **only `result_date` is populated (361/361);
 `notification_date`, `application_start_date`, `application_end_date`,
 `exam_date`, `admit_card_date`, `merit_list_date`, `answer_key_date`,
 `interview_date`, `document_verification_date`, `walk_in_date` are all NULL.**
-So the 361 seeded vacancies carry **no typed dates the bulletin can fire on yet**
-— the recency signal for that table is dormant until editors backfill the date
-columns. Each column, when set, maps to the paired URL/content field:
+So the 361 seeded vacancies carry **no bulletin-fireable dates yet** — the only
+populated date column is `result_date`, and since the Q2 rule (owner, 28 Sep)
+`sarkari_naukri` rows enter `bulletin_signals` **only when `verified_at IS NOT
+NULL`**, all 361 contribute nothing until they are verified. Unverified vacancies
+surface **only in the Verification queue** — the bulletin never promotes scraped,
+unconfirmed dates to editor work. The other date columns are dormant until editors
+backfill them. Each column, when set, maps to the paired URL/content field:
 
 | Date column | Passing implies this field should exist |
 |---|---|
@@ -127,6 +131,19 @@ view, and bind them with one **parity test** (same fixtures in, same booleans
 out) so "one fact, one place" holds under test rather than hope. The generated-
 column variant is the fallback only if the function proves slow at queue scale.
 
+**How the binding works today (Q1c, built 28 Sep):** the **site's rule is the
+truth**. `contract/content-has-data.fixtures.json` (52 cases) is vendored
+byte-identical in both repos; `content-has-data.expected.json` is GENERATED
+from the frontend implementation (REGEN mode of
+`indianexaminfo-frontend/lib/contract/contentHasData.contract.test.ts`) and
+vendored the same way. The frontend test asserts frontend TS == expected; the
+CMS test (`src/lib/contentHasData.parity.test.ts`) runs the SQL mirror under
+PGlite and asserts SQL == CMS TS == expected. sha256 of both contract files is
+embedded in BOTH repos' test files (and `contract/*.json` is pinned to `eol=lf`
+via .gitattributes), so any drift — or a silent re-bake — fails CI in both
+repos until deliberately re-locked. The always-false `faqs` quirk is pinned as
+expected-false on purpose (faithful mirror; fixing it is a site-side decision).
+
 ## c. Buckets (offsets applied) — recomputed live
 
 The recency column is named **`bucket`**, not `window` (`window` is a reserved
@@ -138,41 +155,36 @@ offset_to_days]` from `bulletin_rules` (a.3):
 - **backlog** — `today > event_date + offset_to_days` (past the window)
 - **future** — `today < event_date + offset_from_days` (before the window)
 
-Recomputed live from the rolled-back run (both date sources, offsets applied,
-project `cwbhhcqsrbuoybeaondk`, 2026-09-28). "open" = `NOT has_content`, i.e.
-actionable work:
+Recomputed live from the rolled-back run **after the Q2 verified-only change**
+(both date sources, offsets applied, project `cwbhhcqsrbuoybeaondk`,
+2026-09-28). "open" = `bucket ∈ (arrived, upcoming)` AND `NOT has_content`:
 
-- **Arrived: 14 signals (5 open)** — 5 from `exam_editions` (all open), 9 from
-  `sarkari_naukri` (all already have content → 0 open).
-- **Upcoming: 21 signals (11 open)** — 12 from `exam_editions` (11 open), 9 from
-  `sarkari_naukri` (0 open).
-- **Backlog: 800 signals (548 open)** · **Future: 251 signals (100 open)**.
+- **Post-change (real state, 0 of 361 vacancies verified): Arrived 7 (7 open) ·
+  Upcoming 10 (9 open) · Backlog 595 (548 without content) · Future 113 (100
+  without content)** — all from `exam_editions`; `sarkari_naukri` contributes 0.
+- **Post-change + post-M4 (M4 simulated inside the rolled-back txn): identical**
+  — with the bulletin empty of unverified rows, nulling 87 broken `result_url`s
+  changes nothing **today**. The M4 target set re-resolved to exactly **87 rows
+  (74 dead-host + 13 confirmed-404)** and the UPDATE ran clean with the verify
+  trigger ENABLED — a faithful dry-run of the pending migration.
+- **After M4 + M5 (all 361 verified) — hypothetical, measured in the same txn
+  (trigger disabled inside the rolled-back txn): Arrived 17 (9 open) · Upcoming
+  25 (11 open) · Backlog 800 (594 without content) · Future 244 (137 without
+  content).** The extra open work is precisely M4's footprint: the 87 nulled
+  `result_url`s flip `has_content` false — 2 arrived / 2 upcoming / 46 backlog /
+  37 future — so verifying rows after M4 creates **real gaps to fill with live
+  links** instead of shipping broken buttons.
 
-Signal counts are higher than the old 478-event model because (a) each exam
-event now fans to **two** targets (admit-card lead window + answer-key follow
-window) and (b) the 361 `sarkari_naukri` result dates contribute — but every
-naukri signal is already `has_content` (its `result_url` is present), so the
-vacancy source adds **0 open work** today and the actionable queue stays short.
+Before the Q2 change the same run reported Arrived 14 (5 open) · Upcoming 21
+(11 open) · Backlog 800 (548) · Future 251 (100) — including the 361 unverified
+result signals the owner ruled out of the board. (Exam-branch splits drift with
+live edits; per-pillar cuts are `GROUP BY pillar` on the same query rather than
+numbers frozen in this doc.)
 
-Per pillar (signals, with open work in parentheses):
-
-| Pillar | Arrived (open) | Upcoming (open) |
-|---|---|---|
-| government-exam | 2 (2) | 4 (3) |
-| entrance-exam | 0 (0) | 1 (1) |
-| govt-vacancy | 3 (3) | 5 (5) |
-| board-exam | 0 (0) | 2 (2) |
-| university-exam | 0 (0) | 0 (0) |
-| sarkari-naukri (dormant) | 9 (0) | 9 (0) |
-
-A per-region cut is available by adding `GROUP BY region` to the same
-`bulletin_signals` query (the view carries `region`); it is omitted here rather
-than carried as stale event-date numbers.
-
-Read: even with the widened, two-target windows the **actionable daily queue is
-small — 5 open arrived, 11 open upcoming** — which is the point. Layer 1
-surfaces what is live *now*; the ~548 older open gaps sit behind the backlog
-link rather than the editor's first screen.
+Read: with the verified-only rule the **daily queue is pure exam-edition work —
+7 open arrived, 9 open upcoming today**. Layer 1 surfaces what is live *now*;
+the ~548 older open gaps sit behind the backlog link rather than the editor's
+first screen, and no scraped, unverified vacancy can pollute either.
 
 ## d. Data model
 
@@ -222,7 +234,8 @@ select
   (raw.source_table || ':' || coalesce(raw.edition_id::text, raw.naukri_id::text)
      || ':' || raw.event_type || ':' || raw.event_date::text || ':' || raw.target_section
   ) as signal_key
-from ( /* exam_editions ⋈ exams ⋈ bulletin_rules  UNION ALL  sarkari_naukri */ ) raw;
+from ( /* exam_editions ⋈ exams ⋈ bulletin_rules  UNION ALL  sarkari_naukri
+         WHERE sn.verified_at IS NOT NULL   -- Q2: verified rows only */ ) raw;
 -- A signal is OPEN work when: bucket in ('arrived','upcoming') AND NOT has_content.
 -- It AUTO-RESOLVES the instant has_content flips true — no state to clear.
 ```
@@ -329,8 +342,8 @@ bulletin becomes the first thing an editor sees.
 ```
 IndianExamInfo CMS
 ├─ Bulletin            (home; default route)
-│    ├─ Just arrived        (open work)  [5]
-│    ├─ Coming up           (open work)  [11]
+│    ├─ Just arrived        (open work)  [7]
+│    ├─ Coming up           (open work)  [9]
 │    ├─ Verification queue  (unverified vacancies, by traffic)   [361 ▲]
 │    └─ Backlog             (older gaps) [548 →]
 ├─ Vacancies        → sarkari_naukri list/editor
@@ -345,11 +358,11 @@ IndianExamInfo CMS
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ Bulletin                                   Mon 28 Sep 2026      [Faraz ▾] │
 ├──────────────────────────────────────────────────────────────────────────┤
-│ JUST ARRIVED  (open work now)                                  5 items     │
+│ JUST ARRIVED  (open work now)                                  7 items     │
 │  ─────────────────────────────────────────────────────────────────────── │
 │  Exam date 26 Sep · Chhattisgarh govt-vacancy   admit-card    ○ empty  ▸  │
 │                                                                            │
-│ COMING UP  (open work next)                                   11 items     │
+│ COMING UP  (open work next)                                    9 items     │
 │  ─────────────────────────────────────────────────────────────────────── │
 │  04 Oct  Result declared   SSC CGL 2026            result     ● live   ▸  │
 │  02 Oct  App closes        UP Police Constable     applic…    ● live   ▸  │

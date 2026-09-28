@@ -24,7 +24,10 @@
 --       - sarkari_naukri date columns   → target = the paired URL/field per §a.2,
 --         so vacancy signals light up the moment editors enter dates. Only
 --         result_date is populated today, so the other columns contribute nothing
---         until backfilled.
+--         until backfilled. NAUKRI ROWS ONLY COUNT WHEN VERIFIED: a signal enters
+--         the board only when sn.verified_at IS NOT NULL. Unverified vacancies
+--         surface ONLY in the Verification queue — the bulletin never promotes
+--         scraped, unconfirmed dates to editor work (owner rule, 2026-09-28).
 --
 --   • The view is created WITH (security_invoker = true): it reads the base
 --     tables with the QUERYING user's privileges (and their RLS), not the owner's.
@@ -205,6 +208,9 @@ WITH raw AS (
     ('walk_in',               sn.walk_in_date)
   ) AS x(event_type, event_date)
   WHERE x.event_date IS NOT NULL
+    -- Verified-only (Q2): unverified scraped rows stay in the Verification queue
+    -- and must not light up the bulletin board.
+    AND sn.verified_at IS NOT NULL
 )
 SELECT
   raw.source_table,
