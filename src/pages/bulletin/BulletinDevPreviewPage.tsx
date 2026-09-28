@@ -1,15 +1,31 @@
 import React, { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { BulletinBoard } from "./BulletinBoard";
-import { EMPTY_BUNDLE, type BulletinBundle, type BulletinEditorState, type EditorStatus } from "@/lib/bulletin/model";
-import { MOCK_SIGNALS, MOCK_EDITOR_STATES, MOCK_TRAFFIC, MOCK_UNVERIFIED_VACANCIES, MOCK_AS_OF } from "@/lib/bulletin/fixtures";
+import {
+  EMPTY_BUNDLE,
+  type BulletinBundle,
+  type BulletinEditorState,
+  type EditorStatus,
+} from "@/lib/bulletin/model";
+import {
+  MOCK_AS_OF,
+  MOCK_EDITOR_STATES,
+  MOCK_SIGNALS,
+  MOCK_TRAFFIC,
+  MOCK_UNVERIFIED_VACANCIES,
+} from "@/lib/bulletin/fixtures";
 
 /**
  * TEMPORARY DEV-ONLY SCREENSHOT ROUTE — revert before merge.
  *
  * /bulletin itself sits behind ProtectedRoute + RequirePermission, which needs a
  * real Supabase session. This route renders the SAME BulletinBoard from the same
- * fixtures the unit tests and ?mock=1 use, so screenshots show the real screen.
- * It is registered only under import.meta.env.DEV.
+ * fixtures the unit tests and ?mock=1 use, so a screenshot shows the real screen.
+ * Registered only under import.meta.env.DEV.
+ *
+ *   /bulletin-preview            mocked board, actions visible (edit_any_post)
+ *   /bulletin-preview?empty=1    the same component with nothing to show
+ *   /bulletin-preview?readonly=1 mocked board with the action column hidden
  */
 
 const BUNDLE: BulletinBundle = {
@@ -22,11 +38,15 @@ const BUNDLE: BulletinBundle = {
 };
 
 export default function BulletinDevPreviewPage() {
+  const [params] = useSearchParams();
+  const empty = params.get("empty") === "1";
+  const readOnly = params.get("readonly") === "1";
   const [bundle, setBundle] = useState<BulletinBundle>(BUNDLE);
 
+  // Mirrors what BulletinPage does in mock mode: the action mutates local state
+  // only, so the board re-renders without a single DB call.
   const onAction = (signalKey: string, action: "assign" | "snooze" | "done") => {
     setBundle((prev) => {
-      const today = prev.asOf;
       const existing = prev.editorStates.find((s) => s.signal_key === signalKey);
       const status: EditorStatus =
         action === "snooze" ? "snoozed" : action === "done" ? "done-by-hand" : "open";
@@ -37,7 +57,9 @@ export default function BulletinDevPreviewPage() {
         status,
         snooze_until:
           action === "snooze"
-            ? new Date(Date.parse(today) + 7 * 86400000).toISOString().slice(0, 10)
+            ? new Date(Date.parse(prev.asOf ?? "") + 7 * 86400000)
+                .toISOString()
+                .slice(0, 10)
             : null,
         assignee: action === "assign" ? "dev-preview" : (existing?.assignee ?? null),
         note: existing?.note ?? null,
@@ -50,16 +72,22 @@ export default function BulletinDevPreviewPage() {
     });
   };
 
+  if (empty) {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <BulletinBoard bundle={{ ...EMPTY_BUNDLE, asOf: MOCK_AS_OF }} canEdit={false} mock />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white p-6">
-      <p className="mb-2 text-[11px] font-medium text-amber-700">
-        Temporary dev preview route for screenshots — identical to /bulletin?mock=1 without requiring sign-in.
-      </p>
-      <BulletinBoard bundle={bundle} canEdit onAction={onAction} mock />
-      <p className="mt-6 text-[11px] text-slate-400">
-        Empty-state capture below (same component, no rows).
-      </p>
-      <BulletinBoard bundle={{ ...EMPTY_BUNDLE, asOf: MOCK_AS_OF }} canEdit={false} mock />
+      <BulletinBoard
+        bundle={bundle}
+        canEdit={!readOnly}
+        onAction={readOnly ? undefined : onAction}
+        mock
+      />
     </div>
   );
 }
