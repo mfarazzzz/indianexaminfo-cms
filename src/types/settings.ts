@@ -60,7 +60,8 @@ export type SettingsMap = {
   notify_on_result: boolean;
   telegram_template: string;
   // Integrations
-  revalidate_token: string;
+  // revalidate_token is intentionally absent: the token lives only as the
+  // revalidate-frontend Edge Function secret (S0-1 follow-up), never in settings.
   frontend_url: string;
   revalidate_on_publish: boolean;
   // Ads

@@ -15,10 +15,15 @@
  *     refused for it. That is the whole reason verify_jwt stays false.
  *
  * SECRETS
- *  - revalidate_token is read from the settings table with the service role at
- *    call time. It is never sent to the browser and never appears in the built
- *    CMS bundle. (Before 28 Sep 2026 the CMS read VITE_REVALIDATE_TOKEN from its
- *    own .env, which Vite inlines into dist/ - i.e. every visitor had it.)
+ *  - REVALIDATE_TOKEN is an Edge Function SECRET set by the owner
+ *    (`supabase secrets set REVALIDATE_TOKEN=...`). It is read here with
+ *    Deno.env.get and is the ONLY place the token exists server-side. It must
+ *    equal the frontend's env.REVALIDATE_TOKEN. It is never stored in the
+ *    `settings` table (the S0-1 follow-up removed that row), never sent to the
+ *    browser and never present in the built CMS bundle.
+ *    (History: the CMS once read VITE_REVALIDATE_TOKEN from its own .env, which
+ *     Vite inlined into dist/ - every visitor had it; then it lived in the
+ *     `settings` table, still one secret-management surface too many.)
  *  - The frontend base URL is read from settings (`frontend_url`) and is only
  *    accepted when it points at our own domain, so a stray value cannot ship
  *    the token to a third party.
@@ -34,6 +39,10 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+// The revalidation secret lives ONLY here, as an Edge Function secret set by
+// the owner. It mirrors the frontend's env.REVALIDATE_TOKEN. Never in the
+// settings table, never in the browser bundle.
+const REVALIDATE_TOKEN = Deno.env.get('REVALIDATE_TOKEN') ?? '';
 
 /** Used when settings has no usable frontend_url. */
 const FALLBACK_FRONTEND_URL = 'https://www.indianexaminfo.com';
@@ -136,10 +145,10 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Token and target ───────────────────────────────────────────────────────
-  const token = await readSetting(admin, 'revalidate_token');
+  const token = REVALIDATE_TOKEN;
   if (!token) {
-    console.error('[revalidate-frontend] revalidate_token is not set in settings');
-    return json({ ok: false, error: 'Revalidation is not configured. The admin must set the token.' }, authenticated ? 500 : 200);
+    console.error('[revalidate-frontend] REVALIDATE_TOKEN secret is not set on the function');
+    return json({ ok: false, error: 'Revalidation is not configured. The owner must set the REVALIDATE_TOKEN secret.' }, authenticated ? 500 : 200);
   }
   const configured = await readSetting(admin, 'frontend_url');
   const base = safeBaseUrl(configured) ?? safeBaseUrl(FALLBACK_FRONTEND_URL) ?? FALLBACK_FRONTEND_URL;

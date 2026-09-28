@@ -37,7 +37,8 @@ const SETTING_META: Record<string, { group: SettingGroup; label: string; is_sens
   supabase_anon_key:   { group: "database", label: "Supabase Anon Key", is_sensitive: true },
   db_status:           { group: "database", label: "DB Status" },
   frontend_url:        { group: "integrations", label: "Frontend Base URL" },
-  revalidate_token:    { group: "integrations", label: "Revalidate Token", is_sensitive: true },
+  // revalidate_token removed from the settings registry (S0-1 follow-up): the
+  // token is an Edge Function secret only, never stored or edited as a setting.
   revalidate_on_publish:{ group: "integrations", label: "Auto-Revalidate on Publish" },
 };
 

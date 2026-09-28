@@ -48,8 +48,9 @@
      sensitive rows. The blanket "any uid" read policy is dropped.
   3  Every secret-shaped key is flagged is_sensitive = true (pattern based, so
      future rows are caught by the same rule).
-  4  Provider key material is deleted from settings, and the plaintext key columns
-     are dropped from ai_providers. Both move to edge-function secrets (S0-1c).
+  4  Provider key material AND the revalidate token are deleted from settings, and
+     the plaintext key columns are dropped from ai_providers. All of it moves to
+     edge-function secrets (S0-1c, and the S0-1 follow-up for REVALIDATE_TOKEN).
   5  ai_request_logs gains user_id so the edge function can rate-limit per user
      across isolates, not just inside one.
   6  Grants on settings are trimmed to what the roles actually need.
@@ -136,11 +137,18 @@ delete from public.settings
    'ai_key_4',
    'openai_api_key',
    'anthropic_api_key',
-   'mistral_api_key'
+   'mistral_api_key',
+   'revalidate_token'
  );
--- Measured effect today: 2 rows deleted (ai_fallback_key, gemini_api_key).
--- rollback: none - the values move to edge-function secrets, which is the point.
--- The owner re-enters nothing in the CMS: the ai-fill function reads secrets.
+-- Measured effect today: 3 rows deleted (ai_fallback_key, gemini_api_key,
+-- revalidate_token). The revalidate token MOVES OUT of settings entirely per the
+-- S0-1 follow-up: it lives only as the revalidate-frontend Edge Function secret
+-- REVALIDATE_TOKEN (Deno.env) and the frontend's env.REVALIDATE_TOKEN. The CMS
+-- no longer reads, writes or displays it (see SettingsPage / settingsService /
+-- types/settings).
+-- rollback: none - these values become edge-function secrets, which is the point.
+-- The owner re-enters nothing in the CMS: ai-fill and revalidate-frontend read
+-- secrets.
 
 -- ai_providers keeps its job as the registry the function walks (provider, model,
 -- enabled, priority) and as the health board (usage_count, last_error,
@@ -202,7 +210,8 @@ revoke insert, update, delete on public.settings from anon;
 --             on public.settings to anon, authenticated;
 --           grant insert, update, delete on public.settings to anon;
 
--- ── proof (already run on 2026-09-28 inside a rolled-back transaction) ─────────
+-- ── proof (re-run 2026-09-28 inside a rolled-back transaction after the
+--    S0-1 follow-up added revalidate_token to the delete list) ──────────────────
 -- Steps 1-4 + 6 applied, then `set local role anon`, then measured, then rollback:
 --
 --   rows visible to anon        : 6
@@ -211,13 +220,12 @@ revoke insert, update, delete on public.settings from anon;
 --   anon can see revalidate_token : false
 --   anon sees any *_key/_token name : false
 --
--- Steps 1-4 + 6 applied, then `set local role authenticated`, then rollback:
+-- Steps 1-4 + 6 applied, then reset role, then measured, then rollback:
 --
---   rows after the deletes        : 23 (was 25; ai_fallback_key and gemini_api_key gone)
---   rows visible to staff         : 22 - revalidate_token is the one sensitive row,
---                                   hidden from a staff session that is not admin
---   grants: anon select = true, anon insert = false, anon truncate = false,
---           authenticated select/insert/update = true, truncate = false
+--   total rows after the deletes  : 22 (was 25; ai_fallback_key, gemini_api_key and
+--                                   revalidate_token all gone)
+--   revalidate_token rows present : 0   (the token is no longer in settings at all)
+--   provider-key rows present     : 0
 --
 -- Not exercised: reading a sensitive row AS A REAL ADMIN. It cannot regress -
 -- admin_write_settings (cmd = ALL, admin roles only) already acts as a SELECT

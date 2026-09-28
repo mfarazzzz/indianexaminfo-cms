@@ -119,8 +119,9 @@ export function SettingsPage() {
   };
 
   // Revalidation. The browser holds no token: the request goes to the
-  // `revalidate-frontend` Edge Function, which reads the token from settings
-  // with the service role and calls the frontend itself (S0-1d).
+  // `revalidate-frontend` Edge Function, which reads the REVALIDATE_TOKEN secret
+  // (Deno.env) and calls the frontend itself (S0-1d / S0-1 follow-up). The token
+  // is no longer a settings value and is not editable anywhere in the CMS.
   const [revalResults, setRevalResults] = useState<Record<string, "idle"|"ok"|"fail">>({});
 
   const revalidate = async (label: string, fn: () => Promise<unknown>) => {
@@ -304,14 +305,18 @@ export function SettingsPage() {
               <input value={(get("frontend_url",SITE.frontendUrl) as string)} onChange={(e) => set("frontend_url", e.target.value)}
                 className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500" />
             </Field>
-            <Field label="Revalidate Token" hint="Server-side only. Must match REVALIDATE_TOKEN in the frontend's environment. The Edge Function reads this value when it refreshes the site; it is never sent to a browser. Rotate it in both places at once.">
-              <MaskedInput value={(get("revalidate_token","") as string)} onChange={(v) => set("revalidate_token", v)} placeholder="secret-token-here" />
+            <Field label="Revalidation Token" hint="Set by the owner, not here. The token lives only as the revalidate-frontend Edge Function secret REVALIDATE_TOKEN and must equal the frontend's env.REVALIDATE_TOKEN. It is not stored in settings and never reaches a browser.">
+              <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                Managed outside the CMS. Rotate both sides together:
+                <code className="ml-1 rounded bg-white px-1">supabase secrets set REVALIDATE_TOKEN=…</code> and
+                the frontend deploy env.
+              </p>
             </Field>
             <Field label="Auto-Revalidate on Publish">
               <Toggle value={get("revalidate_on_publish",true) as boolean} onChange={(v) => set("revalidate_on_publish", v)} />
             </Field>
             <div className="mt-4 mb-6">
-              <button onClick={() => save(["frontend_url","revalidate_token","revalidate_on_publish"])} disabled={saving}
+              <button onClick={() => save(["frontend_url","revalidate_on_publish"])} disabled={saving}
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
                 Save
               </button>
