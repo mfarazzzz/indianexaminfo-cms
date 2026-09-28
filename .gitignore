@@ -43,3 +43,6 @@ pnpm-debug.log*
 # Coverage
 coverage/
 .nyc_output/
+
+# Playwright session state saved by `npm run cms:login` - never commit it
+.auth/
