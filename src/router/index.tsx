@@ -109,6 +109,8 @@ const DashboardPage     = lazyPage(() => import("@/pages/dashboard/DashboardPage
 // /dashboard until bulletin_signals + bulletin_editor_state are promoted and
 // applied, so the default screen never depends on un-applied DB objects.
 const BulletinPage      = lazyPage(() => import("@/pages/bulletin/BulletinPage"),        "BulletinPage");
+// TEMPORARY dev-only screenshot preview — revert before merge.
+const BulletinDevPreviewPage = lazyPage(() => import("@/pages/bulletin/BulletinDevPreviewPage"), "default");
 // M3.8: Pillar-agnostic entity pages
 const EntityListPage    = lazyPage(() => import("@/pages/entities/EntityListPage"),     "EntityListPage");
 const EntityEditorPage  = lazyPage(() => import("@/pages/entities/EntityEditorPage"),   "EntityEditorPage");
@@ -156,6 +158,12 @@ const NavigationSettingsPage = lazyPage(() => import("@/pages/navigation/Navigat
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
+    // TEMPORARY (dev only): renders the same BulletinBoard fixtures as
+    // /bulletin?mock=1 without a Supabase session, for screenshot capture.
+    // Revert this route and BulletinDevPreviewPage.tsx before merge.
+    ...(import.meta.env.DEV
+      ? [{ path: "/bulletin-preview", element: <BulletinDevPreviewPage /> }]
+      : []),
   // Public set-password screen for invite acceptance, password reset, and forced
   // change after an admin-set temporary password. /auth/reset-password is kept as an
   // alias because existing reset emails point there.
