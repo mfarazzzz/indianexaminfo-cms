@@ -175,11 +175,39 @@ Recomputed live from the rolled-back run **after the Q2 verified-only change**
   37 future — so verifying rows after M4 creates **real gaps to fill with live
   links** instead of shipping broken buttons.
 
-Before the Q2 change the same run reported Arrived 14 (5 open) · Upcoming 21
+Before the Q2 change the board reported Arrived 14 (5 open) · Upcoming 21
 (11 open) · Backlog 800 (548) · Future 251 (100) — including the 361 unverified
-result signals the owner ruled out of the board. (Exam-branch splits drift with
-live edits; per-pillar cuts are `GROUP BY pillar` on the same query rather than
-numbers frozen in this doc.)
+result signals the owner ruled out of the board. **Those two runs are not a clean
+before/after**: the earlier one executed at 2026-09-27 **21:09 UTC** and the later
+at 2026-09-28 **04:25 UTC**, so `current_date` rolled over between them as well as
+the rule changing.
+
+**Counts are date-relative, not data-relative — correction of the record.** An
+earlier note here (and in the Q0–Q4 report) attributed the exam-branch movement
+(arrived 4→7, upcoming 6→10, future 120→113) to "live editors changing editions".
+That explanation was **wrong and was never checked**. Re-measuring the same
+exam-branch signals with only the as-of date varied (read-only query over today's
+rows; server `TimeZone = UTC`):
+
+| as-of (UTC) | arrived | upcoming | backlog | future | total signals |
+|---|---|---|---|---|---|
+| 2026-09-26 | 5 | 12 | 595 | 113 | 725 |
+| 2026-09-27 (P3 run) | 5 | 12 | 595 | 113 | 725 |
+| **2026-09-28 (Q2 run)** | **7** | **10** | 595 | 113 | **725** |
+| 2026-09-29 | 7 | 10 | 597 | 111 | 725 |
+
+The **total is constant (725)** — nothing was added, removed or edited; a signal
+crosses from `upcoming` to `arrived`, and eventually out of the window into
+`backlog`, purely because `current_date` advanced. Rule for anyone comparing two
+runs: **record the UTC as-of date with the counts**, and only compare runs taken
+on the same UTC day (or re-run with a pinned as-of). Per-pillar cuts are
+`GROUP BY pillar` on the same query rather than numbers frozen in this doc.
+
+Operational note this exposes: `current_date` is **UTC**, so for an editor on
+IST (+05:30) the board flips at 05:30 local. A 2am shift sees the previous UTC
+day's arrived/upcoming split. Worth deciding on before the bulletin becomes
+someone's first screen (options: session `TimeZone`-aware as-of, or an explicit
+`as_of` parameter defaulting to `current_date`) — not changed here.
 
 Read: with the verified-only rule the **daily queue is pure exam-edition work —
 7 open arrived, 9 open upcoming today**. Layer 1 surfaces what is live *now*;
