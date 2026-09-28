@@ -132,7 +132,7 @@ out) so "one fact, one place" holds under test rather than hope. The generated-
 column variant is the fallback only if the function proves slow at queue scale.
 
 **How the binding works today (Q1c, built 28 Sep):** the **site's rule is the
-truth**. `contract/content-has-data.fixtures.json` (52 cases) is vendored
+truth**. `contract/content-has-data.fixtures.json` (54 cases) is vendored
 byte-identical in both repos; `content-has-data.expected.json` is GENERATED
 from the frontend implementation (REGEN mode of
 `indianexaminfo-frontend/lib/contract/contentHasData.contract.test.ts`) and
@@ -141,8 +141,12 @@ CMS test (`src/lib/contentHasData.parity.test.ts`) runs the SQL mirror under
 PGlite and asserts SQL == CMS TS == expected. sha256 of both contract files is
 embedded in BOTH repos' test files (and `contract/*.json` is pinned to `eol=lf`
 via .gitattributes), so any drift — or a silent re-bake — fails CI in both
-repos until deliberately re-locked. The always-false `faqs` quirk is pinned as
-expected-false on purpose (faithful mirror; fixing it is a site-side decision).
+repos until deliberately re-locked. `faqs` is pinned as a COLUMN-backed section
+since S0-2 (owner decision 28 Sep): `hasData(view,'faqs')` is true where
+`exams.faqs` has content — that is what puts the visible FAQ section on the
+reader's main page — while the `faqs` *content type* stays unmapped so no `/faqs`
+URL ever routes, and the FAQPage JSON-LD is emitted from the same `hasData`
+predicate as the section itself.
 
 ## c. Buckets (offsets applied) — recomputed live
 

@@ -167,7 +167,15 @@
       "expected": false
     },
     {
-      "id": "faqs-quirk-always-false",
+      "id": "faqs-column-counts",
+      "expected": true
+    },
+    {
+      "id": "faqs-column-empty",
+      "expected": false
+    },
+    {
+      "id": "faqs-module-only-not-counted",
       "expected": false
     },
     {
@@ -203,7 +211,7 @@
       "expected": false
     },
     {
-      "id": "ct-faqs-quirk",
+      "id": "ct-faqs-not-routable",
       "expected": false
     },
     {

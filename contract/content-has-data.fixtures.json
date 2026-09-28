@@ -42,7 +42,9 @@
     { "id": "study-material-items", "kind": "section", "key": "study-material", "view": { "pillar": "government-exam", "contentModules": { "study-material": { "materials": [{ "title": "Notes" }] } } } },
     { "id": "study-material-notes", "kind": "section", "key": "study-material", "view": { "pillar": "government-exam", "contentModules": { "study-material": { "notes": "Prep guidance" } } } },
     { "id": "study-material-empty", "kind": "section", "key": "study-material", "view": { "pillar": "government-exam", "contentModules": { "study-material": {} } } },
-    { "id": "faqs-quirk-always-false", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q", "answer": "A" }] } },
+    { "id": "faqs-column-counts", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q", "answer": "A" }] } },
+    { "id": "faqs-column-empty", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam" } },
+    { "id": "faqs-module-only-not-counted", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "contentModules": { "faqs": { "items": [{ "question": "Q", "answer": "A" }] } } } },
     { "id": "unknown-slug", "kind": "section", "key": "nonexistent-slug", "view": { "pillar": "government-exam", "vacancy": 5 } },
 
     { "id": "ct-notification", "kind": "contentType", "key": "notification", "view": { "pillar": "government-exam", "contentModules": { "overview": { "body": "text" } } } },
@@ -52,7 +54,7 @@
     { "id": "ct-previous-papers-empty", "kind": "contentType", "key": "previous-papers", "view": { "pillar": "government-exam", "contentModules": { "previous-papers": {} } } },
     { "id": "ct-study-material", "kind": "contentType", "key": "study-material", "view": { "pillar": "entrance-exam", "contentModules": { "study-material": { "materials": [{ "title": "m" }] } } } },
     { "id": "ct-date-sheet-absent", "kind": "contentType", "key": "date-sheet", "view": { "pillar": "government-exam", "contentModules": { "admit-card": { "body": "x" } } } },
-    { "id": "ct-faqs-quirk", "kind": "contentType", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q", "answer": "A" }] } },
+    { "id": "ct-faqs-not-routable", "kind": "contentType", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q", "answer": "A" }] } },
     { "id": "ct-mock-test-unknown", "kind": "contentType", "key": "mock-test", "view": { "pillar": "government-exam", "contentModules": { "overview": { "body": "x" } } } }
   ]
 }

@@ -17,9 +17,10 @@
 --   • a section applies only to its pillar set (else false);
 --   • "column" sections read typed fields; "editorial" sections read the
 --     contentModules jsonb store, honouring the _config.enabledModules opt-out;
---   • faqs is column-sourced with no column branch in the TS, so it is always
---     false here too (the editorial faqs case is unreachable) — the parity test
---     pins this quirk so neither side can silently "fix" it alone.
+--   • faqs is column-sourced and reads exams.faqs (owner decision 2026-09-28: a
+--     visible FAQ section on the main page wherever the column has content; there
+--     is no /faqs URL, so the contentType bridge deliberately does not map it).
+--     The parity test pins the same boolean on all three sides.
 --
 -- The bulletin's signals view (step 3) assembles the HasDataView jsonb per
 -- edition and calls THIS function — there is no second evaluator.
@@ -159,7 +160,8 @@ BEGIN
               OR _chd_str(view -> 'academicInfo', 'semester')
               OR _chd_str(view -> 'academicInfo', 'admissionTo')), false);
     END IF;
-    RETURN false;  -- includes 'faqs': column-sourced, no column branch in TS -> always false
+    IF section = 'faqs' THEN RETURN _chd_arr(view, 'faqs'); END IF;
+    RETURN false;
   END IF;
 
   -- ── editorial (reads the contentModules store) ──

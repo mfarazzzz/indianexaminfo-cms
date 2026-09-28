@@ -21,11 +21,12 @@
  *
  * pinned hashes below MUST equal the frontend test's constants (LF-normalized
  * bytes; .gitattributes pins contract/*.json to eol=lf in both repos):
- *   FIXTURES 2590900cdc2f7d7d6b688f98772f0390707b9a55fb13cada2aeb782d328ec108
- *   EXPECTED 05b95987a5419d65f3ace35fae6c27714b6e19357c82f6fc6fb2498a6c07f3b8
- * (baked 2026-09-28 from the frontend rule; the quirk-pinned cases
- * faqs-quirk-always-false / ct-faqs-quirk expect FALSE — the always-false FAQs
- * behavior is identical in both repos and is being carried faithfully, not fixed.)
+ *   FIXTURES 57329f42ff7d9846e4a59e28cb1292f69485426e997207ebfd597afeb9ea35b1
+ *   EXPECTED d90e9be51f650f74b89c8c024a52b599b3f078c7ace4b61fded026364f12ab06
+ * (baked 2026-09-28 (S0-2) from the frontend rule; the FAQs cases pin the owner
+ *  decision of that date - hasData('faqs') counts the exams.faqs column so the
+ *  section is visible on the main page, a contentModules.faqs store alone is
+ *  not enough, and the 'faqs' contentType stays unmapped so /faqs never routes.)
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import fs from 'node:fs';
@@ -40,8 +41,8 @@ import {
   type HasDataView,
 } from '@/lib/sectionRegistry';
 
-const FIXTURES_SHA256 = '2590900cdc2f7d7d6b688f98772f0390707b9a55fb13cada2aeb782d328ec108';
-const EXPECTED_SHA256 = '05b95987a5419d65f3ace35fae6c27714b6e19357c82f6fc6fb2498a6c07f3b8';
+const FIXTURES_SHA256 = '57329f42ff7d9846e4a59e28cb1292f69485426e997207ebfd597afeb9ea35b1';
+const EXPECTED_SHA256 = 'd90e9be51f650f74b89c8c024a52b599b3f078c7ace4b61fded026364f12ab06';
 
 const CONTRACT_DIR = path.resolve(process.cwd(), 'contract');
 const FIXTURES_FILE = path.join(CONTRACT_DIR, 'content-has-data.fixtures.json');
