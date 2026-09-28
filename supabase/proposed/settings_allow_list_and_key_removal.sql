@@ -44,8 +44,13 @@
   ------------------------
   1  public_read_settings becomes an explicit allow-list: the 16 keys above, and
      nothing else. Adding a setting no longer publishes it.
-  2  Signed-in staff may read non-sensitive rows; only super-admin/admin may read
-     sensitive rows. The blanket "any uid" read policy is dropped.
+  2  Staff read non-sensitive rows; the manage_settings permission reads
+     sensitive rows. The blanket "any uid" read policy and the role-name read
+     policy are dropped. Every new or replaced policy checks
+     current_user_has_permission('manage_settings') - never current_user_role()
+     and never a role name, so one rule (the permission grant) decides access.
+  2b admin_write_settings (cmd ALL, role names) is replaced by four explicit
+     SELECT / INSERT / UPDATE / DELETE policies, all gated on manage_settings.
   3  Every secret-shaped key is flagged is_sensitive = true (pattern based, so
      future rows are caught by the same rule).
   4  Provider key material AND the revalidate token are deleted from settings, and
@@ -58,9 +63,9 @@
   Proof (run before promoting, inside a rolled-back transaction, as anon):
   the allow-listed keys are readable and nothing else - see the SELECTs at the
   bottom of the file, all expected to be run with `set local role anon`.
+  NOTE: this file carries no BEGIN/COMMIT of its own - the migration runner
+  wraps each file in its own transaction.
 */
-
-begin;
 
 -- ── 1. the public site reads an allow-list, not "everything not flagged" ────────
 drop policy if exists "public_read_settings" on public.settings;
@@ -94,8 +99,14 @@ create policy "public_read_settings"
 --           create policy "public_read_settings" on public.settings
 --             for select using (is_sensitive = false);
 
--- ── 2. staff read non-sensitive rows; only admins read everything ───────────────
+-- ── 2. staff read non-sensitive rows; manage_settings reads everything ─────────
 drop policy if exists "admin_read_all_settings" on public.settings;
+
+drop policy if exists "admin_write_settings" on public.settings;  -- cmd ALL, role names
+drop policy if exists "settings_select_manage" on public.settings;
+drop policy if exists "settings_insert_manage" on public.settings;
+drop policy if exists "settings_update_manage" on public.settings;
+drop policy if exists "settings_delete_manage" on public.settings;
 
 create policy "staff_read_nonsensitive_settings"
   on public.settings
@@ -107,10 +118,40 @@ create policy "admin_read_all_settings"
   on public.settings
   for select
   to authenticated
-  using (current_user_role() = any (array['super-admin', 'admin']));
+  using (current_user_has_permission('manage_settings'));
+
+-- The old admin_write_settings was FOR ALL with role names baked in; it also
+-- acted as a SELECT policy. Replaced by four explicit command policies, each
+-- gated on the manage_settings PERMISSION (the grant table is the single source
+-- of truth - renaming or adding a role can no longer silently widen or break
+-- access).
+create policy "settings_insert_manage"
+  on public.settings
+  for insert
+  to authenticated
+  with check (current_user_has_permission('manage_settings'));
+
+create policy "settings_update_manage"
+  on public.settings
+  for update
+  to authenticated
+  using (current_user_has_permission('manage_settings'))
+  with check (current_user_has_permission('manage_settings'));
+
+create policy "settings_delete_manage"
+  on public.settings
+  for delete
+  to authenticated
+  using (current_user_has_permission('manage_settings'));
 -- rollback: drop policy "staff_read_nonsensitive_settings" on public.settings;
+--           drop policy "admin_read_all_settings" on public.settings;
+--           drop policy "settings_insert_manage" on public.settings;
+--           drop policy "settings_update_manage" on public.settings;
+--           drop policy "settings_delete_manage" on public.settings;
 --           create policy "admin_read_all_settings" on public.settings
 --             for select using (auth.uid() is not null);
+--           create policy "admin_write_settings" on public.settings
+--             for all using (current_user_role() in ('super-admin','admin'));
 
 -- ── 3. flag every secret-shaped key ────────────────────────────────────────────
 update public.settings
@@ -153,8 +194,9 @@ delete from public.settings
 -- ai_providers keeps its job as the registry the function walks (provider, model,
 -- enabled, priority) and as the health board (usage_count, last_error,
 -- last_used_at). The key columns are removed: they were plaintext and readable by
--- every signed-in user. api_key is NOT NULL DEFAULT '' before the drop, so CMS
--- inserts that omit it are unaffected.
+-- every signed-in user. api_key was NOT NULL DEFAULT '' before the drop - no CMS
+-- code reads or writes it any more (aiProviderService/AIProviderManager/types were
+-- cleaned in S0-1), so the drop cannot break a save.
 alter table public.ai_providers drop column if exists api_key;
 alter table public.ai_providers drop column if exists api_key_encrypted;
 -- rollback: alter table public.ai_providers add column api_key text
@@ -162,31 +204,31 @@ alter table public.ai_providers drop column if exists api_key_encrypted;
 
 -- Its read policy was "any signed-in user", which was only ever tolerable because
 -- the table is admin UI; with the key column gone it no longer carries a secret,
--- but the screen itself is an admin screen, so tighten it to match the delete
--- policy that already exists.
+-- but the screen itself is an admin screen, so every policy here is gated on the
+-- same manage_settings permission the settings screen uses.
 drop policy if exists "staff_read_ai_providers" on public.ai_providers;
 create policy "staff_read_ai_providers"
   on public.ai_providers
   for select
   to authenticated
-  using (current_user_role() = any (array['super-admin', 'admin']));
+  using (current_user_has_permission('manage_settings'));
 
 drop policy if exists "staff_write_ai_providers" on public.ai_providers;
 create policy "staff_write_ai_providers"
   on public.ai_providers
   for insert
   to authenticated
-  with check (current_user_role() = any (array['super-admin', 'admin']));
+  with check (current_user_has_permission('manage_settings'));
 
 drop policy if exists "staff_update_ai_providers" on public.ai_providers;
 create policy "staff_update_ai_providers"
   on public.ai_providers
   for update
   to authenticated
-  using (current_user_role() = any (array['super-admin', 'admin']))
-  with check (current_user_role() = any (array['super-admin', 'admin']));
--- rollback: recreate the three policies with using (auth.uid() is not null) and no
---           role restriction.
+  using (current_user_has_permission('manage_settings'))
+  with check (current_user_has_permission('manage_settings'));
+-- rollback: recreate the policies with using (auth.uid() is not null) and no
+--           permission restriction.
 
 -- ── 5. per-user rate limiting for the ai-fill function ─────────────────────────
 alter table public.ai_request_logs add column if not exists user_id uuid;
@@ -203,12 +245,16 @@ revoke truncate, references, trigger
   on public.settings from anon, authenticated;
 
 -- The public site only ever reads. The CMS writes through PostgREST as an
--- authenticated admin, which admin_write_settings already restricts, so those
--- grants stay for authenticated and are removed for anon only.
+-- authenticated manage_settings holder, which the new settings_update_manage /
+-- settings_insert_manage policies restrict, so those grants stay for
+-- authenticated and are removed for anon only.
 revoke insert, update, delete on public.settings from anon;
 -- rollback: grant truncate, references, trigger
 --             on public.settings to anon, authenticated;
 --           grant insert, update, delete on public.settings to anon;
+--
+-- The file deliberately ends without a COMMIT statement: the migration runner
+-- wraps every file in its own transaction.
 
 -- ── proof (re-run 2026-09-28 inside a rolled-back transaction after the
 --    S0-1 follow-up added revalidate_token to the delete list) ──────────────────
@@ -227,15 +273,36 @@ revoke insert, update, delete on public.settings from anon;
 --   revalidate_token rows present : 0   (the token is no longer in settings at all)
 --   provider-key rows present     : 0
 --
--- Not exercised: reading a sensitive row AS A REAL ADMIN. It cannot regress -
--- admin_write_settings (cmd = ALL, admin roles only) already acts as a SELECT
--- policy today and is left untouched, and the new admin_read_all_settings grants
--- the same visibility again. Verified by reading the policy definitions
--- (pg_policies) rather than by a live admin session, since SET ROLE does not
--- produce the auth.uid() those helpers read.
+-- Not exercised here: the live-admin session — that is the rolled-back test
+-- below. A plain SET ROLE does not produce the auth.uid() the permission
+-- helpers read, so the F1b proof simulated two users the same way S0-5 did:
+-- real rows in auth.users + user_profiles (the signup trigger auto-creates the
+-- profile; the test UPDATEs role_id/is_active), then set local role authenticated
+-- + set local request.jwt.claims to each user's uuid, then measured.
+-- Measured 2026-09-28 with steps 1-4 + 6 applied inside begin; … rollback;  (2
+-- fixture rows seeded: zz_test_sensitive is_sensitive=true, zz_test_public):
+--   1. holder_helper                 = true
+--   2. holder_reads_sensitive        = 1
+--   3. holder_update_sensitive_rows  = 1
+--   4. holder_insert_rows            = 1
+--   5. holder_visible_total          = 25 (22 live after deletes + 2 fixtures + 1 insert)
+--   6. holder_ai_providers_visible   = 2
+--   7. writer_helper                 = false
+--   8. writer_sensitive_visible      = 0
+--   9. writer_public_visible         = 1
+--  10. writer_visible_all            = 23 (non-sensitive only)
+--  11. writer_update_sensitive_rows  = 0   (USING filters the row out)
+--  12. writer_update_public_rows     = 0   (no UPDATE policy for writers at all)
+--  13. writer_insert_result          = 42501 denied (raised; caught in DO block)
+--  14. writer_ai_providers_visible   = 0
+--  15. writer_ai_provider_update_rows= 0
+--  16. anon_visible_keys             = adsense_enabled, direct_ads_enabled,
+--      primary_color, site_name, site_tagline, site_url   (allow-list unchanged)
+-- After every run the DB was re-checked: no test users, no test rows, no
+-- policies beyond the live set.
 --
 -- To re-run after any edit, wrap the steps above in:
 --   begin; <steps>; set local role anon; select count(*) from public.settings;
 --   rollback;
-
-commit;
+--   (the runner itself wraps the file; the begin/rollback here are for the
+--    manual proof only)
