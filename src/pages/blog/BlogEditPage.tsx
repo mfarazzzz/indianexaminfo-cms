@@ -13,6 +13,7 @@ import { AISuggestion } from "@/components/shared/AISuggestion";
 import { FrontendSync } from "@/components/shared/FrontendSync";
 import { ImageUploader } from "@/components/shared/ImageUploader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { FaqAnswerWarning } from "@/components/shared/FaqAnswerWarning";
 import { AIAutoFillDialog, AIAutoFillButton } from "@/components/shared/AIAutoFillDialog";
 import { autoFillBlogPost } from "@/lib/ai/autofill";
 import { revalidateBlogPost } from "@/lib/api/frontend";
@@ -273,6 +274,7 @@ export function BlogEditPage() {
                   <button type="button" onClick={() => removeFaq(i)} className="text-slate-400 hover:text-red-500"><Trash2 size={14} /></button>
                 </div>
                 <textarea {...register(`faqs.${i}.answer`)} rows={2} placeholder="Answer" className="w-full resize-none rounded border border-slate-200 px-2 py-1.5 text-sm focus:outline-none" />
+                <FaqAnswerWarning control={control} name={`faqs.${i}.answer`} />
               </div>
             ))}
           </section>

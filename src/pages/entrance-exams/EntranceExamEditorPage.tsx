@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useBlocker, type BlockerFunction } from "react-router-dom";
 import { ArrowLeft, Save, Plus, Trash2, History, Sparkles, Loader2, Globe, ExternalLink } from "lucide-react";
 import { UnsavedChangesDialog } from "@/components/shared/UnsavedChangesDialog";
+import { FaqAnswerWarning } from "@/components/shared/FaqAnswerWarning";
 import { toast } from "sonner";
 import { useForm, useFieldArray } from "react-hook-form";
 import {
@@ -2069,6 +2070,7 @@ function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModul
           <div key={field.id} className="mb-3 border border-slate-100 rounded p-3 space-y-2">
             <input {...form.register(`faqs.${i}.question`)} placeholder="Question" className="w-full rounded border border-slate-200 px-2 py-1 text-sm" />
             <textarea {...form.register(`faqs.${i}.answer`)} placeholder="Answer" rows={2} className="w-full rounded border border-slate-200 px-2 py-1 text-sm" />
+            <FaqAnswerWarning control={form.control} name={`faqs.${i}.answer`} />
             <button type="button" onClick={() => removeFaq(i)} className="text-xs text-red-500">Remove</button>
           </div>
         ))}

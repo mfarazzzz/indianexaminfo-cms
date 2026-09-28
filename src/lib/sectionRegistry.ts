@@ -186,6 +186,50 @@ function nonEmptyArr(v: unknown): boolean {
   return Array.isArray(v) && v.length > 0;
 }
 
+/**
+ * FAQ placeholder rule (owner decision, Sprint 0 Part 2, 2026-09-28).
+ *
+ * An FAQ entry whose answer is empty, or is a single bare placeholder token,
+ * is NOT real content: it must not render in the section, must not appear in
+ * the FAQPage JSON-LD, and must not count toward hasData. ONE rule, shared by
+ * the registry (hasData), the section renderer (FaqsSummary) and the schema
+ * builder (buildFAQSchema) so the three can never disagree.
+ *
+ * Deterministic and literal on purpose: an answer is a placeholder ONLY when,
+ * after trim + lowercase + stripping a trailing run of .,?!;: and whitespace,
+ * it is empty or equals one bare token. Full sentences that merely mention
+ * "not specified" are NOT hidden here - those are fixed at the content level
+ * (see supabase/proposed/faq_placeholder_cleanup.sql) and warned about in the
+ * CMS FAQ editor, never silently dropped from a reader's page by a heuristic.
+ *
+ * MUST STAY IDENTICAL to indianexaminfo-frontend/lib/sectionRegistry.ts and to
+ * _chd_faq_meaningful in content_has_data_fn.sql (the parity test pins all three).
+ */
+const FAQ_PLACEHOLDER_ANSWERS: ReadonlySet<string> = new Set([
+  "not specified",
+  "n/a",
+  "na",
+  "-",
+  "tba",
+  "tbd",
+  "none",
+  "nil",
+]);
+
+export function isMeaningfulFaq(
+  faq: { answer?: string | null } | null | undefined,
+): boolean {
+  const norm = (faq?.answer ?? "").trim().toLowerCase().replace(/[.,?!;:\s]+$/, "");
+  if (norm.length === 0) return false;
+  return !FAQ_PLACEHOLDER_ANSWERS.has(norm);
+}
+
+export function meaningfulFaqs<T extends { answer?: string | null }>(
+  faqs: readonly T[] | null | undefined,
+): T[] {
+  return (faqs ?? []).filter((f) => isMeaningfulFaq(f));
+}
+
 /** Read a module/editorial section object by slug from the jsonb store. */
 function moduleObj(exam: HasDataView, slug: string): Record<string, unknown> | null {
   const cm = exam.contentModules;
@@ -323,7 +367,9 @@ export function hasData(exam: HasDataView, slug: string): boolean {
           // contentModules.faqs store would light the gate without painting content.
           // MIRROR OF indianexaminfo-frontend/lib/sectionRegistry.ts; the contract
           // test (src/lib/contentHasData.parity.test.ts) fails if the two drift.
-          return nonEmptyArr(exam.faqs);
+          // Part 2: only MEANINGFUL answers count (see meaningfulFaqs); an entry
+          // whose answer is empty or a lone placeholder token is not content.
+          return meaningfulFaqs(exam.faqs).length > 0;
         default:
           return false;
       }

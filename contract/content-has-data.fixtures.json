@@ -45,6 +45,13 @@
     { "id": "faqs-column-counts", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q", "answer": "A" }] } },
     { "id": "faqs-column-empty", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam" } },
     { "id": "faqs-module-only-not-counted", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "contentModules": { "faqs": { "items": [{ "question": "Q", "answer": "A" }] } } } },
+    { "id": "faqs-lone-not-specified", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q", "answer": "not specified" }] } },
+    { "id": "faqs-blank-answer", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q", "answer": "   " }] } },
+    { "id": "faqs-na-with-period", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q", "answer": "N/A." }] } },
+    { "id": "faqs-bare-dash", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q", "answer": "-" }] } },
+    { "id": "faqs-none-token", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q", "answer": "None" }] } },
+    { "id": "faqs-mixed-one-real", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q1", "answer": "tba" }, { "question": "Q2", "answer": "The fee is Rs 1000." }] } },
+    { "id": "faqs-sentence-not-hidden", "kind": "section", "key": "faqs", "view": { "pillar": "government-exam", "faqs": [{ "question": "Q", "answer": "The website is not specified. Check the official site for updates." }] } },
     { "id": "unknown-slug", "kind": "section", "key": "nonexistent-slug", "view": { "pillar": "government-exam", "vacancy": 5 } },
 
     { "id": "ct-notification", "kind": "contentType", "key": "notification", "view": { "pillar": "government-exam", "contentModules": { "overview": { "body": "text" } } } },

@@ -18,6 +18,7 @@ import { RichEditor } from "@/components/shared/RichEditor";
 import { autoFillContentPost } from "@/lib/ai/autofill";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { SlugInput } from "@/components/shared/SlugInput";
+import { FaqAnswerWarning } from "@/components/shared/FaqAnswerWarning";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { BLOG_SECTIONS, POST_TYPES } from "@/config/site";
 
@@ -643,6 +644,7 @@ export function UnifiedContentEditorPage() {
                   </div>
                   <textarea {...register(`faqs.${i}.answer`)} placeholder="Answer" rows={2}
                     className="w-full resize-none rounded border border-slate-200 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500" />
+                  <FaqAnswerWarning control={control} name={`faqs.${i}.answer`} />
                 </div>
               ))}
               {faqFields.length === 0 && <p className="text-xs text-slate-400">No FAQs added.</p>}

@@ -49,6 +49,30 @@ AS $h$
                AND jsonb_array_length(obj -> key) > 0, false);
 $h$;
 
+-- FAQs with at least one MEANINGFUL answer (TS meaningfulFaqs / isMeaningfulFaq,
+-- owner decision Sprint 0 Part 2 2026-09-28). An entry counts only when its
+-- answer, after btrim + lower + stripping a trailing run of . , ? ! : ; and
+-- whitespace, is non-empty and is not one bare placeholder token. Identical to
+-- the shared rule in lib/sectionRegistry.ts (frontend + CMS mirror); the parity
+-- test pins all three on the same fixtures.
+CREATE OR REPLACE FUNCTION public._chd_faq_meaningful(view jsonb)
+RETURNS boolean
+LANGUAGE sql IMMUTABLE
+AS $h$
+  SELECT CASE WHEN jsonb_typeof(view -> 'faqs') = 'array' THEN
+    EXISTS (
+      SELECT 1
+        FROM jsonb_array_elements(view -> 'faqs') AS f
+       WHERE regexp_replace(
+               btrim(lower(coalesce(f ->> 'answer', ''))),
+               '[.?!,:;[:space:]]+$',
+               ''
+             ) NOT IN
+             ('', 'not specified', 'n/a', 'na', '-', 'tba', 'tbd', 'none', 'nil')
+    )
+  ELSE false END;
+$h$;
+
 -- vacancy != null && > 0  (TS number compare; null-safe via jsonb_typeof).
 CREATE OR REPLACE FUNCTION public._chd_vacancy_positive(view jsonb)
 RETURNS boolean
@@ -160,7 +184,7 @@ BEGIN
               OR _chd_str(view -> 'academicInfo', 'semester')
               OR _chd_str(view -> 'academicInfo', 'admissionTo')), false);
     END IF;
-    IF section = 'faqs' THEN RETURN _chd_arr(view, 'faqs'); END IF;
+    IF section = 'faqs' THEN RETURN public._chd_faq_meaningful(view); END IF;
     RETURN false;
   END IF;
 

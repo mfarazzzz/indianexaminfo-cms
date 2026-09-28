@@ -28,6 +28,7 @@ import {
   getContentPosts, createContentPost, updateContentPost,
 } from "@/services/contentService";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { FaqAnswerWarning } from "@/components/shared/FaqAnswerWarning";
 import { EXAM_STATUSES } from "@/config/site";
 import {
   getEntityProfile, getModulesForEntityType,
@@ -1053,6 +1054,7 @@ function SEOTab({ form, faqFields, appendFaq, removeFaq }: { form: any; faqField
               <div className="flex items-center justify-between"><span className="text-xs font-medium text-slate-500">FAQ #{i + 1}</span><button type="button" onClick={() => removeFaq(i)} className="text-slate-400 hover:text-red-500"><Trash2 size={14} /></button></div>
               <input {...form.register(`faqs.${i}.question`)} placeholder="Question…" className="w-full rounded-md border border-slate-200 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none" />
               <textarea {...form.register(`faqs.${i}.answer`)} placeholder="Answer…" rows={2} className="w-full rounded-md border border-slate-200 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none resize-none" />
+              <FaqAnswerWarning control={form.control} name={`faqs.${i}.answer`} />
             </div>
           ))}
         </div>

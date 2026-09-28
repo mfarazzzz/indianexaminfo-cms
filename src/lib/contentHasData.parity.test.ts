@@ -21,12 +21,18 @@
  *
  * pinned hashes below MUST equal the frontend test's constants (LF-normalized
  * bytes; .gitattributes pins contract/*.json to eol=lf in both repos):
- *   FIXTURES 57329f42ff7d9846e4a59e28cb1292f69485426e997207ebfd597afeb9ea35b1
- *   EXPECTED d90e9be51f650f74b89c8c024a52b599b3f078c7ace4b61fded026364f12ab06
+ *   FIXTURES e6b2494c9e2730cd67370e6cf2c53fcb22d472e415d1874e564fbd64b4f1ea9b
+ *   EXPECTED 3b94c343629f79dd88b618bc723689ca0a1d19af394200d210572ed11e586e7d
  * (baked 2026-09-28 (S0-2) from the frontend rule; the FAQs cases pin the owner
  *  decision of that date - hasData('faqs') counts the exams.faqs column so the
  *  section is visible on the main page, a contentModules.faqs store alone is
- *  not enough, and the 'faqs' contentType stays unmapped so /faqs never routes.)
+ *  not enough, and the 'faqs' contentType stays unmapped so /faqs never routes.
+ *  Re-baked same day for the Sprint 0 Part 2 owner decision: an FAQ entry only
+ *  counts when its answer, trimmed and lowercased with any trailing run of
+ *  . , ? ! : ; and whitespace stripped, is non-empty and is NOT one bare
+ *  placeholder token (not specified / n/a / na / - / tba / tbd / none / nil).
+ *  Full sentences containing a placeholder word stay visible - the rule is
+ *  deterministic, never heuristic.)
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import fs from 'node:fs';
@@ -41,8 +47,8 @@ import {
   type HasDataView,
 } from '@/lib/sectionRegistry';
 
-const FIXTURES_SHA256 = '57329f42ff7d9846e4a59e28cb1292f69485426e997207ebfd597afeb9ea35b1';
-const EXPECTED_SHA256 = 'd90e9be51f650f74b89c8c024a52b599b3f078c7ace4b61fded026364f12ab06';
+const FIXTURES_SHA256 = 'e6b2494c9e2730cd67370e6cf2c53fcb22d472e415d1874e564fbd64b4f1ea9b';
+const EXPECTED_SHA256 = '3b94c343629f79dd88b618bc723689ca0a1d19af394200d210572ed11e586e7d';
 
 const CONTRACT_DIR = path.resolve(process.cwd(), 'contract');
 const FIXTURES_FILE = path.join(CONTRACT_DIR, 'content-has-data.fixtures.json');
