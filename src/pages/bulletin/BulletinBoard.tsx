@@ -39,7 +39,7 @@ export interface BulletinBoardProps {
 
 const SIGNAL_COLUMNS = (canEdit: boolean): RowColumn[] => [
   { key: "date", label: "Date", width: "72px", align: "left", sortMode: "date" },
-  { key: "entity", label: "Entity", width: "minmax(0,1fr)", align: "left" },
+  { key: "entity", label: "Entity", width: "minmax(180px,1fr)", align: "left" },
   { key: "section", label: "Section", width: "128px", align: "left" },
   { key: "status", label: "Status", width: "112px", align: "left" },
   { key: "traffic", label: "Traffic", width: "72px", align: "right", sortMode: "traffic" },
@@ -50,7 +50,7 @@ const SIGNAL_COLUMNS = (canEdit: boolean): RowColumn[] => [
 ];
 
 const VERIFY_COLUMNS: RowColumn[] = [
-  { key: "entity", label: "Vacancy", width: "minmax(0,1fr)", align: "left" },
+  { key: "entity", label: "Vacancy", width: "minmax(180px,1fr)", align: "left" },
   { key: "blocks", label: "Blocks Verify", width: "minmax(0,1fr)", align: "left" },
   { key: "status", label: "Status", width: "112px", align: "left" },
   // The queue is always click-ranked (the wireframe's "by traffic") and a

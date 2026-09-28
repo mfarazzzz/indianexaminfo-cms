@@ -43,6 +43,12 @@ export interface RowListProps<T> {
   empty?: React.ReactNode;
   loading?: boolean;
   className?: string;
+  /**
+   * Floor for the row grid in px. Below it the list scrolls horizontally instead
+   * of squeezing the flexible (entity) track to zero — which would silently drop
+   * the row's title off the screen on a narrow window.
+   */
+  minWidth?: number;
 }
 
 function alignClass(align: RowColumn["align"]): string {
@@ -59,6 +65,7 @@ export function RowList<T>({
   empty = "Nothing here.",
   loading = false,
   className,
+  minWidth = 760,
 }: RowListProps<T>) {
   const gridTemplate = columns.map((c) => c.width ?? "auto").join(" ");
 
@@ -99,8 +106,13 @@ export function RowList<T>({
 
   return (
     // divide-y gives one hairline between rows; the container carries no border
-    // and no background, so nothing on screen reads as a card.
-    <div className={cn("divide-y divide-slate-100", className)}>
+    // and no background, so nothing on screen reads as a card. The outer box only
+    // scrolls — it is never drawn.
+    <div className="overflow-x-auto">
+    <div
+      className={cn("divide-y divide-slate-100", className)}
+      style={{ minWidth }}
+    >
       {headerRow}
 
       {loading ? (
@@ -134,6 +146,7 @@ export function RowList<T>({
           );
         })
       )}
+    </div>
     </div>
   );
 }

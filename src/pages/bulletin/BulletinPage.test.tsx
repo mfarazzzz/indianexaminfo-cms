@@ -296,6 +296,19 @@ describe('BulletinBoard — the binding visual rules', () => {
     expect(firstDate.closest('div')!.className).toContain('text-left')
   })
 
+  it('gives every list a min width so a narrow window scrolls instead of dropping titles', () => {
+    const { container } = renderBoard(<BulletinBoard bundle={MOCK_BUNDLE} canEdit />)
+    const lists = Array.from(container.querySelectorAll('div.divide-y'))
+    expect(lists.length).toBeGreaterThanOrEqual(3)
+    for (const list of lists) {
+      expect(parseInt((list as HTMLElement).style.minWidth, 10)).toBeGreaterThanOrEqual(700)
+    }
+    // The entity track keeps a floor of its own; the flexible width is a max, not 0.
+    const row = container.querySelector('[data-row]') as HTMLElement
+    expect(row.style.gridTemplateColumns).toContain('minmax(180px,1fr)')
+    expect(row.style.gridTemplateColumns).not.toContain('minmax(0,1fr)')
+  })
+
   it('offers sorting only by date or traffic, and applying it re-orders the rows', () => {
     const { container } = renderBoard(<BulletinBoard bundle={MOCK_BUNDLE} canEdit={false} />)
     const headers = Array.from(container.querySelectorAll('button[aria-pressed]'))
