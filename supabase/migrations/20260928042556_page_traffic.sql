@@ -1,11 +1,13 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- PROPOSED — DO NOT move into supabase/migrations/ without the owner's approval.
--- When promoted, the version prefix is assigned AT PROMOTION TIME (UTC time of
--- the move), never a placeholder/future date.
+-- N2 step 1 (Q3): traffic substrate — PROMOTED 2026-09-28T04:25:56Z (the UTC
+-- time of the move into migrations/, per the promotion-time versioning rule).
+-- Applies on the owner's next push.
 --
--- N2 step 1: traffic substrate. A table of Search Console page metrics so the
+-- A table of Search Console page metrics so the
 -- bulletin can rank its queues by what readers actually open. Ships a table with
--- NO behaviour change; enables the monthly CSV loader. Frontend-independent.
+-- NO behaviour change; enables the monthly CSV loader (CMS Settings → SEO →
+-- "Import Search Console pages CSV", gated by manage_settings).
+-- Frontend-independent; no dependency on the Q1/Q2 rule changes.
 --
 -- RLS (per the review):
 --   • read  — any editor (holder of edit_own_post OR edit_any_post). These are

@@ -7,6 +7,7 @@ import { getAllSettings, updateSettingsBulk, testSupabaseConnection } from "@/se
 import { generateWithGemini, listAvailableModels } from "@/lib/gemini/client";
 import { clearApiKeyCache, setAutofillApiKey } from "@/lib/ai/autofill";
 import { AIProviderManager } from "@/components/settings/AIProviderManager";
+import { GscTrafficImportCard } from "@/components/settings/GscTrafficImportCard";
 import {
   revalidatePath, revalidateAll,
 } from "@/lib/api/frontend";
@@ -298,6 +299,9 @@ export function SettingsPage() {
                 Save SEO Settings
               </button>
             </div>
+
+            {/* Search Console page-traffic importer (manage_settings-gated) */}
+            <GscTrafficImportCard />
           </div>
         )}
 
