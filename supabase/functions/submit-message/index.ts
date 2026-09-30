@@ -54,6 +54,25 @@ const CATEGORIES = [
 ];
 const REASONS = ['wrong_last_date', 'broken_link', 'wrong_eligibility', 'missing_result', 'other'];
 
+/**
+ * ONE shared phone rule, kept byte-for-byte in lock-step with the frontend
+ * (indianexaminfo-frontend lib/contact/submitMessage.ts). Indian mobile: 10
+ * digits starting 6-9 with an optional +91 / 91 / 0 prefix; separators (spaces,
+ * dashes, dots, brackets) are stripped before the test. Stricter than the old
+ * /^\+?9?1?[6-9][0-9]{9}$/, which read a leading "9" as a country code and so
+ * wrongly accepted 11-digit numbers such as 98765432101.
+ */
+const PHONE_RE = /^(?:\+91|91|0)?[6-9]\d{9}$/;
+function stripPhoneSeparators(v: string): string {
+  return v.trim().replace(/[\s\-().\[\]]/g, '');
+}
+/** +91 followed by the 10-digit national number, or null when invalid. */
+function canonicalizePhone(v: string): string | null {
+  const s = stripPhoneSeparators(v);
+  if (!PHONE_RE.test(s)) return null;
+  return `+91${s.replace(/\D/g, '').slice(-10)}`;
+}
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'content-type',
@@ -174,7 +193,7 @@ Deno.serve(async (req: Request) => {
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return json({ ok: false, error: 'That email address does not look right.' }, 400);
   }
-  if (phone && !/^\+?9?1?[6-9][0-9]{9}$/.test(phone)) {
+  if (phone && !canonicalizePhone(phone)) {
     return json({ ok: false, error: 'That phone number does not look right.' }, 400);
   }
   if (source === 'contact_form') {
@@ -219,7 +238,7 @@ Deno.serve(async (req: Request) => {
     message,
     sender_name: name || null,
     sender_email: email || null,
-    sender_phone: phone || null,
+    sender_phone: phone ? canonicalizePhone(phone) : null,
     page_url: pageUrl,
     page_title: pageTitle || null,
     entity_type: entity?.type ?? null,
