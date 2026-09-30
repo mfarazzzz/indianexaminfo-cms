@@ -38,6 +38,9 @@ export const P = {
   VERIFY_CONTENT:    "verify_content",
   MANAGE_RELATIONSHIPS: "manage_relationships",
   MANAGE_AMENDMENTS: "manage_amendments",
+  // S0-5 Part 3 — Reader messages (handle_messages = read/update;
+  // delete/export stay on manage_settings, per reader_messages.sql)
+  HANDLE_MESSAGES:   "handle_messages",
 } as const;
 
 export type PermissionSlug = typeof P[keyof typeof P];

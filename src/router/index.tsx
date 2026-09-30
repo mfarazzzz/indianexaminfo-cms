@@ -134,6 +134,8 @@ const CreativesPage     = lazyPage(() => import("@/pages/ads/CreativesPage"),   
 const ZonesPage         = lazyPage(() => import("@/pages/ads/ZonesPage"),               "ZonesPage");
 const ReportsPage       = lazyPage(() => import("@/pages/ads/ReportsPage"),             "ReportsPage");
 const UsersListPage     = lazyPage(() => import("@/pages/users/UsersListPage"),         "UsersListPage");
+// Reader Messages (S0-5 Part 3) — contact form & report-sheet triage grid
+const MessagesListPage  = lazyPage(() => import("@/pages/messages/MessagesListPage"),    "MessagesListPage");
 const SettingsPage      = lazyPage(() => import("@/pages/settings/SettingsPage"),       "SettingsPage");
 const AuditLogPage      = lazyPage(() => import("@/pages/audit/AuditLogPage"),          "AuditLogPage");
 // Govt Exam (Government Competitive Exams — UPSC, SSC, RRB, etc.)
@@ -246,6 +248,7 @@ export const router = createBrowserRouter([
           { path: "/board-exams/new",      element: <RequirePermission anyOf={[P.CREATE_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
           { path: "/board-exams/:id",      element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
           { path: "/users",             element: <RequirePermission anyOf={[P.MANAGE_USERS]}><UsersListPage /></RequirePermission> },
+          { path: "/messages",          element: <RequirePermission anyOf={[P.HANDLE_MESSAGES]}><MessagesListPage /></RequirePermission> },
           { path: "/settings",          element: <RequirePermission anyOf={[P.MANAGE_SETTINGS]}><SettingsPage /></RequirePermission> },
           { path: "/audit",             element: <RequirePermission anyOf={[P.VIEW_AUDIT_LOG]}><AuditLogPage /></RequirePermission> },
         ],
