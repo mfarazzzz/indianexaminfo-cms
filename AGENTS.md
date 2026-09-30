@@ -18,4 +18,17 @@ before acting.
 - typecheck both repos and run tests after every change; local commits only
 - one fact, one place; no silent fallbacks; enforce at the DB, not only in forms
 - no decorative icons or emoji
+- never write to the auth schema with SQL (auth.users, auth.identities, sessions,
+  and friends). Test accounts are created ONLY through Supabase Auth itself
+  (signup, or the admin API via an approved edge function), using addresses of
+  the form qa+<purpose>@indianexaminfo.com, and deleted after the proof.
+  (Why: a SQL-inserted auth.users row is unloadable by GoTrue unless every
+  NOT-NULL-defaulted token column is '' and created_at is non-NULL — a silent
+  500 swamp; the Auth API always gets it right.)
+- never deploy anything that was not approved, including diagnostics, probes,
+  and temporary helper edge functions. If a blocked proof needs a new tool, ask
+  the owner first.
+- the owner's saved session (.auth/cms.json) is for screenshots and read-only
+  checks only. Any live write or call "as the owner" needs explicit approval in
+  the prompt that uses it.
 - after any context reset, re-read AGENTS.md and the open prompt before acting
