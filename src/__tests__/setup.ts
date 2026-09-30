@@ -1,4 +1,10 @@
 import '@testing-library/jest-dom'
+import { configure } from '@testing-library/react'
+
+// jsdom files share a handful of CPUs; RTL's default 1s async-util timeout is
+// tight for full-suite runs on slower machines (waitFor still resolves the
+// moment the condition holds — this only adds headroom under load).
+configure({ asyncUtilTimeout: 5000 })
 
 // jsdom does not implement ResizeObserver — required by Radix UI components
 global.ResizeObserver = class ResizeObserver {

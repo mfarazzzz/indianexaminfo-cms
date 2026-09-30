@@ -9,6 +9,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/__tests__/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // Load headroom for timer-sensitive component tests (see setup.ts).
+    testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'html'],

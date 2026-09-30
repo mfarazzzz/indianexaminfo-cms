@@ -16,7 +16,8 @@ function msg(over: Partial<ReaderMessage> = {}): ReaderMessage {
     category: "general_question", reason: null, message: "Hello",
     senderName: null, senderEmail: null, senderPhone: null,
     pageUrl: null, pageTitle: null, entityType: null, entityId: null,
-    consent: false, status: "new", assignee: null, priority: "normal",
+    consent: false, status: "new", assignee: null, assigneeName: null,
+    priority: "normal",
     createdAt: "2026-09-30T00:00:00Z", ...over,
   };
 }

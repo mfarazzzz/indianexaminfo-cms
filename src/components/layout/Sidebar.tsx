@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { P } from "@/config/permissions";
 import { SITE } from "@/config/site";
 import { useMobileNav } from "@/contexts/MobileNavContext";
+import { useNewMessageCount } from "@/hooks/useNewMessageCount";
 import { BUILD_INFO, formatBuildTime, buildSyncLabel } from "@/config/buildInfo";
 
 interface NavItem {
@@ -110,6 +111,8 @@ export function Sidebar() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const { sidebarOpen, setSidebarOpen } = useMobileNav();
+  // "new" count badge on the Messages item (P3-1). Real query, fail-soft 0.
+  const newMessages = useNewMessageCount();
 
   const handleSignOut = async () => {
     await signOut();
@@ -186,6 +189,11 @@ export function Sidebar() {
                 >
                   {item.icon}
                   {item.label}
+                  {item.to === "/messages" && newMessages > 0 && (
+                    <span className="ml-auto rounded-full bg-blue-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                      {newMessages > 99 ? "99+" : newMessages}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>

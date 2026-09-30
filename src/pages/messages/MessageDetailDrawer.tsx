@@ -10,7 +10,8 @@
  * the UI only reflects handle_messages / manage_settings for affordances.
  */
 import { useEffect, useState, useCallback } from "react";
-import { X, Loader2, Trash2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   listNotes, addNote, listEvents,
@@ -21,12 +22,47 @@ import {
 import { getUserProfiles } from "@/services/userService";
 import { usePermission } from "@/hooks/usePermission";
 import { P } from "@/config/permissions";
-import { MESSAGE_STATUSES, STATUS_LABELS } from "@/config/messages";
+import { MESSAGE_STATUSES, STATUS_LABELS, SOURCE_LABELS, type MessageSource } from "@/config/messages";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { formatDate, getErrorMessage } from "@/lib/utils";
 
 const STATUSES: ReaderMessageStatus[] = [...MESSAGE_STATUSES];
 const PRIORITIES: ReaderMessagePriority[] = ["low", "normal", "high"];
+
+/**
+ * Where a resolved entity lives in the CMS (P3-1: "Open in editor" via
+ * entity_id). blog_post has no editor of its own (it opens under /content by
+ * id only for content_posts), so it deliberately gets no link.
+ */
+const EDITOR_PATH: Record<string, (id: string) => string> = {
+  exam: (id) => `/exams/${id}`,
+  sarkari_naukri: (id) => `/vacancies/${id}`,
+  content_post: (id) => `/content/${id}`,
+};
+
+/**
+ * The HI/EN reply template (P3-1), carrying the reader's reference. A mailto
+ * cannot set From — the message is composed on the staff member's machine —
+ * so the template signs off from the mailbox replies must reach:
+ * contact@indianexaminfo.com.
+ */
+function replyMailto(m: ReaderMessage): string | null {
+  if (!m.senderEmail) return null;
+  const page = m.pageTitle || m.pageUrl || "indianexaminfo.com";
+  const body = [
+    `प्रिय पाठक,`,
+    ``,
+    `आपकी रिपोर्ट (संदर्भ: ${m.refNumber}) IndianExamInfo की पेज “${page}” के लिए मिली है। हमारी टीम इसे समीक्षा कर रही है और जल्द से जल्द सुधार किया जाएगा।`,
+    ``,
+    `Dear reader,`,
+    ``,
+    `We have received your report (reference: ${m.refNumber}) about the page “${page}” on IndianExamInfo. Our team is reviewing it and the page will be corrected shortly.`,
+    ``,
+    `— Team IndianExamInfo · contact@indianexaminfo.com`,
+  ].join("\n");
+  const subject = `Your report on IndianExamInfo — ref ${m.refNumber}`;
+  return `mailto:${m.senderEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
 
 interface Props {
   message: ReaderMessage;
@@ -144,12 +180,10 @@ export function MessageDetailDrawer({ message, onClose, onChanged, onDeleted }: 
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-slate-900">{message.refNumber}</p>
             <p className="text-xs text-slate-500">
-              {message.source === "contact_form" ? "Contact form" : "Report sheet"} · {message.category}
+              {SOURCE_LABELS[message.source as MessageSource] ?? message.source} · {message.category.replace(/_/g, " ")}
             </p>
           </div>
-          <button onClick={onClose} className="rounded p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
+          <button onClick={onClose} className="rounded px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">Close</button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
@@ -183,6 +217,27 @@ export function MessageDetailDrawer({ message, onClose, onChanged, onDeleted }: 
                 </a>
               </div>
             )}
+            {/* Open in editor + Reply by email (P3-1) */}
+            {(message.entityId && EDITOR_PATH[message.entityType ?? ""]) || message.senderEmail ? (
+              <div className="col-span-2 flex flex-wrap gap-2 pt-1">
+                {message.entityId && EDITOR_PATH[message.entityType ?? ""] && (
+                  <Link
+                    to={EDITOR_PATH[message.entityType!](message.entityId)}
+                    className="rounded border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Open in editor
+                  </Link>
+                )}
+                {replyMailto(message) && (
+                  <a
+                    href={replyMailto(message)!}
+                    className="rounded border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                  >
+                    Reply by email
+                  </a>
+                )}
+              </div>
+            ) : null}
           </div>
 
           {/* Triage controls */}
@@ -280,9 +335,9 @@ export function MessageDetailDrawer({ message, onClose, onChanged, onDeleted }: 
           <div className="border-t border-slate-200 p-3">
             <button
               onClick={() => setDeleteOpen(true)}
-              className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+              className="rounded px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
             >
-              <Trash2 className="h-4 w-4" /> Delete message
+              Delete message
             </button>
           </div>
         )}

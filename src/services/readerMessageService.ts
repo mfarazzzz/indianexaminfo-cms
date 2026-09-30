@@ -17,7 +17,7 @@
  * event/note whose actor is not self, so we never accept a caller-supplied id.
  */
 import { db, supabase } from '@/lib/supabase/client';
-import { OPEN_STATUSES, type MessageSource, type MessageStatus } from '@/config/messages';
+import { OPEN_STATUSES, MESSAGE_STATUSES, type MessageSource, type MessageStatus } from '@/config/messages';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +50,8 @@ export interface ReaderMessage {
   consent: boolean;
   status: ReaderMessageStatus;
   assignee: string | null;
+  /** Display name resolved from user_profiles; null when unassigned. */
+  assigneeName: string | null;
   priority: ReaderMessagePriority;
   createdAt: string;
 }
@@ -85,9 +87,33 @@ export interface ListOpts {
   /** Scope to one page/entity (the reader_messages.entity_id column). */
   entityId?: string;
   search?: string;
+  /** Inclusive ISO date bounds on created_at (date-range filter). */
+  dateFrom?: string;
+  dateTo?: string;
+  /** Server-side sort: a column id from SORT_COLUMNS + direction. */
+  sortCol?: MessageSortCol;
+  sortDir?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
 }
+
+/**
+ * Grid column id → reader_messages column. Sorting is SERVER-side (the grid is
+ * paginated, so a client sort would only ever order one page). Assignee sorts
+ * by the raw uuid — stable enough for a triage queue and honest about the
+ * column it actually orders on.
+ */
+export const SORT_COLUMNS = {
+  createdAt: 'created_at',
+  refNumber: 'ref_number',
+  category: 'category',
+  reason: 'reason',
+  status: 'status',
+  assignee: 'assignee',
+  source: 'source',
+  priority: 'priority',
+} as const;
+export type MessageSortCol = keyof typeof SORT_COLUMNS;
 
 // ── Row mapper ─────────────────────────────────────────────────────────────────
 
@@ -109,6 +135,7 @@ function mapRow(r: Record<string, unknown>): ReaderMessage {
     consent:      Boolean(r.consent),
     status:       r.status as ReaderMessageStatus,
     assignee:     (r.assignee as string) ?? null,
+    assigneeName: null, // filled by listReaderMessages after a name lookup
     priority:     r.priority as ReaderMessagePriority,
     createdAt:    r.created_at as string,
   };
@@ -132,10 +159,11 @@ async function namesFor(ids: (string | null)[]): Promise<Map<string, string>> {
 export async function listReaderMessages(
   opts: ListOpts = {}
 ): Promise<{ data: ReaderMessage[]; count: number }> {
+  const sortCol = opts.sortCol && SORT_COLUMNS[opts.sortCol];
   let q = db
     .from('reader_messages')
     .select('*', { count: 'exact' })
-    .order('created_at', { ascending: false });
+    .order(sortCol ?? 'created_at', { ascending: opts.sortDir === 'asc' });
 
   if (opts.status)   q = q.eq('status', opts.status);
   if (opts.statuses) q = q.in('status', opts.statuses);
@@ -144,17 +172,54 @@ export async function listReaderMessages(
   if (opts.priority) q = q.eq('priority', opts.priority);
   if (opts.assignee) q = q.eq('assignee', opts.assignee);
   if (opts.entityId) q = q.eq('entity_id', opts.entityId);
+  if (opts.dateFrom) q = q.gte('created_at', opts.dateFrom);
+  if (opts.dateTo)   q = q.lt('created_at', `${opts.dateTo}T23:59:59.999Z`.slice(0, 24));
   if (opts.search) {
-    // ilike across the human reference, the message body, and the sender email
+    // ilike across the human reference, the message body, and how to reply
     const s = `%${opts.search}%`;
-    q = q.or(`ref_number.ilike.${s},message.ilike.${s},sender_email.ilike.${s},sender_name.ilike.${s}`);
+    q = q.or(`ref_number.ilike.${s},message.ilike.${s},sender_email.ilike.${s},sender_name.ilike.${s},sender_phone.ilike.${s}`);
   }
   if (opts.offset) q = q.range(opts.offset, opts.offset + (opts.limit ?? 50) - 1);
   else if (opts.limit) q = q.limit(opts.limit);
 
   const { data, error, count } = await q;
   if (error) throw error;
-  return { data: (data ?? []).map((r: any) => mapRow(r)), count: count ?? 0 };
+  const rows: ReaderMessage[] = (data ?? []).map((r: any) => mapRow(r));
+  // Resolve assignee uuids to display names in one extra read per page.
+  const names = await namesFor(rows.map((r) => r.assignee));
+  for (const r of rows) {
+    if (r.assignee) r.assigneeName = names.get(r.assignee) ?? r.assignee;
+  }
+  return { data: rows, count: count ?? 0 };
+}
+
+/**
+ * Counts per status for the current NON-status filters (the strip above the
+ * grid). Six parallel head-count queries — cheap, exact, and each one is the
+ * same query the chip link runs, so a count can never disagree with its list.
+ */
+export async function statusCounts(
+  opts: ListOpts = {}
+): Promise<Record<MessageStatus, number>> {
+  const { status: _s, statuses: _ss, limit: _l, offset: _o, sortCol: _sc, sortDir: _sd, ...rest } = opts;
+  const entries = await Promise.all(
+    MESSAGE_STATUSES.map(async (s) => {
+      // limit 1: we only need the exact count the query already carries.
+      const { count } = await listReaderMessages({ ...rest, status: s, limit: 1, offset: 0 });
+      return [s, count] as const;
+    }),
+  );
+  return Object.fromEntries(entries.map(([s, c]) => [s, c])) as Record<MessageStatus, number>;
+}
+
+/** Unread "new" total for the sidebar badge. Fail-soft: 0 on any error. */
+export async function countNewMessages(): Promise<number> {
+  const { count, error } = await db
+    .from('reader_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'new');
+  if (error) return 0;
+  return count ?? 0;
 }
 
 /**
@@ -311,12 +376,38 @@ export async function deleteReaderMessage(id: string): Promise<void> {
   if (error) throw error;
 }
 
+// ── Bulk actions (P3-1) ────────────────────────────────────────────────────────
+// Sequential on purpose: each single update reads the old value and writes its
+// own event row, so the history stays true per message. A bulk .update() would
+// change N rows in one statement and could not record N honest old→new events.
+
+export async function bulkUpdateStatus(
+  ids: string[], status: ReaderMessageStatus,
+): Promise<{ done: number; failed: number }> {
+  let done = 0; let failed = 0;
+  for (const id of ids) {
+    try { await updateStatus(id, status); done += 1; } catch { failed += 1; }
+  }
+  return { done, failed };
+}
+
+export async function bulkAssign(
+  ids: string[], assignee: string | null,
+): Promise<{ done: number; failed: number }> {
+  let done = 0; let failed = 0;
+  for (const id of ids) {
+    try { await updateAssignee(id, assignee); done += 1; } catch { failed += 1; }
+  }
+  return { done, failed };
+}
+
 // ── CSV export (manage_settings UI gate) ────────────────────────────────────────
 
 const CSV_COLUMNS: Array<[keyof ReaderMessage, string]> = [
   ['refNumber', 'ref'], ['createdAt', 'created_at'], ['source', 'source'],
   ['category', 'category'], ['reason', 'reason'], ['status', 'status'],
-  ['priority', 'priority'], ['senderName', 'sender_name'],
+  ['priority', 'priority'], ['assigneeName', 'assignee'],
+  ['senderName', 'sender_name'],
   ['senderEmail', 'sender_email'], ['senderPhone', 'sender_phone'],
   ['pageUrl', 'page_url'], ['pageTitle', 'page_title'],
   ['message', 'message'],
@@ -339,9 +430,11 @@ export function buildCsv(rows: ReaderMessage[]): string {
   return [header, ...body].join('\r\n');
 }
 
-/** Fetch all rows matching the current filters and trigger a browser download. */
-export async function exportReaderMessagesCsv(opts: ListOpts = {}): Promise<void> {
-  // Export is unbounded by the page limit — pull in pages up to a sane ceiling.
+/**
+ * Fetch ALL rows matching the current filters and sort, in pages up to a sane
+ * ceiling. Shared by both exports so CSV and XLSX are always the same view.
+ */
+async function fetchAllForExport(opts: ListOpts = {}): Promise<ReaderMessage[]> {
   const all: ReaderMessage[] = [];
   const pageSize = 500;
   const maxRows = 10000;
@@ -350,14 +443,43 @@ export async function exportReaderMessagesCsv(opts: ListOpts = {}): Promise<void
     all.push(...data);
     if (data.length < pageSize) break;
   }
-  const csv = buildCsv(all);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  return all;
+}
+
+function download(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `reader-messages-${new Date().toISOString().split('T')[0]}.csv`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/** Download the current filtered + sorted view as .csv (manage_settings UI gate). */
+export async function exportReaderMessagesCsv(opts: ListOpts = {}): Promise<void> {
+  const rows = await fetchAllForExport(opts);
+  const csv = buildCsv(rows);
+  download(
+    new Blob([csv], { type: 'text/csv;charset=utf-8;' }),
+    `reader-messages-${new Date().toISOString().split('T')[0]}.csv`,
+  );
+}
+
+/** Download the current filtered + sorted view as .xlsx (same gate, same rows). */
+export async function exportReaderMessagesXlsx(opts: ListOpts = {}): Promise<void> {
+  const { utils, write } = await import('xlsx');
+  const rows = await fetchAllForExport(opts);
+  const sheet = utils.json_to_sheet(
+    rows.map((r) => Object.fromEntries(CSV_COLUMNS.map(([key, label]) =>
+      [label, r[key] ?? '']))),
+  );
+  const book = utils.book_new();
+  utils.book_append_sheet(book, sheet, 'reader-messages');
+  const bytes = write(book, { bookType: 'xlsx', type: 'array' });
+  download(
+    new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    `reader-messages-${new Date().toISOString().split('T')[0]}.xlsx`,
+  );
 }
