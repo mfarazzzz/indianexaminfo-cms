@@ -1,6 +1,6 @@
--- faq_placeholder_cleanup.sql  (PROPOSED — owner review before promotion)
+-- faq_placeholder_cleanup.sql  (PROPOSED â€” owner review before promotion)
 -- Sprint 0 Part 2, FAQ placeholders, owner decision 2026-09-28 (option D):
--- the site-side hiding rule is deterministic (bare placeholder TOKENS only —
+-- the site-side hiding rule is deterministic (bare placeholder TOKENS only â€”
 -- see lib/sectionRegistry.ts meaningfulFaqs and content_has_data_fn.sql), so
 -- these three exams, whose FAQ answers are full sentences saying the fact is
 -- "not specified", are fixed at the CONTENT level instead of being hidden by
@@ -14,27 +14,27 @@
 --      "not specified" (case-insensitive) from exams.faqs for
 --      bihar-board-inter, cat, ibps-clerk.
 --   3. ASSERTS the exact counts (verified against the live DB 2026-09-28:
---      bihar-board-inter 1 of 6, cat 2 of 15, ibps-clerk 1 of 6 — total 4
---      entries, across exactly 3 exams — the only 3 in the whole table
+--      bihar-board-inter 1 of 6, cat 2 of 15, ibps-clerk 1 of 6 â€” total 4
+--      entries, across exactly 3 exams â€” the only 3 in the whole table
 --      carrying the phrase). Any mismatch raises and aborts the transaction.
 --
 -- Entries kept (NOT "the fact is not specified" statements):
---   cat #12 "does not specify any nationality criteria" — states a fact from
+--   cat #12 "does not specify any nationality criteria" â€” states a fact from
 --   the eligibility rules. bihar-board-inter #2/#4 say fee/eligibility are
---   "N/A … not announced yet" — weak content but outside this phrase-exact
+--   "N/A â€¦ not announced yet" â€” weak content but outside this phrase-exact
 --   cleanup; flagged for editorial follow-up, not removed here.
 --
 -- Safe to re-run: after the first application no answer contains the phrase,
 -- so targets matches 0 rows, nothing is inserted or updated, and the assert
 -- exits with a notice instead of failing.
 --
--- PROOF (run 2026-09-28 via Supabase MCP inside begin; … rollback;):
---   removed exactly 4 entries — bihar-board-inter #3 (conducting body),
+-- PROOF (run 2026-09-28 via Supabase MCP inside begin; â€¦ rollback;):
+--   removed exactly 4 entries â€” bihar-board-inter #3 (conducting body),
 --   cat #2 (website), cat #4 (eligibility), ibps-clerk #3 (application fee);
 --   lengths after: bihar-board-inter 6->5, cat 15->13, ibps-clerk 6->5;
 --   phrase rows left in the whole table = 0; all DO assertions passed; rolled
---   back. An earlier variant failed on `jsonb_object_keys … as s` (missing
---   column alias) — the abort proved the assert path fires and leaves the DB
+--   back. An earlier variant failed on `jsonb_object_keys â€¦ as s` (missing
+--   column alias) â€” the abort proved the assert path fires and leaves the DB
 --   untouched (re-checked: 4 phrase rows, cat still 15, no backup tables).
 
 create table if not exists public.faq_placeholder_cleanup_backup (

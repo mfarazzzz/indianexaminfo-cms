@@ -1,6 +1,5 @@
 /*
-  PROPOSED - NOT APPLIED. Do not copy into supabase/migrations/ until approved.
-  On approval it is promoted with version = the UTC time of promotion.
+  APPLIED 2026-09-30 via Supabase MCP apply_migration (A1, owner-approved 28 Sep).
 
   S0-1b - close the settings read leak and remove key material from the database
   ----------------------------------------------------------------------------------
@@ -67,7 +66,7 @@
   wraps each file in its own transaction.
 */
 
--- ── 1. the public site reads an allow-list, not "everything not flagged" ────────
+-- â”€â”€ 1. the public site reads an allow-list, not "everything not flagged" â”€â”€â”€â”€â”€â”€â”€â”€
 drop policy if exists "public_read_settings" on public.settings;
 
 create policy "public_read_settings"
@@ -99,7 +98,7 @@ create policy "public_read_settings"
 --           create policy "public_read_settings" on public.settings
 --             for select using (is_sensitive = false);
 
--- ── 2. staff read non-sensitive rows; manage_settings reads everything ─────────
+-- â”€â”€ 2. staff read non-sensitive rows; manage_settings reads everything â”€â”€â”€â”€â”€â”€â”€â”€â”€
 drop policy if exists "admin_read_all_settings" on public.settings;
 
 drop policy if exists "admin_write_settings" on public.settings;  -- cmd ALL, role names
@@ -153,7 +152,7 @@ create policy "settings_delete_manage"
 --           create policy "admin_write_settings" on public.settings
 --             for all using (current_user_role() in ('super-admin','admin'));
 
--- ── 3. flag every secret-shaped key ────────────────────────────────────────────
+-- â”€â”€ 3. flag every secret-shaped key â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 update public.settings
    set is_sensitive = true
  where is_sensitive = false
@@ -169,7 +168,7 @@ update public.settings
 -- Measured effect today: ai_fallback_key flips to is_sensitive = true.
 -- rollback: update public.settings set is_sensitive = false where key = 'ai_fallback_key';
 
--- ── 4. remove key material from the database ───────────────────────────────────
+-- â”€â”€ 4. remove key material from the database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 delete from public.settings
  where key in (
    'ai_fallback_key',
@@ -230,7 +229,7 @@ create policy "staff_update_ai_providers"
 -- rollback: recreate the policies with using (auth.uid() is not null) and no
 --           permission restriction.
 
--- ── 5. per-user rate limiting for the ai-fill function ─────────────────────────
+-- â”€â”€ 5. per-user rate limiting for the ai-fill function â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 alter table public.ai_request_logs add column if not exists user_id uuid;
 create index if not exists ai_request_logs_user_recent_idx
   on public.ai_request_logs (user_id, created_at desc)
@@ -238,7 +237,7 @@ create index if not exists ai_request_logs_user_recent_idx
 -- rollback: drop index if exists ai_request_logs_user_recent_idx;
 --           alter table public.ai_request_logs drop column if exists user_id;
 
--- ── 6. settings grants: anon gets no DML, RLS still guards the rest ────────────
+-- â”€â”€ 6. settings grants: anon gets no DML, RLS still guards the rest â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- TRUNCATE, TRIGGER and REFERENCES are never covered by RLS, so no role but the
 -- owner may do them here.
 revoke truncate, references, trigger
@@ -256,8 +255,8 @@ revoke insert, update, delete on public.settings from anon;
 -- The file deliberately ends without a COMMIT statement: the migration runner
 -- wraps every file in its own transaction.
 
--- ── proof (re-run 2026-09-28 inside a rolled-back transaction after the
---    S0-1 follow-up added revalidate_token to the delete list) ──────────────────
+-- â”€â”€ proof (re-run 2026-09-28 inside a rolled-back transaction after the
+--    S0-1 follow-up added revalidate_token to the delete list) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Steps 1-4 + 6 applied, then `set local role anon`, then measured, then rollback:
 --
 --   rows visible to anon        : 6
@@ -273,13 +272,13 @@ revoke insert, update, delete on public.settings from anon;
 --   revalidate_token rows present : 0   (the token is no longer in settings at all)
 --   provider-key rows present     : 0
 --
--- Not exercised here: the live-admin session — that is the rolled-back test
+-- Not exercised here: the live-admin session â€” that is the rolled-back test
 -- below. A plain SET ROLE does not produce the auth.uid() the permission
 -- helpers read, so the F1b proof simulated two users the same way S0-5 did:
 -- real rows in auth.users + user_profiles (the signup trigger auto-creates the
 -- profile; the test UPDATEs role_id/is_active), then set local role authenticated
 -- + set local request.jwt.claims to each user's uuid, then measured.
--- Measured 2026-09-28 with steps 1-4 + 6 applied inside begin; … rollback;  (2
+-- Measured 2026-09-28 with steps 1-4 + 6 applied inside begin; â€¦ rollback;  (2
 -- fixture rows seeded: zz_test_sensitive is_sensitive=true, zz_test_public):
 --   1. holder_helper                 = true
 --   2. holder_reads_sensitive        = 1
