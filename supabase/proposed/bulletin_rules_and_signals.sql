@@ -139,7 +139,9 @@ WITH raw AS (
         'contentModules',      e.content_modules
       ),
       r.target_section
-    )                                  AS has_content
+    )                                  AS has_content,
+    CASE WHEN ex.is_published THEN 'published' ELSE 'draft' END
+                                       AS publish_state
   FROM public.exam_editions e
   JOIN public.exams ex ON ex.id = e.exam_id
   CROSS JOIN LATERAL jsonb_array_elements(
@@ -153,6 +155,11 @@ WITH raw AS (
   UNION ALL
 
   -- (2) SARKARI NAUKRI DATE EVENTS  (flat one-pagers → paired URL/field, §a.2)
+  --     Offsets come from bulletin_rules (P3-4b: NO hardcoded -7/3). Each rule's
+  --     registry target_section maps to the vacancy field that carries the
+  --     artefact, so exam_written lights up BOTH admit_card_url [-10,0] and
+  --     answer_key_url [+1,+10] exactly as the exam-edition branch does. The
+  --     exam date is never a content signal on its own (no exam_date → exam_mode).
   SELECT
     'sarkari_naukri'::text             AS source_table,
     NULL::uuid                         AS exam_id,
@@ -163,50 +170,42 @@ WITH raw AS (
     'sarkari-naukri'::text             AS pillar,
     sn.state                           AS region,
     x.event_type                       AS event_type,
-    CASE x.event_type
-      WHEN 'notification'           THEN 'official_notification_url'
-      WHEN 'application_start'      THEN 'application_url'
-      WHEN 'application_end'        THEN 'application_url'
-      WHEN 'admit_card'             THEN 'admit_card_url'
-      WHEN 'exam_written'           THEN 'exam_mode'
-      WHEN 'answer_key'             THEN 'answer_key_url'
-      WHEN 'result'                 THEN 'result_url'
-      WHEN 'merit_list'             THEN 'merit_list_url'
-      WHEN 'interview'              THEN 'alternate_links'
-      WHEN 'document_verification'  THEN 'joining_details'
-      WHEN 'walk_in'                THEN 'walk_in_venue'
+    CASE r.target_section
+      WHEN 'overview'            THEN 'official_notification_url'
+      WHEN 'application-process' THEN 'application_url'
+      WHEN 'admit-card'          THEN 'admit_card_url'
+      WHEN 'answer-key'          THEN 'answer_key_url'
+      WHEN 'result'              THEN 'result_url'
+      WHEN 'merit-list'          THEN 'merit_list_url'
+      WHEN 'interview-schedule'  THEN 'alternate_links'
     END                                AS target_section,
     x.event_date                       AS event_date,
-    -7                                 AS offset_from_days,   -- base window (§d)
-    3                                  AS offset_to_days,
-    CASE x.event_type
-      WHEN 'notification'           THEN NULLIF(btrim(sn.official_notification_url), '') IS NOT NULL
-      WHEN 'application_start'      THEN NULLIF(btrim(sn.application_url), '')           IS NOT NULL
-      WHEN 'application_end'        THEN NULLIF(btrim(sn.application_url), '')           IS NOT NULL
-      WHEN 'admit_card'             THEN NULLIF(btrim(sn.admit_card_url), '')            IS NOT NULL
-      WHEN 'exam_written'           THEN NULLIF(btrim(sn.exam_mode), '')                 IS NOT NULL
-      WHEN 'answer_key'             THEN NULLIF(btrim(sn.answer_key_url), '')            IS NOT NULL
-      WHEN 'result'                 THEN NULLIF(btrim(sn.result_url), '')                IS NOT NULL
-      WHEN 'merit_list'             THEN NULLIF(btrim(sn.merit_list_url), '')            IS NOT NULL
-      WHEN 'interview'              THEN COALESCE(jsonb_typeof(sn.alternate_links) = 'array'
-                                              AND jsonb_array_length(sn.alternate_links) > 0, false)
-      WHEN 'document_verification'  THEN NULLIF(btrim(sn.joining_details), '')           IS NOT NULL
-      WHEN 'walk_in'                THEN NULLIF(btrim(sn.walk_in_venue), '')             IS NOT NULL
-    END                                AS has_content
+    r.offset_from_days                 AS offset_from_days,
+    r.offset_to_days                   AS offset_to_days,
+    CASE r.target_section
+      WHEN 'overview'            THEN NULLIF(btrim(sn.official_notification_url), '') IS NOT NULL
+      WHEN 'application-process' THEN NULLIF(btrim(sn.application_url), '')           IS NOT NULL
+      WHEN 'admit-card'          THEN NULLIF(btrim(sn.admit_card_url), '')            IS NOT NULL
+      WHEN 'answer-key'          THEN NULLIF(btrim(sn.answer_key_url), '')            IS NOT NULL
+      WHEN 'result'              THEN NULLIF(btrim(sn.result_url), '')                IS NOT NULL
+      WHEN 'merit-list'          THEN NULLIF(btrim(sn.merit_list_url), '')            IS NOT NULL
+      WHEN 'interview-schedule'  THEN COALESCE(jsonb_typeof(sn.alternate_links) = 'array'
+                                          AND jsonb_array_length(sn.alternate_links) > 0, false)
+    END                                AS has_content,
+    COALESCE(sn.workflow_status, 'unknown') AS publish_state
   FROM public.sarkari_naukri sn
   CROSS JOIN LATERAL (VALUES
-    ('notification',          sn.notification_date),
-    ('application_start',     sn.application_start_date),
-    ('application_end',       sn.application_end_date),
-    ('admit_card',            sn.admit_card_date),
-    ('exam_written',          sn.exam_date),
-    ('answer_key',            sn.answer_key_date),
-    ('result',                sn.result_date),
-    ('merit_list',            sn.merit_list_date),
-    ('interview',             sn.interview_date),
-    ('document_verification', sn.document_verification_date),
-    ('walk_in',               sn.walk_in_date)
+    ('notification',      sn.notification_date),
+    ('application_start', sn.application_start_date),
+    ('application_end',   sn.application_end_date),
+    ('admit_card',        sn.admit_card_date),
+    ('exam_written',      sn.exam_date),
+    ('answer_key',        sn.answer_key_date),
+    ('result',            sn.result_date),
+    ('merit_list',        sn.merit_list_date),
+    ('interview',         sn.interview_date)
   ) AS x(event_type, event_date)
+  JOIN public.bulletin_rules r ON r.event_type = x.event_type
   WHERE x.event_date IS NOT NULL
     -- Verified-only (Q2): unverified scraped rows stay in the Verification queue
     -- and must not light up the bulletin board.
@@ -227,20 +226,46 @@ SELECT
   raw.offset_from_days,
   raw.offset_to_days,
   raw.has_content,
+  raw.publish_state,
   CASE
-    WHEN current_date BETWEEN raw.event_date + raw.offset_from_days
-                          AND raw.event_date + raw.offset_to_days
-         AND current_date >= raw.event_date THEN 'arrived'
-    WHEN current_date BETWEEN raw.event_date + raw.offset_from_days
-                          AND raw.event_date + raw.offset_to_days
-         AND current_date <  raw.event_date THEN 'upcoming'
-    WHEN current_date > raw.event_date + raw.offset_to_days THEN 'backlog'
+    -- P3-4a: "today" is the India (IST) date, matching the frontend's IST anchor,
+    -- NOT the server's UTC current_date. One definition, used by every bucket.
+    WHEN t.today BETWEEN raw.event_date + raw.offset_from_days
+                     AND raw.event_date + raw.offset_to_days
+         AND t.today >= raw.event_date THEN 'arrived'
+    WHEN t.today BETWEEN raw.event_date + raw.offset_from_days
+                     AND raw.event_date + raw.offset_to_days
+         AND t.today <  raw.event_date THEN 'upcoming'
+    WHEN t.today > raw.event_date + raw.offset_to_days THEN 'backlog'
     ELSE 'future'
   END AS bucket,
   (raw.source_table || ':' ||
    COALESCE(raw.edition_id::text, raw.naukri_id::text) || ':' ||
    raw.event_type || ':' || raw.event_date::text || ':' || raw.target_section
   ) AS signal_key
-FROM raw;
+FROM raw
+CROSS JOIN LATERAL (SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date AS today) t;
 
 GRANT SELECT ON public.bulletin_signals TO authenticated;
+
+-- ── (P3-4 d) presence helpers are editor-only, never the public roles ──────────
+-- content_has_data and its _chd_* helpers back the CMS "is this section empty"
+-- decision. The public site computes presence in TypeScript (indianexaminfo-
+-- frontend/lib/sectionRegistry.ts) and never rpc()'s these functions, so anon
+-- and the PUBLIC pseudo-role get no EXECUTE (verified 2026-09-30 across both
+-- repos). Only authenticated callers — the CMS, and the security_invoker
+-- bulletin_signals view running as the querying editor — may execute them.
+DO $$
+DECLARE f record;
+BEGIN
+  FOR f IN
+    SELECT p.oid::regprocedure AS sig
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND (p.proname = 'content_has_data' OR p.proname LIKE '\_chd\_%')
+  LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon, public', f.sig);
+    EXECUTE format('GRANT  EXECUTE ON FUNCTION %s TO authenticated', f.sig);
+  END LOOP;
+END $$;

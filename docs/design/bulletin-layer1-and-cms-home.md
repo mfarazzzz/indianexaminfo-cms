@@ -67,13 +67,21 @@ backfill them. Each column, when set, maps to the paired URL/content field:
 | `application_start_date` | `application_url` |
 | `application_end_date` | (closes applications; required to Verify — M3) |
 | `admit_card_date` | `admit_card_url` |
-| `exam_date` | exam-mode/details complete |
+| `exam_date` | exam has **two** targets (P3-4b, 2026-09-30): `admit_card_url` in [-10,0] **and** `answer_key_url` in [+1,+10] — the exam date is never a stand-alone exam_mode content signal |
 | `answer_key_date` | `answer_key_url` |
 | `result_date` | `result_url` (and `verified_at` for the button to render) |
 | `merit_list_date` | `merit_list_url` |
 | `interview_date` | interview schedule in `description`/`alternate_links` |
 | `document_verification_date` | document-verification details |
 | `walk_in_date` | `walk_in_venue` + closed marker |
+
+> **P3-4b (2026-09-30).** The `sarkari_naukri` branch now `JOIN bulletin_rules` on
+> `event_type` instead of hard-coding `[-7,+3]`, so a vacancy signal fires **only
+> for event_types that have a rule**. `document_verification` and `walk_in` have
+> no `bulletin_rules` row (and no populated date), so they contribute nothing
+> until a rule is seeded *and* the date is set. The rule's `target_section` maps
+> to the vacancy field that carries the artefact (see the dual `exam_written`
+> fan-out above). Verified-only (Q2) still gates the whole branch.
 
 Each signal resolves to exactly one **target** section/field. The recency
 window is **offsets applied to the event date**, held as tunable rows in
@@ -104,6 +112,31 @@ exactly. The exam events each fan out to **two** targets:
 
 (These are the seed rows inserted into `bulletin_rules`; editors tune them with
 plain UPDATEs, gated by `edit_any_post` — §d.)
+
+### a.4 P3-4 fixes (2026-09-30)
+
+Four corrections applied to `supabase/proposed/bulletin_rules_and_signals.sql`,
+recompiled live in a rolled-back transaction (project `cwbhhcqsrbuoybeaondk`):
+
+- **a. IST "today".** The bucket `CASE` used the server's UTC `current_date`.
+  It now uses `(now() AT TIME ZONE 'Asia/Kolkata')::date` — one value, added via
+  `CROSS JOIN LATERAL (SELECT … AS today) t` and referenced everywhere in the
+  view (bucket included) — matching the frontend's IST anchor. (At the 2026-09-30
+  run UTC and IST dates coincided; they diverge for ~5.5 h each morning.)
+- **b. Sarkari branch reads `bulletin_rules`.** Replaced the hard-coded `-7/3`
+  and the `exam_written → exam_mode` CASE with a `JOIN bulletin_rules` and a
+  `target_section → vacancy field` map, so `exam_written` fans to `admit_card_url`
+  [-10,0] and `answer_key_url` [+1,+10] exactly as the exam-edition branch does.
+  No exam_mode target, no hard-coded offsets.
+- **c. Publish state column.** The view now exposes `publish_state` (text): the
+  exam-edition branch emits `published`/`draft` from `exams.is_published`; the
+  sarkari branch emits `sarkari_naukri.workflow_status` (or `unknown`). Lets the
+  bulletin hide/flag work on records that are not live.
+- **d. Presence helpers are editor-only.** `REVOKE EXECUTE ON FUNCTION
+  content_has_data(jsonb,text)` and every `_chd_*` helper `FROM anon, public;
+  GRANT EXECUTE TO authenticated`. Verified first that the public site computes
+  presence in TypeScript (`indianexaminfo-frontend/lib/sectionRegistry.ts`) and
+  never `rpc()`s these functions, so revoking anon breaks nothing on the site.
 
 ## b. The existence rule — one implementation
 
@@ -166,6 +199,13 @@ Recomputed live from the rolled-back run **after the Q2 verified-only change**
 - **Post-change (real state, 0 of 361 vacancies verified): Arrived 7 (7 open) ·
   Upcoming 10 (9 open) · Backlog 595 (548 without content) · Future 113 (100
   without content)** — all from `exam_editions`; `sarkari_naukri` contributes 0.
+- **P3-4 re-run (2026-09-30, IST==UTC today, 0 of 361 vacancies verified):**
+  total 725 signals, all `exam_editions`; `sarkari_naukri` = **0** (verified cause:
+  `sarkari_naukri` has 361 rows but **0 verified**, so the verified-only gate —
+  not the join — is why the branch is empty; it emits the moment rows are
+  verified). Buckets: **Arrived 10 (open 17 total across arrived+upcoming) ·
+  Upcoming 8 · Backlog 597 · Future 110**. `publish_state`: published 725, draft 0.
+  `sarkari_naukri` `target_section = 'exam_mode'` = **0** (fix b confirmed).
 - **Post-change + post-M4 (M4 simulated inside the rolled-back txn): identical**
   — with the bulletin empty of unverified rows, nulling 87 broken `result_url`s
   changes nothing **today**. The M4 target set re-resolved to exactly **87 rows
