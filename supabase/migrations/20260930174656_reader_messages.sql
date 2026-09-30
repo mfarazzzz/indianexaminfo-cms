@@ -1,8 +1,9 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- S0-5, corrected (owner brief Sprint 0 Part 2, 2026-09-28): reader-message
--- DATA LAYER. PROPOSED ONLY — not promoted, not applied. Compiled and tested
--- inside a ROLLED-BACK transaction via MCP; the owner reviews before this moves
--- into supabase/migrations/ (version = UTC time of promotion).
+-- S0-5, corrected (owner brief Sprint 0 Part 2, 2026-09-28; approved live 2026-09-30 R1):
+-- reader-message DATA LAYER. APPLIED via MCP apply_migration 2026-09-30
+-- (version 20260930174656); promoted from supabase/proposed/reader_messages.sql
+-- (version = UTC time of application). The line 24 comment-block corruption
+-- ("── internal_note") found at promotion is fixed here and in the applied SQL.
 --
 -- THE ONE WRITE PATH is the edge function `submit-message` (verify_jwt off,
 -- public). It validates, applies honeypot + minimum fill-time, rate-limits per
@@ -21,13 +22,16 @@
 --   NO policies for anon anywhere in this file.
 -- The earlier draft reused edit_any_post; superseded per the owner correction.
 --
-── internal_note / handled_by / handled_at are GONE from the main table (c):
+-- internal_note / handled_by / handled_at are GONE from the main table (c):
 -- notes live in contact_message_notes (authored, timestamped, attributable);
 -- status/assignee history lives in contact_message_events (who + when). The
 -- main table keeps only the current status/assignee/priority snapshot.
 --
--- PROOF (2026-09-28, Supabase MCP, every statement inside begin; … rollback;
--- and re-checked after the aborts: no tables, no permission row left):
+-- PROOF (2026-09-28 compiled+rolled-back; 2026-09-30 LIVE at application — R1:
+-- anon submit through the function returned a ref; anon select/insert/RPC all
+-- 42501 permission-denied; 6 attempts from one IP -> 5 x 200 + 429; a
+-- page_report resolved a real vacancy URL to (sarkari_naukri, id); grid
+-- visible to a handle_messages holder and 0 rows for a viewer):
 --   • file compiled verbatim: 11 policies created, message_rate_limit_attempt
 --     present, submit_reader_message gone (0 rows in pg_proc).
 --   • handle_messages exists, assigned to exactly Super Admin, Admin, Editor,
