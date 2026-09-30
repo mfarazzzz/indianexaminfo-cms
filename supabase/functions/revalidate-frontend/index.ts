@@ -19,11 +19,14 @@
  * Anything else is refused with 401. verify_jwt is OFF only because path 2 has
  * no JWT; the function enforces authentication itself.
  *
- * DEBOUNCE: the same tag fires at most once per 30 s (REVALIDATE_DEBOUNCE_WINDOW
- * seconds). Checked in the DATABASE (public.revalidate_should_fire), not in an
- * in-memory map, because edge isolates do not share memory and a fresh isolate
- * would let a burst through. A debounced call is a NO-OP that returns
- * { ok: true, debounced: true } - the cache is still fresh, nothing to do.
+ * DEBOUNCE (owner A3 review, 30 Sep): ONLY the trigger path is debounced, one
+ * tag at most once per 10 s - it exists purely to drop the trigger's duplicate
+ * of a CMS call. A CMS (JWT) call is NEVER debounced: an editor who saves twice
+ * within the window must get both refreshes. Checked in the DATABASE
+ * (public.revalidate_should_fire), not in an in-memory map, because edge
+ * isolates do not share memory and a fresh isolate would let a burst through.
+ * A debounced call is a NO-OP that returns { ok: true, debounced: true } - the
+ * cache is still fresh, nothing to do.
  *
  * SECRETS (all Edge Function secrets set by the owner; never in settings, never
  * in the browser, never in the built CMS bundle):
@@ -31,6 +34,11 @@
  *                          server-side copy of the cache-busting token.
  *  - TRIGGER_SHARED_SECRET must equal the Vault secret `revalidate_trigger_secret`
  *                          that the trigger sends in the x-trigger-secret header.
+ *  - ALLOWED_ORIGINS       comma-separated CMS origins (same list ai-fill uses,
+ *                          e.g. "https://cms.indianexaminfo.com,http://localhost:5177").
+ *                          CORS is NOT "*"; missing or empty => every browser
+ *                          cross-origin request is refused (fail closed). The
+ *                          trigger sends no Origin header and is unaffected.
  *  - The frontend base URL is read from settings (`frontend_url`) and is only
  *    accepted when it points at our own domain, so a stray value cannot ship
  *    the token to a third party.
@@ -52,6 +60,14 @@ const REVALIDATE_TOKEN = Deno.env.get('REVALIDATE_TOKEN') ?? '';
 // Compared (constant time) with the x-trigger-secret header from the pg_net
 // trigger. Must equal the Vault secret `revalidate_trigger_secret`.
 const TRIGGER_SHARED_SECRET = Deno.env.get('TRIGGER_SHARED_SECRET') ?? '';
+// A3 review (30 Sep): the only browser origins allowed to call this function,
+// from the ALLOWED_ORIGINS secret - the same allow-list ai-fill uses, not "*".
+// Missing or empty => every browser cross-origin call is refused (fail closed).
+// The pg_net trigger sends no Origin header, so the trigger path is unaffected.
+const ALLOWED_ORIGINS: string[] = (Deno.env.get('ALLOWED_ORIGINS') ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
 
 /** Used when settings has no usable frontend_url. */
 const FALLBACK_FRONTEND_URL = 'https://www.indianexaminfo.com';
@@ -59,22 +75,37 @@ const FALLBACK_FRONTEND_URL = 'https://www.indianexaminfo.com';
 const ALLOWED_HOST_SUFFIX = 'indianexaminfo.com';
 /** The header the Postgres trigger authenticates with. */
 const TRIGGER_SECRET_HEADER = 'x-trigger-secret';
-/** Same tag at most once per this many seconds. */
-const REVALIDATE_DEBOUNCE_WINDOW = 30;
+/** Trigger-path debounce: same tag at most once per this many seconds. */
+const REVALIDATE_DEBOUNCE_WINDOW = 10;
 
 /** Same set the CMS editor routes require. */
 const REVALIDATE_PERMISSIONS = ['edit_any_post', 'create_exam', 'create_post', 'manage_settings'];
 
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+/**
+ * A3 review (30 Sep): CORS is NOT "*". The origin is checked per request
+ * against ALLOWED_ORIGINS (the same rule ai-fill uses). An absent Origin
+ * header (the pg_net trigger, curl, health probes) is not a browser and
+ * passes; a PRESENT Origin that is not listed gets no
+ * Access-Control-Allow-Origin header and OPTIONS preflights from it are
+ * refused outright (403).
+ */
+function corsFor(req: Request): { headers: Record<string, string>; allowed: boolean } {
+  const origin = req.headers.get('Origin');
+  const allowed = origin === null || origin === '' || ALLOWED_ORIGINS.includes(origin);
+  return {
+    allowed,
+    headers: {
+      ...(allowed && origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
+      'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    },
+  };
+}
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...cors, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 }
 
@@ -119,10 +150,20 @@ function safeBaseUrl(candidate: string): string | null {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
-  if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
+  const { headers: corsHeaders, allowed: originAllowed } = corsFor(req);
+  const reply = (body: unknown, status = 200) => json(body, status, corsHeaders);
+
+  if (req.method === 'OPTIONS') {
+    return originAllowed
+      ? new Response('ok', { headers: corsHeaders })
+      : reply({ ok: false, error: 'Origin not allowed' }, 403);
+  }
+  // A3 review: foreign browser origin is refused before anything else. The
+  // trigger sends no Origin, so it is not affected.
+  if (!originAllowed) return reply({ ok: false, error: 'Origin not allowed' }, 403);
+  if (req.method !== 'POST') return reply({ ok: false, error: 'Method not allowed' }, 405);
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-    return json({ ok: false, error: 'Revalidation is not wired up on the server yet.' }, 500);
+    return reply({ ok: false, error: 'Revalidation is not wired up on the server yet.' }, 500);
   }
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -141,7 +182,7 @@ Deno.serve(async (req: Request) => {
     // ── Path 1: a signed-in CMS user ──────────────────────────────────────────
     const userClient = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } });
     const { data: userData, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !userData.user) return json({ ok: false, error: 'Your session expired. Sign in again.' }, 401);
+    if (userErr || !userData.user) return reply({ ok: false, error: 'Your session expired. Sign in again.' }, 401);
 
     const { data: profile } = await admin
       .from('user_profiles')
@@ -149,7 +190,7 @@ Deno.serve(async (req: Request) => {
       .eq('id', userData.user.id)
       .single();
     if (!profile || profile.is_active === false) {
-      return json({ ok: false, error: 'This account cannot refresh the live site.' }, 403);
+      return reply({ ok: false, error: 'This account cannot refresh the live site.' }, 403);
     }
 
     // One rule, one place: the SAME database helper the RLS policies use, on the
@@ -158,12 +199,12 @@ Deno.serve(async (req: Request) => {
     for (const perm of REVALIDATE_PERMISSIONS) {
       const { data, error } = await userClient.rpc('current_user_has_permission', { perm_slug: perm });
       if (error) {
-        return json({ ok: false, error: 'Could not check your permissions. Try again.' }, 403);
+        return reply({ ok: false, error: 'Could not check your permissions. Try again.' }, 403);
       }
       if (data === true) { allowed = true; break; }
     }
     if (!allowed) {
-      return json({ ok: false, error: 'This account does not have permission to refresh the live site.' }, 403);
+      return reply({ ok: false, error: 'This account does not have permission to refresh the live site.' }, 403);
     }
     caller = 'cms';
   } else if (triggerHeader !== '') {
@@ -171,32 +212,35 @@ Deno.serve(async (req: Request) => {
     if (!TRIGGER_SHARED_SECRET) {
       console.error('[revalidate-frontend] TRIGGER_SHARED_SECRET secret is not set on the function');
       // A trigger must not see a hard failure; 500 only reports our own misconfig.
-      return json({ ok: false, error: 'Trigger revalidation is not configured.' }, 500);
+      return reply({ ok: false, error: 'Trigger revalidation is not configured.' }, 500);
     }
     if (!(await constantTimeEqual(triggerHeader, TRIGGER_SHARED_SECRET))) {
-      return json({ ok: false, error: 'Invalid trigger secret.' }, 401);
+      return reply({ ok: false, error: 'Invalid trigger secret.' }, 401);
     }
     // Narrow surface: exactly one exam tag, never a path, never "everything".
     const examSlug = typeof body.exam_slug === 'string' ? body.exam_slug.trim() : '';
     if (!payloadTag && examSlug) payloadTag = `exam:${examSlug}`;
     if (!payloadTag || path) {
-      return json({ ok: false, error: 'The trigger may only name exactly one tag.' }, 403);
+      return reply({ ok: false, error: 'The trigger may only name exactly one tag.' }, 403);
     }
     caller = 'trigger';
   } else {
     // ── No JWT and no trigger secret: there is NO unauthenticated path. ───────
-    return json({ ok: false, error: 'A valid CMS session or the trigger secret is required.' }, 401);
+    return reply({ ok: false, error: 'A valid CMS session or the trigger secret is required.' }, 401);
   }
 
-  // ── Debounce: the same tag at most once per window (DB, not memory) ─────────
-  if (payloadTag) {
+  // ── Debounce: TRIGGER PATH ONLY, one tag at most once per 10 s (DB, not
+  //    memory). A3 review (30 Sep): a CMS call is NEVER debounced - an editor
+  //    who saves twice within the window must get both refreshes. ─────────────
+  if (caller === 'trigger' && payloadTag) {
     const { data: shouldFire, error: debErr } = await admin.rpc('revalidate_should_fire', {
       p_tag: payloadTag,
       p_window_seconds: REVALIDATE_DEBOUNCE_WINDOW,
     });
     if (!debErr && shouldFire === false) {
-      // Fresh within the window: nothing to do, the cache is still valid.
-      return json({ ok: true, debounced: true, tag: payloadTag }, 200);
+      // Fresh within the window: nothing to do, the cache is still fresh; this
+      // only drops the trigger's duplicate of a CMS revalidation.
+      return reply({ ok: true, debounced: true, tag: payloadTag }, 200);
     }
     if (debErr) {
       // Debounce is an optimisation, not a security control — fail OPEN (do the
@@ -209,7 +253,7 @@ Deno.serve(async (req: Request) => {
   const token = REVALIDATE_TOKEN;
   if (!token) {
     console.error('[revalidate-frontend] REVALIDATE_TOKEN secret is not set on the function');
-    return json({ ok: false, error: 'Revalidation is not configured. The owner must set the REVALIDATE_TOKEN secret.' }, caller === 'cms' ? 500 : 200);
+    return reply({ ok: false, error: 'Revalidation is not configured. The owner must set the REVALIDATE_TOKEN secret.' }, caller === 'cms' ? 500 : 200);
   }
   const configured = await readSetting(admin, 'frontend_url');
   const base = safeBaseUrl(configured) ?? safeBaseUrl(FALLBACK_FRONTEND_URL) ?? FALLBACK_FRONTEND_URL;
@@ -229,7 +273,7 @@ Deno.serve(async (req: Request) => {
   const result = await res.json().catch(() => ({}));
   console.log('[revalidate-frontend]', JSON.stringify({ payload, status: res.status, caller }));
 
-  return json(
+  return reply(
     { ok: res.ok, status: res.status, ...(result as Record<string, unknown>) },
     // A trigger must not see a hard failure; a browser caller needs the real code.
     caller === 'cms' ? (res.ok ? 200 : 502) : 200,

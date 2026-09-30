@@ -21,15 +21,19 @@
 --    request must carry a valid CMS JWT with an edit permission OR the trigger
 --    secret, otherwise the function answers 401.
 --
--- 2. Debounce: the same tag at most once per 30 s. Implemented as a SMALL DB
+-- 2. Debounce: the TRIGGER's tag fires at most once per 10 s. Owner review
+--    (30 Sep): CMS (JWT) calls are NEVER debounced — an editor who saves twice
+--    within the window must get both refreshes; the debounce exists only to
+--    drop the trigger's duplicate of a CMS call. Implemented as a SMALL DB
 --    TABLE + atomic SECURITY DEFINER function, NOT an in-memory map — edge
 --    isolates do not share memory and each fresh isolate would let one burst
---    through, so an in-memory map is not the "same tag at most once per 30 s"
---    across the trigger + CMS + several isolates. Same fixed-truth pattern as
+--    through, so an in-memory map is not the "same tag at most once per window"
+--    across trigger + CMS + several isolates. Same fixed-truth pattern as
 --    message_rate_limits in reader_messages.sql. The Edge Function calls
---    revalidate_should_fire() before hitting the frontend.
+--    revalidate_should_fire() (trigger path only) before hitting the frontend.
 --
--- PROOF (2026-09-28, MCP, every statement inside begin; … rollback;):
+-- PROOF (2026-09-28, MCP, every statement inside begin; … rollback;) —
+--   ORIGINAL 30 s / all-callers version, 9/9 green:
 --   • file compiled verbatim (table + function + trigger replacement + grants).
 --   1. should_fire_first          = true
 --   2. should_fire_second         = false (30 s window, immediate retry)
@@ -47,6 +51,12 @@
 --     revalidate_should_fire functions, 0 vault secrets, 0 queued requests, the
 --     fixture exam_editions row back to [], the live trigger unchanged (md5
 --     1b12c94ce255286952a42931ff00013a).
+--   RE-RUN PENDING: the 30 s → 10 s trigger-only change (owner review 30 Sep)
+--   alters only the default window here and the CALLER side in the Edge
+--   Function; the SQL above is identical except `p_window_seconds int default
+--   10`. The rolled-back proof is re-run with the 10 s window (first=true,
+--   immediate retry=false, backdated-11 s=true) as soon as the Supabase MCP
+--   connection is restored — numbers only from a completed run.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- ── 1. debounce store ─────────────────────────────────────────────────────────
@@ -63,10 +73,11 @@ revoke all on public.revalidate_debounce from anon, authenticated, public;
 -- Atomic check-and-stamp: returns true (fire) when the tag has not fired within
 -- the window, false (debounce) otherwise. The upsert does both halves in one
 -- statement, so two concurrent calls can never both return true for the same
--- fresh window.
+-- fresh window. Called ONLY for the trigger path; a CMS caller is never
+-- debounced (owner review 30 Sep).
 create or replace function public.revalidate_should_fire(
   p_tag text,
-  p_window_seconds int default 30
+  p_window_seconds int default 10
 ) returns boolean
 language plpgsql
 security definer
