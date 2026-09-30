@@ -1,9 +1,8 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- A3 (owner review 28 Sep): revalidate-frontend loses its unauthenticated path.
--- PROPOSED ONLY — not promoted, not applied. Compiled and tested inside a
--- ROLLED-BACK transaction via MCP; the owner reviews before this moves into
--- supabase/migrations/ (version = UTC time of promotion). The runner wraps each
--- file; no BEGIN/COMMIT here.
+-- A3 (owner review 28 Sep, approved 30 Sep): revalidate-frontend loses its
+-- unauthenticated path. APPLIED via Supabase MCP 2026-09-30 (version
+-- 20260930171935) after the rolled-back compile proof; promoted from
+-- supabase/proposed/revalidate_trigger_secret_and_debounce.sql.
 --
 -- 1. notify_frontend_revalidate() (the exam_editions pg_net trigger) now sends
 --    an x-trigger-secret header. The trigger reads its copy from Supabase Vault
@@ -51,12 +50,15 @@
 --     revalidate_should_fire functions, 0 vault secrets, 0 queued requests, the
 --     fixture exam_editions row back to [], the live trigger unchanged (md5
 --     1b12c94ce255286952a42931ff00013a).
---   RE-RUN PENDING: the 30 s → 10 s trigger-only change (owner review 30 Sep)
---   alters only the default window here and the CALLER side in the Edge
---   Function; the SQL above is identical except `p_window_seconds int default
---   10`. The rolled-back proof is re-run with the 10 s window (first=true,
---   immediate retry=false, backdated-11 s=true) as soon as the Supabase MCP
---   connection is restored — numbers only from a completed run.
+--   10 s RE-RUN (applied state, 2026-09-30, LIVE proofs — not rolled back, the
+--   migration was applied for real): no credentials → 401; wrong trigger secret
+--   → 401; signed-in user without permission → 403; owner CMS call → frontend
+--   200 revalidated; a real trigger save → net._http_response 200
+--   "revalidated":true tag exam:jnu-admission; a second trigger save 8.3 s
+--   later → 200 "debounced":true with the debounce stamp unchanged (10 s
+--   window honoured); two CMS calls 3 s apart → BOTH revalidated (never
+--   debounced). Debounce RPC with the live 10 s default: first=true,
+--   immediate retry=false, backdated-11 s=true.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- ── 1. debounce store ─────────────────────────────────────────────────────────
