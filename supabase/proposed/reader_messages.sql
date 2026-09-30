@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS public.reader_messages (
   -- from its own random uuid; UNIQUE so every code resolves to one row.
   ref_number    text        NOT NULL UNIQUE,
   source        text        NOT NULL
-    CHECK (source IN ('contact_form', 'report_sheet')),
+    CHECK (source IN ('contact_form', 'page_report')),
   category      text        NOT NULL
     CHECK (category IN (
       'report_error', 'suggest_update', 'general_question',
@@ -96,8 +96,15 @@ CREATE TABLE IF NOT EXISTS public.reader_messages (
     CHECK (entity_type IS NULL OR entity_type IN ('exam', 'content_post', 'blog_post')),
   entity_id     uuid,                          -- no FK: three target tables
   consent       boolean     NOT NULL DEFAULT false,
+  -- Canonical status set (owner decision 2026-09-30, single source of truth:
+  -- src/config/messages.ts). 'triage' DROPPED ('new' IS the triage queue).
+  -- 'wont_fix' (a genuine declined message) kept distinct from 'spam' (junk,
+  -- purged after 30 days). Open = new | in_progress | waiting_on_reader.
   status        text        NOT NULL DEFAULT 'new'
-    CHECK (status IN ('new', 'triage', 'in_progress', 'resolved', 'wont_fix')),
+    CHECK (status IN (
+      'new', 'in_progress', 'waiting_on_reader',
+      'resolved', 'wont_fix', 'spam'
+    )),
   assignee      uuid REFERENCES auth.users(id) ON DELETE SET NULL,   -- (c)
   priority      text        NOT NULL DEFAULT 'normal'               -- (c)
     CHECK (priority IN ('low', 'normal', 'high')),

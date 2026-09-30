@@ -21,10 +21,11 @@ import {
 import { getUserProfiles } from "@/services/userService";
 import { usePermission } from "@/hooks/usePermission";
 import { P } from "@/config/permissions";
+import { MESSAGE_STATUSES, STATUS_LABELS } from "@/config/messages";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { formatDate, getErrorMessage } from "@/lib/utils";
 
-const STATUSES: ReaderMessageStatus[] = ["new", "triage", "in_progress", "resolved", "wont_fix"];
+const STATUSES: ReaderMessageStatus[] = [...MESSAGE_STATUSES];
 const PRIORITIES: ReaderMessagePriority[] = ["low", "normal", "high"];
 
 interface Props {
@@ -194,7 +195,7 @@ export function MessageDetailDrawer({ message, onClose, onChanged, onDeleted }: 
                 disabled={saving}
                 onChange={(e) => changeStatus(e.target.value as ReaderMessageStatus)}
               >
-                {STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
               </select>
             </label>
             <label className="block">

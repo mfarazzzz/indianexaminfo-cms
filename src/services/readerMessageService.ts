@@ -17,18 +17,20 @@
  * event/note whose actor is not self, so we never accept a caller-supplied id.
  */
 import { db, supabase } from '@/lib/supabase/client';
+import type { MessageSource, MessageStatus } from '@/config/messages';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type ReaderMessageSource = 'contact_form' | 'report_sheet';
+// Status/source names are single-sourced from @/config/messages (the ONE shared
+// vocabulary); these aliases keep the service's public type names stable.
+export type ReaderMessageSource = MessageSource;
 export type ReaderMessageCategory =
   | 'report_error' | 'suggest_update' | 'general_question'
   | 'technical_problem' | 'advertising' | 'legal_removal';
 export type ReaderMessageReason =
   | 'wrong_last_date' | 'broken_link' | 'wrong_eligibility'
   | 'missing_result' | 'other';
-export type ReaderMessageStatus =
-  | 'new' | 'triage' | 'in_progress' | 'resolved' | 'wont_fix';
+export type ReaderMessageStatus = MessageStatus;
 export type ReaderMessagePriority = 'low' | 'normal' | 'high';
 
 export interface ReaderMessage {

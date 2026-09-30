@@ -25,14 +25,18 @@ import {
 } from "@/services/readerMessageService";
 import { usePermission } from "@/hooks/usePermission";
 import { P } from "@/config/permissions";
+import {
+  MESSAGE_STATUSES, MESSAGE_SOURCES, STATUS_LABELS, SOURCE_LABELS,
+} from "@/config/messages";
 import { formatDate, getErrorMessage } from "@/lib/utils";
 
 const STATUS_STYLES: Record<string, string> = {
   new: "bg-blue-50 text-blue-700",
-  triage: "bg-amber-50 text-amber-700",
   in_progress: "bg-purple-50 text-purple-700",
+  waiting_on_reader: "bg-amber-50 text-amber-700",
   resolved: "bg-green-50 text-green-700",
   wont_fix: "bg-slate-100 text-slate-500",
+  spam: "bg-red-50 text-red-600",
 };
 const PRIORITY_STYLES: Record<string, string> = {
   low: "text-slate-400",
@@ -42,8 +46,8 @@ const PRIORITY_STYLES: Record<string, string> = {
 
 function StatusPill({ status }: { status: string }) {
   return (
-    <span className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-medium capitalize ${STATUS_STYLES[status] ?? "bg-slate-100 text-slate-600"}`}>
-      {status.replace(/_/g, " ")}
+    <span className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${STATUS_STYLES[status] ?? "bg-slate-100 text-slate-600"}`}>
+      {STATUS_LABELS[status as keyof typeof STATUS_LABELS] ?? status.replace(/_/g, " ")}
     </span>
   );
 }
@@ -108,7 +112,7 @@ export function MessagesListPage() {
         <div className="max-w-[360px]">
           <p className="truncate text-sm text-slate-800">{row.original.message}</p>
           <p className="text-xs text-slate-400">
-            {row.original.source === "contact_form" ? "Contact form" : "Report sheet"}
+            {SOURCE_LABELS[row.original.source as keyof typeof SOURCE_LABELS] ?? row.original.source}
             {" · "}{row.original.category.replace(/_/g, " ")}
           </p>
         </div>
@@ -191,8 +195,8 @@ export function MessagesListPage() {
         </div>
         <select className={filterCls} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
-          {["new", "triage", "in_progress", "resolved", "wont_fix"].map((s) => (
-            <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+          {MESSAGE_STATUSES.map((s) => (
+            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
           ))}
         </select>
         <select className={filterCls} value={category} onChange={(e) => setCategory(e.target.value)}>
@@ -203,8 +207,9 @@ export function MessagesListPage() {
         </select>
         <select className={filterCls} value={source} onChange={(e) => setSource(e.target.value)}>
           <option value="">All sources</option>
-          <option value="contact_form">Contact form</option>
-          <option value="report_sheet">Report sheet</option>
+          {MESSAGE_SOURCES.map((s) => (
+            <option key={s} value={s}>{SOURCE_LABELS[s]}</option>
+          ))}
         </select>
       </div>
 

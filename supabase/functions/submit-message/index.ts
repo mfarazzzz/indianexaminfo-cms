@@ -12,7 +12,7 @@
  *  1. shape + enum validation, length caps (message 10..2000; contact fields
  *     bounded; page_url must be http(s) on our own domain or it is dropped)
  *  2. contact rules per source: contact_form needs email-or-phone + consent;
- *     report_sheet keeps the barrier low (contact optional, per A.2)
+ *     page_report keeps the barrier low (contact optional, per A.2)
  *  3. honeypot: hidden field `website` must stay empty — a filled honeypot
  *     gets a FAKE success (200 + a ref that resolves to nothing) so the bot
  *     learns nothing, and nothing is written
@@ -47,7 +47,7 @@ const RATE_MAX_HITS = 5;                // per bucket…
 const RATE_WINDOW_MINUTES = 10;         // …per this window (both sources)
 const ALLOWED_HOST_SUFFIX = 'indianexaminfo.com';
 
-const SOURCES = ['contact_form', 'report_sheet'];
+const SOURCES = ['contact_form', 'page_report'];
 const CATEGORIES = [
   'report_error', 'suggest_update', 'general_question',
   'technical_problem', 'advertising', 'legal_removal',
