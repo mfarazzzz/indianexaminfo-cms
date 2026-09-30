@@ -26,10 +26,12 @@ import type {
   BulletinEditorState,
   BulletinSignal,
   EditorStatus,
+  ReaderReport,
   TrafficRow,
   VerifyCandidate,
 } from '@/lib/bulletin/model';
 import { todayIso } from '@/lib/bulletin/model';
+import { listOpenPageReports } from '@/services/readerMessageService';
 
 /** Rows per read. The view is date-windowed, so a few thousand rows is the realistic ceiling. */
 const SIGNAL_LIMIT = 5000;
@@ -140,19 +142,44 @@ export async function fetchUnverifiedVacancies(): Promise<VerifyCandidate[]> {
   }));
 }
 
+/**
+ * Open page reports for the bulletin "Reader reports" section (P3-2). reader_
+ * messages is a PROPOSED, not-yet-applied table, and its SELECT policy is
+ * handle_messages — so a missing table or a non-holder (RLS returns 0 rows)
+ * must degrade to an empty list, exactly like the other pending objects. Any
+ * real error other than a missing object still surfaces.
+ */
+export async function fetchOpenReaderReports(): Promise<ReaderReport[]> {
+  try {
+    const rows = await listOpenPageReports(50);
+    return rows.map((r) => ({
+      id: r.id,
+      ref_number: r.refNumber,
+      page_title: r.pageTitle,
+      reason: r.reason,
+      created_at: r.createdAt,
+    }));
+  } catch (err) {
+    rethrowUnlessMissing(err);
+    return [];
+  }
+}
+
 /** One read of everything the bulletin home needs. */
 export async function loadBulletin(now: Date = new Date()): Promise<BulletinBundle> {
-  const [signals, editorStates, traffic, unverifiedVacancies] = await Promise.all([
+  const [signals, editorStates, traffic, unverifiedVacancies, readerReports] = await Promise.all([
     fetchBulletinSignals(),
     fetchEditorStates(),
     fetchTraffic(),
     fetchUnverifiedVacancies(),
+    fetchOpenReaderReports(),
   ]);
   return {
     signals: signals.signals,
     editorStates: editorStates.states,
     traffic,
     unverifiedVacancies,
+    readerReports,
     // The board can only show real work once BOTH the signal view and the
     // editor-state table exist. A missing/empty page_traffic only means the
     // ranking numbers read 0, so it does not set this flag.

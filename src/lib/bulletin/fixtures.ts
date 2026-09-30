@@ -12,6 +12,7 @@ import type {
   BulletinBundle,
   BulletinEditorState,
   BulletinSignal,
+  ReaderReport,
   TrafficRow,
   VerifyCandidate,
 } from './model';
@@ -215,11 +216,30 @@ export const MOCK_UNVERIFIED_VACANCIES: VerifyCandidate[] = [
   },
 ];
 
+/** Open page reports for the "Reader reports" section (P3-2). */
+export const MOCK_READER_REPORTS: ReaderReport[] = [
+  {
+    id: '33333333-3333-3333-3333-333333333301',
+    ref_number: 'IEI-A1B2C',
+    page_title: 'UP Health Dept — 108 Ambulance Driver 2026',
+    reason: 'wrong_last_date',
+    created_at: '2026-09-27T09:15:00Z',
+  },
+  {
+    id: '33333333-3333-3333-3333-333333333302',
+    ref_number: 'IEI-D4E5F',
+    page_title: 'SSC CGL 2026 — Admit Card',
+    reason: 'broken_link',
+    created_at: '2026-09-26T18:40:00Z',
+  },
+];
+
 export const MOCK_BUNDLE: BulletinBundle = {
   signals: MOCK_SIGNALS,
   editorStates: MOCK_EDITOR_STATES,
   traffic: MOCK_TRAFFIC,
   unverifiedVacancies: MOCK_UNVERIFIED_VACANCIES,
+  readerReports: MOCK_READER_REPORTS,
   schemaPending: false,
   asOf: MOCK_AS_OF,
 };
@@ -234,6 +254,7 @@ export const EMPTY_PENDING_FIXTURE: BulletinBundle = {
   editorStates: [],
   traffic: [],
   unverifiedVacancies: [],
+  readerReports: [],
   schemaPending: true,
   asOf: MOCK_AS_OF,
 };

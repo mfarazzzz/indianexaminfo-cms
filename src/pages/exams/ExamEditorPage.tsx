@@ -46,6 +46,7 @@ import { cn, slugify , getErrorMessage } from "@/lib/utils";
 import { AIAutoFillDialog, AIAutoFillButton } from "@/components/shared/AIAutoFillDialog";
 import { autoFillExam } from "@/lib/ai/autofill";
 import { ExamDateChip } from "@/components/exams/ExamDateChip";
+import { OpenReportsBanner } from "@/components/messages/OpenReportsBanner";
 import {
   EXAM_STANDARD_DATE_TYPES, EXAM_STANDARD_DATE_LABELS,
   standardTypeForKey, usedStandardTypes, buildSeedDates,
@@ -326,6 +327,8 @@ export function ExamEditorPage() {
           </button>
         </div>
       </div>
+
+      <OpenReportsBanner entityId={isNew ? null : (exam?.id ?? id)} />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200 bg-white rounded-t-lg px-2 pt-2">

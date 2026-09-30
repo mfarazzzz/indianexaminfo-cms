@@ -71,12 +71,26 @@ export interface VerifyCandidate {
   application_end_date: string | null;
 }
 
+/**
+ * An OPEN page report (reader_messages with source = page_report and an open
+ * status) — the bulletin "Reader reports" section (P3-2). Only the columns the
+ * section renders are carried; the full message lives in the Messages screen.
+ */
+export interface ReaderReport {
+  id: string;
+  ref_number: string;
+  page_title: string | null;
+  reason: string | null;
+  created_at: string;   // ISO timestamp
+}
+
 /** The raw bundle every screen and test starts from. */
 export interface BulletinBundle {
   signals: BulletinSignal[];
   editorStates: BulletinEditorState[];
   traffic: TrafficRow[];
   unverifiedVacancies: VerifyCandidate[];
+  readerReports: ReaderReport[];
   /** True when bulletin_signals / bulletin_editor_state are not in the database yet. */
   schemaPending: boolean;
   /** UTC date the bucket counts were computed against. */
@@ -88,6 +102,7 @@ export const EMPTY_BUNDLE: BulletinBundle = {
   editorStates: [],
   traffic: [],
   unverifiedVacancies: [],
+  readerReports: [],
   schemaPending: false,
   asOf: '',
 };
@@ -298,6 +313,13 @@ export interface VerifyRow {
   blockers: string[];
 }
 
+/** A "Reader reports" row with its age resolved against `today`. */
+export interface ReaderReportRow {
+  report: ReaderReport;
+  /** Whole days since the report arrived (0 = today); null if unparseable. */
+  ageDays: number | null;
+}
+
 export interface BulletinSection {
   rows: SignalRow[];
   openCount: number;
@@ -310,6 +332,7 @@ export interface AssembledBulletin {
   comingUp: BulletinSection;
   backlog: { count: number; rows: SignalRow[] };
   verificationQueue: VerifyRow[];
+  readerReports: ReaderReportRow[];
   trafficPeriod: { start: string; end: string } | null;
 }
 
@@ -422,6 +445,14 @@ export function assembleBulletin(
         (b.clicks - a.clicks)
         || (a.vacancy.slug < b.vacancy.slug ? -1 : a.vacancy.slug > b.vacancy.slug ? 1 : 0),
       ),
+    // Open page reports, newest first. The service already filters to
+    // source = page_report and an open status; here we only order and age them.
+    readerReports: [...bundle.readerReports]
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
+      .map((r) => {
+        const delta = daysFromToday(r.created_at.slice(0, 10), today);
+        return { report: r, ageDays: delta === null ? null : Math.max(0, -delta) };
+      }),
     trafficPeriod,
   };
 }

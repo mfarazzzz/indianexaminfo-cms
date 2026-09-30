@@ -91,9 +91,12 @@ CREATE TABLE IF NOT EXISTS public.reader_messages (
   page_url      text,                          -- as submitted (already url-shaped)
   page_title    text,
   -- Resolved server-side by submit-message from page_url (owner correction a):
-  -- which entity the reader was looking at, when we can say so.
+  -- which entity the reader was looking at, when we can say so. 'sarkari_naukri'
+  -- is included so the VACANCY editor's "N open reader reports" line resolves
+  -- (P3-2); without it a /sarkari-naukri/<slug> report would carry entity_id NULL
+  -- and the vacancy hook would forever read 0 — a silent lie.
   entity_type   text
-    CHECK (entity_type IS NULL OR entity_type IN ('exam', 'content_post', 'blog_post')),
+    CHECK (entity_type IS NULL OR entity_type IN ('exam', 'content_post', 'blog_post', 'sarkari_naukri')),
   entity_id     uuid,                          -- no FK: three target tables
   consent       boolean     NOT NULL DEFAULT false,
   -- Canonical status set (owner decision 2026-09-30, single source of truth:

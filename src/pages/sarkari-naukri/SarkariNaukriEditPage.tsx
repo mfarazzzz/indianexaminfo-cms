@@ -9,6 +9,7 @@ import {
   type RecruitmentType,
 } from "@/services/sarkariNaukriService";
 import { getRegions, type Region } from "@/services/regionService";
+import { OpenReportsBanner } from "@/components/messages/OpenReportsBanner";
 
 // Verification is enforced server-side by the DB trigger (migration
 // 20260927140000_sarkari_verification_trigger.sql). That migration is APPLIED to
@@ -146,6 +147,8 @@ export function SarkariNaukriEditPage() {
           </button>
         </div>
       </div>
+
+      <OpenReportsBanner entityId={isNew ? null : id} />
 
       {/* Key Dates — the three dates that drive the reader-facing status badge */}
       <div className="rounded-lg border border-slate-200 bg-white p-5">

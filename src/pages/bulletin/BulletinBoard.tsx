@@ -7,6 +7,7 @@ import {
   formatAsOf,
   formatRowDate,
   type BulletinBundle,
+  type ReaderReportRow,
   type SignalRow,
   type SortMode,
   type SortSpec,
@@ -56,6 +57,16 @@ const VERIFY_COLUMNS: RowColumn[] = [
   // The queue is always click-ranked (the wireframe's "by traffic") and a
   // vacancy page has no signal date, so no header here is sortable.
   { key: "traffic", label: "Clicks", width: "80px", align: "right" },
+  { key: "open", label: "", width: "20px", align: "right" },
+];
+
+// Reader reports: open page reports, newest first. No sortable header — the
+// order (newest first) is the section's rule, not a user toggle.
+const READ_REPORT_COLUMNS: RowColumn[] = [
+  { key: "page", label: "Page", width: "minmax(180px,1fr)", align: "left" },
+  { key: "reason", label: "Reason", width: "minmax(0,1fr)", align: "left" },
+  { key: "age", label: "Age", width: "96px", align: "left" },
+  { key: "status", label: "Status", width: "112px", align: "left" },
   { key: "open", label: "", width: "20px", align: "right" },
 ];
 
@@ -303,6 +314,42 @@ export function BulletinBoard({
     }
   };
 
+  const readerReportCell = (row: ReaderReportRow, col: RowColumn): React.ReactNode => {
+    switch (col.key) {
+      case "page":
+        return (
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-slate-800">{row.report.page_title || "—"}</span>
+            <span className="truncate font-mono text-[11px] text-slate-400">{row.report.ref_number}</span>
+          </span>
+        );
+      case "reason":
+        return (
+          <span className="truncate text-slate-600">
+            {row.report.reason ? row.report.reason.replace(/_/g, " ") : "—"}
+          </span>
+        );
+      case "age":
+        return (
+          <time className="text-slate-500">
+            {row.ageDays === null ? "—" : row.ageDays === 0 ? "today" : `${row.ageDays}d ago`}
+          </time>
+        );
+      case "status":
+        // Every row here is open work, so it takes the attention chip.
+        return <StatusChip kind="attention" />;
+      case "open":
+        return (
+          <OpenLink
+            label={row.report.page_title || row.report.ref_number}
+            onClick={() => navigate(`/messages?ref=${encodeURIComponent(row.report.ref_number)}`)}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="pb-10">
       {/* Header */}
@@ -391,6 +438,26 @@ export function BulletinBoard({
           onRowClick={(r) => navigate(`/vacancies/${r.vacancy.id}`)}
           loading={loading}
           empty="Every vacancy page is verified."
+        />
+      </Section>
+
+      {/* Reader reports */}
+      <Section
+        title="Reader reports"
+        hint="open page reports, newest first"
+        count={board.readerReports.length}
+        footnote={board.readerReports.length > 0
+          ? "Open reports from the one-tap \u201creport an error\u201d control on a public page."
+          : undefined}
+      >
+        <RowList
+          columns={READ_REPORT_COLUMNS}
+          items={board.readerReports}
+          keyOf={(r) => r.report.id}
+          cell={readerReportCell}
+          onRowClick={(r) => navigate(`/messages?ref=${encodeURIComponent(r.report.ref_number)}`)}
+          loading={loading}
+          empty="No open reader reports."
         />
       </Section>
 

@@ -14,6 +14,7 @@
  * — by design, numbers and rows only ever come from a real query.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Search, Download, Eye } from "lucide-react";
 import { type ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
@@ -26,7 +27,7 @@ import {
 import { usePermission } from "@/hooks/usePermission";
 import { P } from "@/config/permissions";
 import {
-  MESSAGE_STATUSES, MESSAGE_SOURCES, STATUS_LABELS, SOURCE_LABELS,
+  MESSAGE_STATUSES, MESSAGE_SOURCES, STATUS_LABELS, SOURCE_LABELS, OPEN_STATUSES,
 } from "@/config/messages";
 import { formatDate, getErrorMessage } from "@/lib/utils";
 
@@ -54,23 +55,34 @@ function StatusPill({ status }: { status: string }) {
 
 export function MessagesListPage() {
   const canExport = usePermission(P.MANAGE_SETTINGS); // export + delete gate
+  const [params] = useSearchParams();
+  // The editor/bulletin hooks deep-link here with ?entity_id=&status=open&ref=,
+  // so the pre-filtered view opens already narrowed. Read once for initial state.
+  const initialEntityId = params.get("entity_id") ?? "";
+  const initialStatus = params.get("status") ?? ""; // 'open' or a specific status
   const [data, setData] = useState<ReaderMessage[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
+  const [search, setSearch] = useState(params.get("ref") ?? "");
+  const [status, setStatus] = useState(
+    initialStatus && initialStatus !== "open" ? initialStatus : "",
+  );
+  const [openOnly, setOpenOnly] = useState(initialStatus === "open");
+  const [entityId] = useState(initialEntityId);
   const [category, setCategory] = useState("");
   const [source, setSource] = useState("");
   const [selected, setSelected] = useState<ReaderMessage | null>(null);
 
   const buildOpts = useCallback((): ListOpts => {
     const opts: ListOpts = { limit: 50 };
-    if (status) opts.status = status;
+    if (openOnly) opts.statuses = [...OPEN_STATUSES];
+    else if (status) opts.status = status;
+    if (entityId) opts.entityId = entityId;
     if (category) opts.category = category;
     if (source) opts.source = source;
     if (search.trim()) opts.search = search.trim();
     return opts;
-  }, [status, category, source, search]);
+  }, [status, openOnly, entityId, category, source, search]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -193,8 +205,17 @@ export function MessagesListPage() {
             className={filterCls + " w-64 pl-8"}
           />
         </div>
-        <select className={filterCls} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select
+          className={filterCls}
+          value={openOnly ? "open" : status}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "open") { setOpenOnly(true); setStatus(""); }
+            else { setOpenOnly(false); setStatus(v); }
+          }}
+        >
           <option value="">All statuses</option>
+          <option value="open">Open (new · in progress · waiting on reader)</option>
           {MESSAGE_STATUSES.map((s) => (
             <option key={s} value={s}>{STATUS_LABELS[s]}</option>
           ))}

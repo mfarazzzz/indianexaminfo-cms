@@ -151,6 +151,7 @@ describe('assembleBulletin — empty states', () => {
     expect(board.backlog.rows).toEqual([])
     expect(board.backlog.count).toBe(0)
     expect(board.verificationQueue).toEqual([])
+    expect(board.readerReports).toEqual([])
   })
 
   it('reports no traffic period when page_traffic is empty', () => {
@@ -228,6 +229,16 @@ describe('assembleBulletin — the reviewed wireframe', () => {
 
   it('states the period the traffic numbers come from', () => {
     expect(board.trafficPeriod).toEqual({ start: '2026-08-29', end: '2026-09-27' })
+  })
+
+  it('lists open reader reports newest first, aged against today', () => {
+    expect(board.readerReports.map((r) => r.report.ref_number)).toEqual(['IEI-A1B2C', 'IEI-D4E5F'])
+    expect(board.readerReports.map((r) => r.ageDays)).toEqual([1, 2])
+  })
+
+  it('ages a report that arrived today as 0, never negative', () => {
+    const sameDay = assembleBulletin(MOCK_BUNDLE, { today: '2026-09-27' })
+    expect(sameDay.readerReports[0].ageDays).toBe(0)
   })
 })
 

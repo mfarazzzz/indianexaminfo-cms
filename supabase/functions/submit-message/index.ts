@@ -99,7 +99,7 @@ async function saltedIpHash(ip: string): Promise<string> {
 async function resolveEntity(
   admin: ReturnType<typeof createClient>,
   pageUrl: string,
-): Promise<{ type: 'exam' | 'content_post' | 'blog_post'; id: string } | null> {
+): Promise<{ type: 'exam' | 'content_post' | 'blog_post' | 'sarkari_naukri'; id: string } | null> {
   let path = '';
   try {
     const u = new URL(pageUrl);
@@ -112,6 +112,8 @@ async function resolveEntity(
     if (slug.length > 160) continue;
     const exam = await admin.from('exams').select('id').eq('slug', slug).maybeSingle();
     if (exam.data) return { type: 'exam', id: exam.data.id };
+    const naukri = await admin.from('sarkari_naukri').select('id').eq('slug', slug).maybeSingle();
+    if (naukri.data) return { type: 'sarkari_naukri', id: naukri.data.id };
     const post = await admin.from('content_posts').select('id').eq('slug', slug).maybeSingle();
     if (post.data) return { type: 'content_post', id: post.data.id };
     const blog = await admin.from('blog_posts').select('id').eq('slug', slug).maybeSingle();

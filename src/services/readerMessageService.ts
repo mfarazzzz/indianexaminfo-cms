@@ -17,7 +17,7 @@
  * event/note whose actor is not self, so we never accept a caller-supplied id.
  */
 import { db, supabase } from '@/lib/supabase/client';
-import type { MessageSource, MessageStatus } from '@/config/messages';
+import { OPEN_STATUSES, type MessageSource, type MessageStatus } from '@/config/messages';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,10 +76,14 @@ export interface MessageEvent {
 
 export interface ListOpts {
   status?: string;
+  /** IN filter across several statuses (e.g. the open set). */
+  statuses?: string[];
   category?: string;
   source?: string;
   priority?: string;
   assignee?: string;
+  /** Scope to one page/entity (the reader_messages.entity_id column). */
+  entityId?: string;
   search?: string;
   limit?: number;
   offset?: number;
@@ -134,10 +138,12 @@ export async function listReaderMessages(
     .order('created_at', { ascending: false });
 
   if (opts.status)   q = q.eq('status', opts.status);
+  if (opts.statuses) q = q.in('status', opts.statuses);
   if (opts.category) q = q.eq('category', opts.category);
   if (opts.source)   q = q.eq('source', opts.source);
   if (opts.priority) q = q.eq('priority', opts.priority);
   if (opts.assignee) q = q.eq('assignee', opts.assignee);
+  if (opts.entityId) q = q.eq('entity_id', opts.entityId);
   if (opts.search) {
     // ilike across the human reference, the message body, and the sender email
     const s = `%${opts.search}%`;
@@ -149,6 +155,39 @@ export async function listReaderMessages(
   const { data, error, count } = await q;
   if (error) throw error;
   return { data: (data ?? []).map((r: any) => mapRow(r)), count: count ?? 0 };
+}
+
+/**
+ * How many OPEN reader reports (status in the shared OPEN set) are attached to
+ * one entity. Powers the editor "N open reader reports" line (P3-2). The count
+ * is a real query — a missing table or a non-holder (RLS) returns 0, and the
+ * caller hides the line on 0, so it can never overstate.
+ */
+export async function countOpenReportsForEntity(entityId: string): Promise<number> {
+  const { count, error } = await db
+    .from('reader_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('entity_id', entityId)
+    .in('status', [...OPEN_STATUSES]);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/**
+ * Open page reports (source = page_report, status in the OPEN set), newest
+ * first — the bulletin "Reader reports" section (P3-2). Kept separate from
+ * listReaderMessages so the section's contract is explicit and stable.
+ */
+export async function listOpenPageReports(limit = 50): Promise<ReaderMessage[]> {
+  const { data, error } = await db
+    .from('reader_messages')
+    .select('*')
+    .eq('source', 'page_report')
+    .in('status', [...OPEN_STATUSES])
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((r: any) => mapRow(r));
 }
 
 // ── Notes ──────────────────────────────────────────────────────────────────────
