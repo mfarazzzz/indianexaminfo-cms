@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 
 export function ProtectedRoute() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, authExpired } = useAuth();
 
   if (isLoading) {
     return (
@@ -15,7 +15,9 @@ export function ProtectedRoute() {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    // Expired-but-was-signed-in gets a plain explanation on the login screen;
+    // a clean "never signed in" load lands on the ordinary login.
+    return <Navigate to={authExpired ? "/login?reason=expired" : "/login"} replace />;
   }
 
   // Forced password change (admin-set temporary password): every protected route
