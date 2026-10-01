@@ -98,6 +98,11 @@ export async function deleteCategory(id: string): Promise<void> {
 export async function checkSlugAvailable(slug: string, excludeId?: string): Promise<boolean> {
   let q = db.from("categories").select("id").eq("slug", slug);
   if (excludeId) q = q.neq("id", excludeId);
-  const { data } = await q;
+  const { data, error } = await q;
+  // Failed read ≠ "available": abort the save instead of guessing.
+  if (error) {
+    console.error(`[categoryService] checkSlugAvailable("${slug}") failed:`, error);
+    throw new Error(`Could not verify the slug "${slug}" — ${error.message}`);
+  }
   return (data ?? []).length === 0;
 }

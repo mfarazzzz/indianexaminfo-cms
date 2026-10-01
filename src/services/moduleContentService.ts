@@ -173,11 +173,19 @@ export async function saveAllContentModules(
   // set (which would unpublish every enabled module).
   let toWrite: ContentModulesData = contentModules;
   if (!("_config" in contentModules)) {
-    const { data: cur } = await db
+    const { data: cur, error: curErr } = await db
       .from("exam_editions")
       .select("content_modules")
       .eq("id", editionId)
       .single();
+    // This read is the whole point of the guard: without the existing _config we
+    // would write a blob that DROPS module order + the enabled set, silently
+    // unpublishing every enabled module. A failed read must therefore ABORT the
+    // save, not proceed with a lossy write.
+    if (curErr) {
+      console.error(`[moduleContentService] saveAllContentModules(${editionId}) _config read failed:`, curErr);
+      throw new Error(`Could not read the edition's current module config — save aborted to avoid unpublishing modules (${curErr.message}).`);
+    }
     const existingConfig = ((cur as any)?.content_modules as Record<string, unknown> | undefined)?._config;
     if (existingConfig !== undefined) {
       toWrite = { ...contentModules, _config: existingConfig as ContentModulesData["_config"] };

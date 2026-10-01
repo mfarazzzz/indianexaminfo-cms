@@ -70,16 +70,31 @@ export async function uploadMedia(file: File, folder = "general", userId?: strin
 }
 
 export async function deleteMedia(id: string): Promise<void> {
-  const { data } = await db.from("media").select("filename, folder").eq("id", id).single();
+  // A failed lookup must NOT skip the storage removal and then report success —
+  // and a failed DB delete must not leave the row listed while the file is gone.
+  const { data, error: fetchErr } = await db.from("media").select("filename, folder").eq("id", id).single();
+  if (fetchErr) {
+    console.error(`[mediaService] deleteMedia(${id}) row lookup failed:`, fetchErr);
+    throw new Error(`Could not read this media item — delete aborted (${fetchErr.message}).`);
+  }
   if (data) {
     const safeFolder = sanitizeFolder(data.folder as string);
     const safeFilename = (data.filename as string).replace(/[^a-z0-9._-]/gi, "");
-    await supabase.storage.from("media").remove([`${safeFolder}/${safeFilename}`]);
+    const { error: rmErr } = await supabase.storage.from("media").remove([`${safeFolder}/${safeFilename}`]);
+    if (rmErr) console.error(`[mediaService] deleteMedia(${id}) storage file removal failed (row delete proceeds):`, rmErr);
   }
-  await db.from("media").delete().eq("id", id);
+  const { error: delErr } = await db.from("media").delete().eq("id", id);
+  if (delErr) {
+    console.error(`[mediaService] deleteMedia(${id}) row delete failed:`, delErr);
+    throw new Error(`Media row could not be deleted — ${delErr.message}`);
+  }
 }
 
 export async function updateMediaAlt(id: string, altText: string): Promise<void> {
   // Cap alt text length
-  await db.from("media").update({ alt_text: altText.slice(0, 500) }).eq("id", id);
+  const { error } = await db.from("media").update({ alt_text: altText.slice(0, 500) }).eq("id", id);
+  if (error) {
+    console.error(`[mediaService] updateMediaAlt(${id}) failed:`, error);
+    throw new Error(`Alt text could not be saved — ${error.message}`);
+  }
 }

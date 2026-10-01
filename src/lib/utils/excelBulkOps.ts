@@ -318,12 +318,18 @@ export async function importExamsFromExcel(
       ].filter((d) => d.date !== "");
 
       // Check if exam exists by slug
-      const { data: existing } = await db
+      // A failed existence check must NOT fall through to the create branch —
+      // that would duplicate an exam whose row the lookup simply couldn't read.
+      const { data: existing, error: existErr } = await db
         .from("exams")
         .select("id, current_edition_id")
         .eq("slug", slug)
         .eq("pillar", pillar)
         .maybeSingle();
+      if (existErr) {
+        result.errors.push({ row: rowNum, name, error: `Existence check failed for slug "${slug}": ${existErr.message}. Row skipped — nothing was written.` });
+        continue;
+      }
 
       if (existing) {
         // Update existing exam — identity fields only. status/cycle data go to the
@@ -340,7 +346,7 @@ export async function importExamsFromExcel(
           });
           continue;
         }
-        await db.from("exams").update({
+        const { error: examUpdErr } = await db.from("exams").update({
           name,
           short_name: shortName,
           ...(region !== null ? { region } : {}),
@@ -352,10 +358,15 @@ export async function importExamsFromExcel(
           seo_description: seoDescription || null,
           tags,
         }).eq("id", existing.id);
+        // A failed update must be reported as failed — never counted as updated.
+        if (examUpdErr) {
+          result.errors.push({ row: rowNum, name, error: `Exam identity update failed: ${examUpdErr.message}` });
+          continue;
+        }
 
         // Update current edition if exists
         if (existing.current_edition_id) {
-          await db.from("exam_editions").update({
+          const { error: edUpdErr } = await db.from("exam_editions").update({
             status,
             vacancy,
             notification_date: notificationDate || null,
@@ -363,6 +374,10 @@ export async function importExamsFromExcel(
             edition_label: editionLabel,
             session,
           }).eq("id", existing.current_edition_id);
+          if (edUpdErr) {
+            result.errors.push({ row: rowNum, name, error: `Exam identity updated but current-edition update failed: ${edUpdErr.message}` });
+            continue;
+          }
         }
 
         result.updated++;
@@ -606,10 +621,18 @@ export async function previewImportFromExcel(
     }
 
     // Match existing exam.
-    const { data: existing } = await db
+    // A failed lookup must not be reported as "would create a new exam" — the
+    // preview has to say it couldn't decide, so the import is postponed.
+    const { data: existing, error: existErr } = await db
       .from("exams")
       .select("id, current_edition_id, short_name, conducting_body, official_website, seo_title, seo_description, tags")
       .eq("slug", slug).eq("pillar", pillar).maybeSingle();
+    if (existErr) {
+      pr.guardGaps.push(`existence check could not run (${existErr.message}) — action undetermined; fix DB access and preview again`);
+      pr.destructive = true;
+      preview.rows.push(pr);
+      continue;
+    }
 
     if (!existing) {
       pr.action = "create-exam";
@@ -635,10 +658,16 @@ export async function previewImportFromExcel(
     let existingDates: any[] = [];
     let editionSummary: EditionContentSummary | null = null;
     if (existing.current_edition_id) {
-      const { data: ed } = await db
+      const { data: ed, error: edErr } = await db
         .from("exam_editions")
         .select("year, important_dates, vacancy, eligibility, application_fee")
         .eq("id", existing.current_edition_id).maybeSingle();
+      // A failed edition read would silently zero the wipe/archive summary and
+      // understate what the import destroys — flag it as a guard gap instead.
+      if (edErr) {
+        pr.guardGaps.push(`current-edition content could not be read (${edErr.message}) — wipe/archive summary is unavailable for this row`);
+        pr.destructive = true;
+      }
       existingYear = (ed?.year as number) ?? null;
       existingDates = Array.isArray(ed?.important_dates) ? (ed!.important_dates as any[]) : [];
       const elig = ed?.eligibility as Record<string, unknown> | null | undefined;

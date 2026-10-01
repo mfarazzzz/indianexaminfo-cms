@@ -74,13 +74,20 @@ export async function createTaxonomy<T extends TaxonomyBase>(
   const slug = slugify(input.label)
 
   // Case-insensitive uniqueness check
-  const { data: existing } = await db
+  const { data: existing, error: existErr } = await db
     .from(table)
     .select('id, label')
     .ilike('label', input.label)
     .is('deleted_at', null)
     .limit(1)
     .single()
+  // PGRST116 = "no matching row" — the expected "label is free" path for
+  // .single(). Any OTHER error is a failed read and must NOT be treated as
+  // "free" (the insert below would then create a duplicate or fail opaquely).
+  if (existErr && existErr.code !== 'PGRST116') {
+    console.error(`[taxonomyService] createTaxonomy label check failed (${table}):`, existErr)
+    throw new Error(`Could not check whether '${input.label}' already exists — ${existErr.message}`)
+  }
 
   if (existing) {
     throw new Error(`'${input.label}' already exists`)
@@ -150,9 +157,16 @@ export async function mergeTaxonomy(
     .eq('id', targetId)
   if (incErr) {
     // Fallback: direct increment if RPC not available
-    const { data: cur } = await db.from(table).select('usage_count').eq('id', targetId).single()
-    const currentCount = (cur as Record<string, unknown>)?.usage_count as number ?? 0
-    await db.from(table).update({ usage_count: currentCount + mergedCount }).eq('id', targetId)
+    const { data: cur, error: curErr } = await db.from(table).select('usage_count').eq('id', targetId).single()
+    if (curErr) {
+      // Guessing currentCount=0 would WRITE a wrong usage_count over the real
+      // one. Skip the fallback and log instead — a stale metric is honest
+      // compared to a corrupted one.
+      console.error(`[taxonomyService] usage_count fallback read failed (${targetId}):`, curErr)
+    } else {
+      const currentCount = (cur as Record<string, unknown>)?.usage_count as number ?? 0
+      await db.from(table).update({ usage_count: currentCount + mergedCount }).eq('id', targetId)
+    }
   }
 
   // Soft-delete source

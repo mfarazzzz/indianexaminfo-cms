@@ -388,7 +388,14 @@ export async function checkEntitySlug(
     .is('deleted_at', null)
   if (pillar)    q = q.eq('pillar', pillar)
   if (excludeId) q = q.neq('id', excludeId)
-  const { data } = await q
+  const { data, error } = await q
+  // Save-path uniqueness gate: a failed read must NOT report "available" —
+  // that would let a duplicate through (or fail later with an opaque
+  // constraint error). Log and surface the failure to the editor instead.
+  if (error) {
+    console.error(`[entityService] checkEntitySlug("${slug}") failed:`, error)
+    throw new Error(`Could not verify the slug "${slug}" — ${error.message}`)
+  }
   return (data ?? []).length === 0
 }
 
@@ -398,12 +405,19 @@ export async function searchEntities(
   query: string,
   limit = 20
 ): Promise<EntityListItem[]> {
-  const { data } = await db
+  const { data, error } = await db
     .from('entity')
     .select('id, entity_type, slug, name, short_name, pillar, workflow_status, is_featured, priority, updated_at')
     .is('deleted_at', null)
     .ilike('name', `%${query}%`)
     .limit(limit)
+  // A failed search used to render "no results" — indistinguishable from a
+  // genuinely empty match set. Surface it so the grid can show an error, not a
+  // false empty.
+  if (error) {
+    console.error(`[entityService] searchEntities("${query}") failed:`, error)
+    throw error
+  }
   return (data ?? []).map(mapListRow)
 }
 

@@ -152,7 +152,13 @@ export function createPillarService(pillar: Pillar) {
     async create(input: { name: string; shortName: string; slug?: string; region: string; categoryId?: string; conductingBody: string; officialWebsite?: string; cycleFrequency?: CycleFrequency; entityType?: string; selectionModel?: SelectionModel; firstEditionYear: number }) {
       const slug = input.slug || input.shortName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 60) || input.name.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 60);
 
-      const { data: existing } = await db.from("exams").select("id").eq("slug", slug).maybeSingle();
+      // A failed uniqueness check is NOT "slug is free" — abort rather than
+      // attempt a write that collides with an existing exam.
+      const { data: existing, error: existingErr } = await db.from("exams").select("id").eq("slug", slug).maybeSingle();
+      if (existingErr) {
+        console.error(`[pillarService:${pillar}] create slug check failed:`, existingErr);
+        throw new Error(`Could not verify slug "${slug}" — ${existingErr.message}`);
+      }
       if (existing) throw new Error(`Slug "${slug}" already exists.`);
 
       const { data: examRow, error: examErr } = await db.from("exams").insert({

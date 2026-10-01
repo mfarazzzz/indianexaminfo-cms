@@ -339,11 +339,17 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
   const slug = input.slug || generateSlug(input.shortName || input.name);
 
   // Check slug uniqueness
-  const { data: existing } = await db
+  const { data: existing, error: existingErr } = await db
     .from("exams")
     .select("id")
     .eq("slug", slug)
     .maybeSingle();
+  // A failed uniqueness check is NOT "slug is free" — abort the create rather
+  // than write a row that collides (or duplicates an existing exam silently).
+  if (existingErr) {
+    console.error(`[entranceExamService] createEntranceExam slug check failed:`, existingErr);
+    throw new Error(`Could not verify slug "${slug}" — ${existingErr.message}`);
+  }
 
   if (existing) {
     throw new Error(`An exam with slug "${slug}" already exists.`);
@@ -547,11 +553,18 @@ export async function updateEdition(
     // the current _config and preserve it unless the caller explicitly provided one.
     const incoming = input.contentModules as Record<string, unknown>;
     if (!("_config" in incoming)) {
-      const { data: cur } = await db
+      const { data: cur, error: curErr } = await db
         .from("exam_editions")
         .select("content_modules")
         .eq("id", editionId)
         .single();
+      // The preservation read is the guard. If it FAILS, writing `incoming`
+      // without _config would silently unpublish every enabled module — so a
+      // failed read must abort the save, not proceed with a lossy write.
+      if (curErr) {
+        console.error(`[entranceExamService] updateEdition(${editionId}) _config read failed:`, curErr);
+        throw new Error(`Could not read this edition's current module config — save aborted to avoid unpublishing modules (${curErr.message}).`);
+      }
       const existingConfig = ((cur as any)?.content_modules as Record<string, unknown> | undefined)?._config;
       updates.content_modules = existingConfig !== undefined
         ? { ...incoming, _config: existingConfig }
@@ -587,13 +600,19 @@ export async function startNewEdition(
   const editionLabel = input.editionLabel ?? String(input.year);
 
   // Check for duplicate
-  const { data: existing } = await db
+  const { data: existing, error: existingErr } = await db
     .from("exam_editions")
     .select("id")
     .eq("exam_id", examId)
     .eq("year", input.year)
     .eq("session", session)
     .maybeSingle();
+  // A failed duplicate check must NOT be read as "no duplicate" — abort rather
+  // than risk creating a second edition for the same year/session.
+  if (existingErr) {
+    console.error(`[entranceExamService] startNewEdition(${examId}) duplicate check failed:`, existingErr);
+    throw new Error(`Could not check for an existing ${editionLabel} edition — ${existingErr.message}`);
+  }
 
   if (existing) {
     throw new Error(`Edition "${editionLabel}" (${session}) already exists for this exam.`);
@@ -603,12 +622,19 @@ export async function startNewEdition(
   let initialData: Record<string, unknown> = {};
 
   if (input.carryOver) {
-    const { data: currentEd } = await db
+    const { data: currentEd, error: currentEdErr } = await db
       .from("exam_editions")
       .select("*")
       .eq("exam_id", examId)
       .eq("is_current", true)
       .maybeSingle();
+    // maybeSingle: no current edition is a legitimate miss (nothing to carry).
+    // A transport error is NOT — carrying "nothing" silently would hand the
+    // editor a hollow edition they believe was carried over.
+    if (currentEdErr) {
+      console.error(`[entranceExamService] startNewEdition(${examId}) carry-over read failed:`, currentEdErr);
+      throw new Error(`Could not read the current edition for carry-over — ${currentEdErr.message}`);
+    }
 
     if (currentEd) {
       if (input.carryOver.eligibility) initialData.eligibility = currentEd.eligibility;
@@ -774,7 +800,7 @@ export async function deleteEdition(editionId: string): Promise<void> {
 
   // If it was the current edition, promote the most recent remaining one
   if (wasCurrent) {
-    const { data: nextEdition } = await db
+    const { data: nextEdition, error: nextErr } = await db
       .from("exam_editions")
       .select("id")
       .eq("exam_id", examId)
@@ -782,20 +808,35 @@ export async function deleteEdition(editionId: string): Promise<void> {
       .order("session")
       .limit(1)
       .maybeSingle();
+    // The edition is ALREADY deleted. A failed re-promotion read must never be
+    // read as "no editions left" — nulling the pointer while editions remain
+    // would strand the exam without a current cycle. Surface it loudly.
+    if (nextErr) {
+      console.error(`[entranceExamService] deleteEdition(${editionId}) promote lookup failed:`, nextErr);
+      throw new Error(`Edition deleted but the next edition could not be determined — fix this exam's current cycle manually (${nextErr.message}).`);
+    }
 
     if (nextEdition) {
       // Promote the most recent remaining edition
-      await db
+      const { error: promoteErr } = await db
         .from("exam_editions")
         .update({ is_current: true })
         .eq("id", (nextEdition as any).id);
+      if (promoteErr) {
+        console.error(`[entranceExamService] deleteEdition(${editionId}) promote update failed:`, promoteErr);
+        throw new Error(`Edition deleted but promotion of the next cycle failed — fix the current cycle manually (${promoteErr.message}).`);
+      }
       // Trigger will update exams.current_edition_id
     } else {
       // No editions left — null out the pointer
-      await db
+      const { error: nullErr } = await db
         .from("exams")
         .update({ current_edition_id: null })
         .eq("id", examId);
+      if (nullErr) {
+        console.error(`[entranceExamService] deleteEdition(${editionId}) pointer-null failed:`, nullErr);
+        throw new Error(`Edition deleted but the exam's edition pointer could not be cleared (${nullErr.message}).`);
+      }
     }
   }
 }

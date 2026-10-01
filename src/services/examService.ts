@@ -321,7 +321,13 @@ export async function unpublishExam(id: string): Promise<ExamEntity> {
 export async function checkSlugAvailable(slug: string, excludeId?: string): Promise<boolean> {
   let q = db.from("exams").select("id").eq("slug", slug);
   if (excludeId) q = q.neq("id", excludeId);
-  const { data } = await q;
+  const { data, error } = await q;
+  // A failed read must never answer "available" — the editor would proceed and
+  // hit a raw constraint error (or worse, write a duplicate). Fail loudly.
+  if (error) {
+    console.error(`[examService] checkSlugAvailable("${slug}") failed:`, error);
+    throw new Error(`Could not verify the slug "${slug}" — ${error.message}`);
+  }
   return (data ?? []).length === 0;
 }
 

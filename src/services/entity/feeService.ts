@@ -20,11 +20,19 @@ function mapRow(r: Record<string, unknown>): EntityFee {
 }
 
 export async function getFee(entityId: string): Promise<EntityFee | null> {
-  const { data } = await db
+  const { data, error } = await db
     .from('entity_fee')
     .select('*')
     .eq('entity_id', entityId)
     .maybeSingle()
+  // maybeSingle gives data=null WITHOUT error for a genuine "no fee yet". A
+  // non-null error is a real read failure. Returning null there would render an
+  // empty fee form; the editor's next save would upsert and WIPE real data.
+  // Throw so the editor sees a load error, never a false empty form.
+  if (error) {
+    console.error(`[feeService] getFee(${entityId}) failed:`, error)
+    throw error
+  }
   return data ? mapRow(data as Record<string, unknown>) : null
 }
 

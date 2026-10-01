@@ -139,13 +139,20 @@ export async function createTemplateVersion(
   userId: string
 ): Promise<LifecycleTemplateVersion> {
   // Get next version number
-  const { data: maxRow } = await db
+  // PGRST116 (no rows) legitimately means "first version → 1". Any OTHER error
+  // must NOT be read as "no versions exist" — inserting version 1 again would
+  // collide with an existing version number.
+  const { data: maxRow, error: maxErr } = await db
     .from('lifecycle_template_version')
     .select('version_number')
     .eq('template_id', templateId)
     .order('version_number', { ascending: false })
     .limit(1)
     .single()
+  if (maxErr && maxErr.code !== 'PGRST116') {
+    console.error(`[templateService] createTemplateVersion(${templateId}) next-version read failed:`, maxErr)
+    throw new Error(`Could not determine the next version number — save aborted (${maxErr.message}).`)
+  }
 
   const nextVersion = maxRow ? (maxRow.version_number as number) + 1 : 1
 

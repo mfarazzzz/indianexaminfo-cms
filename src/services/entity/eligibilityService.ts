@@ -23,11 +23,18 @@ function mapRow(r: Record<string, unknown>): EntityEligibility {
 export async function getEligibility(
   entityId: string
 ): Promise<EntityEligibility | null> {
-  const { data } = await db
+  const { data, error } = await db
     .from('entity_eligibility')
     .select('*')
     .eq('entity_id', entityId)
     .maybeSingle()
+  // Same save-path rule as getFee: maybeSingle has no error on a genuine miss,
+  // so a non-null error is a real failure — never show it as an empty form the
+  // next save would persist over real content.
+  if (error) {
+    console.error(`[eligibilityService] getEligibility(${entityId}) failed:`, error)
+    throw error
+  }
   return data ? mapRow(data as Record<string, unknown>) : null
 }
 
