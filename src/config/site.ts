@@ -2,7 +2,10 @@ export const SITE = {
   name:        "IndianExamInfo CMS",
   version:     "1.0.0",
   frontendUrl: "https://www.indianexaminfo.com",
-  cmsUrl:      "https://cms.indianexaminfo.com",
+  // Real production host - verified live (curl 200) and used by scripts/cms-login.mjs,
+  // scripts/shoot-cms.mjs and deploy-cms.sh. "cms.indianexaminfo.com" was never
+  // provisioned (DNS does not resolve); do not reintroduce it.
+  cmsUrl:      "https://admincms1.indianexaminfo.com",
 } as const;
 
 // PILLARS constant removed — content domains are database-driven (REQ-001).
