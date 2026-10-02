@@ -46,3 +46,11 @@ coverage/
 
 # Playwright session state saved by `npm run cms:login` - never commit it
 .auth/
+
+# Scratch / build output files - never commit (repo hygiene rule)
+tsc-*.txt
+tc-done.txt
+test-output.txt
+git-check.txt
+git-status.txt
+qa/screenshots/

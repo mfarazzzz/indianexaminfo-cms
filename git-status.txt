@@ -1,3 +1,0 @@
-?? CMS_REDESIGN_SESSION_LOG.md
-?? git-check.txt
-?? git-status.txt
