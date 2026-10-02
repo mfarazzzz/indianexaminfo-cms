@@ -39,7 +39,7 @@ export function SyllabusTab({ examId }: { examId: string | null }) {
       setSubjects(subs); setWType(wt);
     } finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [examId]);
+  useEffect(() => { void load(); }, [examId]);
 
   const changeUnit = async (t: WeightageType | null) => {
     if (!examId) return;

@@ -7,7 +7,6 @@ export function RichTextRenderer({ content }: BlockRendererProps) {
   return (
     <div
       className="prose prose-slate max-w-none"
-      // eslint-disable-next-line react/no-danger -- trusted CMS content
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )

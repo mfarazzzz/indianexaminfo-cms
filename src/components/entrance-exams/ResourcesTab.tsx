@@ -45,7 +45,7 @@ export function ResourcesTab({ examId }: ResourcesTabProps) {
     }
   };
 
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [examId]);
+  useEffect(() => { void load(); }, [examId]);
 
   const resetForm = () => { setForm(EMPTY_FORM); setEditingId(null); };
 

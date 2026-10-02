@@ -154,7 +154,6 @@ describe('softDeleteEntity', () => {
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({ deleted_at: expect.any(String) })
     )
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const calledWith = (updateMock.mock.calls as unknown as Array<[Record<string, string>]>)[0][0]
     // deleted_at should be a valid ISO timestamp
     expect(() => new Date(calledWith.deleted_at)).not.toThrow()

@@ -9,7 +9,6 @@ import type { DragHandleProps } from '@/components/shared/DraggableList'
 import { cn } from '@/lib/utils'
 
 // ModuleEditor imported lazily to avoid circular deps
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ModuleEditorLazy = React.lazy(() =>
   import('./ModuleEditor').then(m => ({ default: m.ModuleEditor }))
 )

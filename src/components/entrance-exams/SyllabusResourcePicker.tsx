@@ -37,7 +37,7 @@ export function SyllabusResourcePicker({ examId, editionYear, value, onChange }:
     finally { setLoading(false); }
   };
 
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [examId]);
+  useEffect(() => { void load(); }, [examId]);
   useEffect(() => { setNewYear(editionYear); }, [editionYear]);
 
   const handleAddInline = async () => {

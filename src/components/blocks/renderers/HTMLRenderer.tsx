@@ -9,7 +9,6 @@ import type { BlockRendererProps } from '@/lib/blocks/blockRegistry'
 export function HTMLRenderer({ content }: BlockRendererProps) {
   const { raw = '' } = content as HTMLContent
   return (
-    /* eslint-disable-next-line react/no-danger -- trusted CMS-authored HTML */
     <div dangerouslySetInnerHTML={{ __html: raw }} />
   )
 }

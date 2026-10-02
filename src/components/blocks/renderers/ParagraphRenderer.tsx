@@ -7,7 +7,6 @@ export function ParagraphRenderer({ content }: BlockRendererProps) {
   return (
     <div
       className="prose prose-slate max-w-none text-sm leading-relaxed"
-      // eslint-disable-next-line react/no-danger -- trusted CMS content
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )
