@@ -14,6 +14,50 @@
 
 ---
 
+## 1b. Production deployment — how it actually works
+
+The CMS is a **Hostinger "Web App" connected to GitHub**. Deploys are automatic;
+there is no manual build/upload in normal operation.
+
+1. Push to `main` on GitHub.
+2. Hostinger detects the push, clones the repo and **builds on the Hostinger
+   server** (Vite → `dist/`), then serves it.
+3. Track or re-run it on **Hostinger → Web Apps → your app → Deployments**, which
+   has a **Redeploy** button.
+4. **A failed build leaves the previous successful build live** — a bad push does
+   not take `admincms1.indianexaminfo.com` down; it just does not go *current*.
+
+**Node version and the exact build command Hostinger uses: `TODO`** — to be
+filled in from the owner's Hostinger screenshot. The `serve` / PM2 / Nginx /
+`rsync` procedure and `deploy-cms.sh` in section 4 are **legacy, not what runs**.
+
+### Verify what is live (no login, view-source)
+
+The build injects a stamp into the served HTML head (`vite.config.ts` →
+`build-stamp` plugin):
+
+```html
+<meta name="build" content="<sha> <clean|dirty> <iso time>" />
+```
+
+- Open `view-source:https://admincms1.indianexaminfo.com` and search `name="build"`.
+- The `sha` is the commit Hostinger built; if it is not what you expect, the
+  deploy is not current — check the Deployments page for a failed build.
+- `dirty` = uncommitted changes at build time; the build log also prints the
+  offending `git status --porcelain` file list.
+
+### Environment variables (set in Hostinger, not committed)
+
+Vite bakes these into the bundle at build time. Names only:
+
+```
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+VITE_FRONTEND_URL
+```
+
+---
+
 ## 2. Development Setup
 
 ### Prerequisites
@@ -75,7 +119,12 @@ npm run preview
 
 ---
 
-## 4. Production Deployment
+## 4. Production Deployment (LEGACY — not used in production)
+
+> **Not the live mechanism.** The real deploy is the Hostinger GitHub auto-deploy
+> in section 1b. This section (and `deploy-cms.sh`) documents the old
+> self-managed VPS path — manual `rsync`, `serve`, PM2, Nginx — kept for
+> reference only.
 
 ### 4.1 Server Requirements
 
@@ -282,6 +331,10 @@ All 4 quality gates must pass before merge:
 2. **Typecheck** — TypeScript
 3. **Tests** — Vitest with coverage
 4. **Build** — Production build succeeds
+
+> **Note:** CI is a quality gate only. Its `dist/` is built with *placeholder*
+> Supabase env and is **never** deployed — production builds happen on Hostinger
+> (section 1b), which does **not** use `npm ci`.
 
 ---
 
