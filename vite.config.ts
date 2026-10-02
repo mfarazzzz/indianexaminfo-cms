@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { execSync } from "child_process";
@@ -33,7 +33,7 @@ function gitStamp() {
     if (dirty) sync = "dirty";
     else if (head === origin) sync = "clean";
     else {
-      // Is origin/main an ancestor of HEAD? → we're ahead. Else behind/diverged.
+      // Is origin/main an ancestor of HEAD? -> we're ahead. Else behind/diverged.
       const aheadOfOrigin = run(`git merge-base --is-ancestor ${origin} ${head} && echo yes`);
       sync = aheadOfOrigin === "yes" ? "ahead" : "behind";
     }
@@ -41,13 +41,55 @@ function gitStamp() {
     sync = "dirty";
   }
 
-  return { sha, time, sync };
+  // Keep the offending file list so a dirty build can name it in the log.
+  const dirtyFiles = dirty ? dirty.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
+  return { sha, time, sync, dirtyFiles };
 }
 
 const stamp = gitStamp();
 
+/**
+ * Emits <meta name="build" content="<sha> <sync> <iso time>"> into the built
+ * index.html (view-source, no login) so "which commit is live?" is a one-glance
+ * check — mirroring the frontend root layout. On a dirty build it also prints
+ * the `git status --porcelain` file list to the build log, so Hostinger's log
+ * shows exactly what dirtied the tree.
+ *
+ * The content string is built inline because a composite project
+ * (tsconfig.node.json owns vite.config.ts) may not import a src/ module.
+ * The canonical, unit-tested formatter is src/config/buildStamp.ts
+ * (formatBuildStampContent) — keep the two in sync; buildStamp.test.ts pins
+ * the exact shape this reproduces.
+ */
+function buildStampPlugin(): Plugin {
+  const metaContent =
+    !stamp.sha || stamp.sha === "unknown"
+      ? "dev"
+      : [stamp.sha, stamp.sync, stamp.time].filter(Boolean).join(" ");
+  return {
+    name: "build-stamp",
+    buildStart() {
+      if (stamp.sync === "dirty" && stamp.dirtyFiles.length) {
+        this.info(
+          `[build-stamp] working tree DIRTY — ${stamp.dirtyFiles.length} uncommitted file(s) ` +
+            `(git status --porcelain):\n  ${stamp.dirtyFiles.join("\n  ")}`,
+        );
+      }
+    },
+    transformIndexHtml() {
+      return [
+        {
+          tag: "meta",
+          attrs: { name: "build", content: metaContent },
+          injectTo: "head",
+        },
+      ];
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), buildStampPlugin()],
   define: {
     __BUILD_SHA__: JSON.stringify(stamp.sha),
     __BUILD_TIME__: JSON.stringify(stamp.time),

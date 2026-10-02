@@ -3,6 +3,8 @@
  * Surfaced in the sidebar footer so "which commit is deployed?" is answerable in
  * one glance, without a route to remember or a pipeline archaeology session.
  */
+import { formatBuildStampContent } from "./buildStamp";
+
 export const BUILD_INFO = {
   /** Short commit SHA at build time, e.g. "a8df5bb". "unknown" if git was unavailable. */
   sha: typeof __BUILD_SHA__ !== "undefined" ? __BUILD_SHA__ : "unknown",
@@ -36,4 +38,13 @@ export function buildSyncLabel(sync: string): { text: string; ok: boolean } {
     case "dirty":  return { text: "built with uncommitted changes", ok: false };
     default:       return { text: "sync unknown", ok: false };
   }
+}
+
+/**
+ * The exact string that ships as <meta name="build"> in index.html (see
+ * vite.config.ts). Exposed here so the in-app stamp and the view-source tag can
+ * never disagree about what "live" means; formatBuildStampContent is unit-tested.
+ */
+export function buildMetaContent(): string {
+  return formatBuildStampContent(BUILD_INFO);
 }
