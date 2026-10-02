@@ -10,7 +10,7 @@
 |------------|-----|---------|
 | Development | `localhost:5173` | Local development with HMR |
 | Staging | `staging-cms.indianexaminfo.com` | Pre-production testing |
-| Production | `cms.indianexaminfo.com` | Live editorial system |
+| Production | `admincms1.indianexaminfo.com` | Live editorial system |
 
 ---
 
@@ -138,7 +138,7 @@ module.exports = {
 ```nginx
 server {
     listen 80;
-    server_name cms.indianexaminfo.com;
+    server_name admincms1.indianexaminfo.com;
     root /var/www/indianexaminfo-cms/dist;
     index index.html;
 

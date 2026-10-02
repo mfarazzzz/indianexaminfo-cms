@@ -35,7 +35,7 @@
  *  - TRIGGER_SHARED_SECRET must equal the Vault secret `revalidate_trigger_secret`
  *                          that the trigger sends in the x-trigger-secret header.
  *  - ALLOWED_ORIGINS       comma-separated CMS origins (same list ai-fill uses,
- *                          e.g. "https://cms.indianexaminfo.com,http://localhost:5177").
+ *                          e.g. "https://admincms1.indianexaminfo.com,http://localhost:5177").
  *                          CORS is NOT "*"; missing or empty => every browser
  *                          cross-origin request is refused (fail closed). The
  *                          trigger sends no Origin header and is unaffected.

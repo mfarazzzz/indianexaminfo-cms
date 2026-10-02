@@ -39,7 +39,7 @@
 //   AI_BASE_URL_<SLUG> optional override, e.g. AI_BASE_URL_GROQ
 //   AI_MODEL           optional fallback model when no provider row is usable
 //   ALLOWED_ORIGINS    comma-separated CMS origins, e.g.
-//                      "https://cms.indianexaminfo.com,http://localhost:5177".
+//                      "https://admincms1.indianexaminfo.com,http://localhost:5177".
 //                      Missing or empty => every browser cross-origin request is
 //                      refused (fail closed).
 // A provider row whose secret is missing is skipped, never guessed at.
