@@ -78,6 +78,8 @@ export interface ExamIdentity {
   pillar: Pillar;
   region: string | null;
   category: string;
+  /** categories.name VERBATIM (display authority — may contain "&", mixed case). */
+  categoryName: string;
   subcategory: string;
   categoryId: string | null;
   subcategoryId: string | null;
@@ -141,6 +143,8 @@ export interface NewExamInput {
   pillar?: string;
   /** Region slug (regions table FK). REQUIRED at the DB (NOT NULL); the editor enforces it. */
   region: string;
+  /** REQUIRED on create for the entrance pillar (owner S1 item 4) — a record with no
+   *  category has no public URL. Enforced in createEntranceExam, validated in the editor. */
   categoryId: string;
   subcategoryId?: string;
   conductingBody: string;
@@ -148,8 +152,9 @@ export interface NewExamInput {
   cycleFrequency?: CycleFrequency;
   /** Entity type (Axis 1). Defaults to "exam" if omitted for backward compat. */
   entityType?: string;
-  /** Selection model (Axis 2). Defaults to "written-exam" if omitted. */
-  selectionModel?: SelectionModel;
+  /** Selection model (Axis 2). REQUIRED on create, NO default (owner S1 item 4) —
+   *  the editor starts on "— Select —" and blocks save on a blank, like region. */
+  selectionModel: SelectionModel;
   firstEditionYear: number;
 }
 
@@ -202,6 +207,7 @@ function mapExamIdentityRow(row: Record<string, unknown>): ExamIdentity {
     pillar: row.pillar as Pillar,
     region: (row.region as string) ?? null,
     category: (row as any).cat?.slug ?? "",
+    categoryName: (row as any).cat?.name ?? "",
     subcategory: (row as any).subcat?.slug ?? "",
     categoryId: (row.category_id as string) ?? null,
     subcategoryId: (row.subcategory_id as string) ?? null,
@@ -216,7 +222,7 @@ function mapExamIdentityRow(row: Record<string, unknown>): ExamIdentity {
     seoTitle: (row.seo_title as string) ?? null,
     seoDescription: (row.seo_description as string) ?? null,
     isFeatured: (row.is_featured as boolean) ?? false,
-    workflowStatus: (row.workflow_status as ExamWorkflowStatus) ?? "published",
+    workflowStatus: (row.workflow_status as ExamWorkflowStatus) ?? "draft", // fail-closed: an unknown state reads as DRAFT, never as live
     isPublished: (row.is_published as boolean) ?? false,
     isVerified: (row.is_verified as boolean) ?? false,
     faqs: (row.faqs as { question: string; answer: string }[]) ?? [],
@@ -242,7 +248,7 @@ function mapListItem(row: Record<string, unknown>): EntranceExamListItem {
     conductingBody: (row.conducting_body as string) ?? "",
     cycleFrequency: (row.cycle_frequency as CycleFrequency) ?? "annual",
     isFeatured: (row.is_featured as boolean) ?? false,
-    workflowStatus: (row.workflow_status as ExamWorkflowStatus) ?? "published",
+    workflowStatus: (row.workflow_status as ExamWorkflowStatus) ?? "draft", // fail-closed: an unknown state reads as DRAFT, never as live
     isPublished: (row.is_published as boolean) ?? false,
     currentEdition: edition
       ? {
@@ -295,8 +301,8 @@ export async function getEntranceExams(opts?: {
 
 const DETAIL_SELECT = `
   *,
-  cat:categories!category_id(slug),
-  subcat:categories!subcategory_id(slug)
+  cat:categories!category_id(slug, name),
+  subcat:categories!subcategory_id(slug, name)
 `;
 
 export async function getEntranceExam(examId: string): Promise<{
@@ -335,6 +341,22 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
   exam: ExamIdentity;
   edition: ExamEdition;
 }> {
+  const pillarForCreate = (input as any).pillar ?? "entrance-exam";
+
+  // No silent defaults on create (owner S1 item 4). These throw rather than paper over a
+  // missing choice: publishing is an EXPLICIT editor action (records start as DRAFT) and
+  // identity fields the editor marked required (*) must actually be provided.
+  //  * Category — REQUIRED for the entrance pillar: a record with no category has no
+  //    public URL, so creating one silently strands the record off the site.
+  //  * Selection model — REQUIRED for every pillar this service creates: the old
+  //    `?? "written-exam"` default wrote a wrong selection story on merit/counselling exams.
+  if (pillarForCreate === "entrance-exam" && !input.categoryId) {
+    throw new Error("Category is required — a record with no category has no public URL.");
+  }
+  if (!input.selectionModel) {
+    throw new Error("Selection model is required — choose how candidates are selected (no default).");
+  }
+
   // Prefer short name for slug (e.g. "CAT" → "cat"), fall back to full name
   const slug = input.slug || generateSlug(input.shortName || input.name);
 
@@ -367,14 +389,18 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
       category_id: input.categoryId || null,
       subcategory_id: input.subcategoryId || null,
       entity_type: input.entityType ?? "exam",
-      selection_model: input.selectionModel ?? "written-exam",
+      selection_model: input.selectionModel,
       conducting_body: input.conductingBody,
       official_website: normalizeUrlOrThrow(input.officialWebsite),
       cycle_frequency: input.cycleFrequency ?? "annual",
       // status DROPPED from exams (step 4) — set on the edition insert below.
       is_featured: false,
       // workflow_status is the publish source of truth; is_published derives from it.
-      workflow_status: "published",
+      // Owner S1 item 4: NEW ENTRANCE RECORDS START AS DRAFT — publishing is an explicit
+      // editor action, never a side effect of create. Other pillars routed through this
+      // shared create keep their current behaviour UNCHANGED pending the owner's review
+      // of the item-4 report (they are listed there, not silently flipped).
+      workflow_status: pillarForCreate === "entrance-exam" ? "draft" : "published",
     })
     .select(DETAIL_SELECT)
     .single();

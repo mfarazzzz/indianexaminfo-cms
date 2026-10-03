@@ -64,7 +64,8 @@ type FormData = {
   officialWebsite: string;
   cycleFrequency: CycleFrequency;
   entityType: string;
-  selectionModel: SelectionModel;
+  // "" = not chosen yet. REQUIRED on save, NO default (owner S1 item 4) — mirrors region.
+  selectionModel: SelectionModel | "";
   isFeatured: boolean;
   // Edition
   editionYear: number;
@@ -198,7 +199,10 @@ export function EntranceExamEditorPage() {
       // entityType is decided by the pillar (same rule as the DB CHECK). Only
       // entrance-exam leaves a choice; every other pillar is fixed.
       entityType: resolveEntityType(pillarFromUrl),
-      selectionModel: "written-exam",
+      // Selection model: REQUIRED, NO default (owner S1 item 4). The picker starts on
+      // "— Select —" so the editor must consciously choose — the old "written-exam"
+      // default silently wrote the wrong selection story on merit/counselling exams.
+      selectionModel: "",
       isFeatured: false, editionYear: new Date().getFullYear(), editionSession: "main",
       editionStatus: "upcoming", notificationDate: "", vacancy: "",
       importantDates: [], hasNotification: false, hasApplication: false,
@@ -261,7 +265,7 @@ export function EntranceExamEditorPage() {
         officialWebsite: data.exam.officialWebsite,
         cycleFrequency: data.exam.cycleFrequency,
         entityType: data.exam.entityType ?? "exam",
-        selectionModel: (data.exam.selectionModel ?? "written-exam") as SelectionModel,
+        selectionModel: data.exam.selectionModel ?? "",
         isFeatured: data.exam.isFeatured,
         seoTitle: data.exam.seoTitle ?? "",
         seoDescription: data.exam.seoDescription ?? "",
@@ -316,6 +320,23 @@ export function EntranceExamEditorPage() {
       return;
     }
 
+    // Selection model is REQUIRED with no default (owner S1 item 4) — validated exactly
+    // like region: block save, name the field, jump to the tab that holds it.
+    if (!data.selectionModel) {
+      toast.error("Selection Model is required — choose how candidates are selected.");
+      setActiveTab("identity");
+      return;
+    }
+
+    // Category is REQUIRED for the entrance pillar (owner S1 item 4): it was starred (*)
+    // but saved as `|| null`, stranding the record — a record with no category has no
+    // public URL. Other pillars keep their current behaviour pending the item-4 report.
+    if (isNew && pillarFromUrl === "entrance-exam" && !data.categoryId) {
+      toast.error("Category is required — a record with no category has no public URL.");
+      setActiveTab("identity");
+      return;
+    }
+
     setSaving(true);
     try {
       if (isNew) {
@@ -326,13 +347,13 @@ export function EntranceExamEditorPage() {
           slug: data.slug || undefined,
           pillar: pillarFromUrl,
           region: data.region,
-          categoryId: data.categoryId || undefined as any,
+          categoryId: data.categoryId,
           conductingBody: data.conductingBody,
           officialWebsite: data.officialWebsite,
           cycleFrequency: data.cycleFrequency,
           // Pillar decides the type at write time — backstop against a stale value.
           entityType: resolveEntityType(pillarFromUrl, data.entityType),
-          selectionModel: data.selectionModel,
+          selectionModel: data.selectionModel as SelectionModel,
           firstEditionYear: data.editionYear,
         });
         toast.success(`"${data.name}" created.`);
@@ -357,7 +378,7 @@ export function EntranceExamEditorPage() {
         // be switched between exam / university-admission; fixed pillars are a no-op.
         entityType: resolveEntityType(pillarFromUrl, data.entityType),
         isFeatured: data.isFeatured,
-        selectionModel: data.selectionModel,
+        selectionModel: data.selectionModel as SelectionModel,
         seoTitle: data.seoTitle || undefined,
         seoDescription: data.seoDescription || undefined,
         tags: data.tags ? data.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
@@ -1291,10 +1312,11 @@ function IdentityTab({ form, categories, regions, watchFrequency, watchedSelecti
           </>
         )}
       </div>
-      {/* Selection Model — Axis 2: how candidates are selected */}
+      {/* Selection Model — Axis 2: how candidates are selected. REQUIRED, no default. */}
       <div>
-        <label className="block text-xs font-medium text-slate-600 mb-1">Selection Model</label>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Selection Model *</label>
         <select {...form.register("selectionModel")} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
+          <option value="">— Select —</option>
           {ALL_SELECTION_MODELS.map((m) => (
             <option key={m} value={m}>{SELECTION_MODEL_LABELS[m]}</option>
           ))}

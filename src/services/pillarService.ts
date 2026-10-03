@@ -21,7 +21,7 @@ export type { ExamIdentity, ExamEdition, EntranceExamListItem as PillarListItem,
 
 // ── Row Mappers (shared with entranceExamService) ──────────────────────────
 
-const DETAIL_SELECT = `*, cat:categories!category_id(slug), subcat:categories!subcategory_id(slug)`;
+const DETAIL_SELECT = `*, cat:categories!category_id(slug, name), subcat:categories!subcategory_id(slug, name)`;
 
 const LIST_SELECT = `
   id, slug, name, short_name, category_id, conducting_body, is_published, workflow_status,
@@ -41,6 +41,7 @@ function mapIdentity(row: any): ExamIdentity {
     pillar: row.pillar,
     region: row.region ?? null,
     category: row.cat?.slug ?? "",
+    categoryName: row.cat?.name ?? "",
     subcategory: row.subcat?.slug ?? "",
     categoryId: row.category_id ?? null,
     subcategoryId: row.subcategory_id ?? null,
