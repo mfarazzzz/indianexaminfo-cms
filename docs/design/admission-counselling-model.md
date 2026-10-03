@@ -70,12 +70,18 @@ counselling admission — see §1.
 
 **PROPOSAL**
 - **B1 — categories stay in the DB (single source of truth).** The admin screen already
-  exists (`CategoriesPage.tsx`); no new UI to build. Slice 1 only: (a) have AI Fill read
-  options from `categories` instead of the hard-coded list at `autofill.ts:168`; (b) add the
-  Teacher Education rows; (c) make `slug` changes redirect-safe (§2).
-- **B1 — add a "Teacher Education" category tree** as rows, not code: a parent
-  `teacher-education` (pillar `entrance-exam`) with children `d-el-ed` (D.El.Ed/BTC),
-  `b-ed`, `m-ed`, `shiksha-shastri`. Draft seed: `supabase/proposed/b1_teacher_education_categories.sql`.
+  exists (`CategoriesPage.tsx`) **and the Identity form's Category dropdown already reads
+  `categories`** — verified at `src/components/entity-editor/tabs/GeneralTab.tsx:12,134-137,
+  271-278` (`getCategories` → `options={categories.map(c => ({ value: c.id, label: c.name }))}`).
+  **So S1 does NOT touch the dropdown.** S1's taxonomy work is only the breadcrumb
+  (`categories.name`, §2) + the single redirect for the D.El.Ed move; AI Fill reading the DB and
+  the stale-enum fix move to S2 (§9).
+- **B1 — add "Teacher Education" as ONE FLAT category row** (owner decision, 2026-10-03: "one
+  flat category under the admission pillar (slug `teacher-education`). No sub-category tree
+  unless you show me why it's needed now." Nothing needs a tree today → **no children created**;
+  `parent_id`/`subcategory_id` stay available for a future tree. The owner adds the row
+  themselves via `/categories`, so it is **not** in S1's code scope. Sketch (documentation only):
+  `supabase/proposed/b1_teacher_education_categories.sql`.
 - **B2 — keep the two axes clean.** UP D.El.Ed = `entity_type='university-admission'`
   (the existing counselling-route value) **AND** `selection_model='merit-based'`. Do **not**
   add `merit-based` as an entity_type: "WHAT it is" (an admission) is orthogonal to "HOW
@@ -482,8 +488,8 @@ Sizes: S ≤1 day, M 2–4 days, L 1–2 weeks. Migrations are **proposed only**
 | # | Slice | Size | Migrations (proposed/) | Acceptance items |
 |---|-------|------|------------------------|------------------|
 | 0 | **F1–F4 build fix** (done) + **T1 trust hotfix** (done, this push) | S–M | — | E2 badge, false "Verified by" removed, H2 empty widgets hidden |
-| 1 | **B1–B4 taxonomy**: CMS category admin over `categories`; Teacher Education tree; AI Fill reads DB options; **remove hard-coded `autofill.ts:168`**; stale entityType fix; breadcrumb uses `categories.name` | M | `b1_teacher_education_categories.sql`, `b4_slug_history.sql`, `a1_ai_fill_options.sql` | B1, B2, B4 (partial: history), A1(partial) |
-| 2 | **A1 AI Fill selection_model** + module/DB-driven dropdown options + confidence + flag/suggest-empty | M | `a1_ai_fill_options.sql` | B3, A1, A2(partial) |
+| 1 | **S1 (confirmed this slice)** — breadcrumb reads `categories.name` (never slug title-case; `&` survives) at `admission/[category]/[slug]/page.tsx:49` + `university-exam/[...segments]/page.tsx:214` (add `name` to the `DETAIL_SELECT` join + `categoryName` on `ExamEntity`); **one 301 in `next.config.ts`** for the UP D.El.Ed move `research-fellowships`→`teacher-education` (needs the exact slug from the owner). Identity dropdown already reads `categories` (no change); owner adds the flat `teacher-education` row via `/categories`. | S | — | B1 (row by owner), this one redirect, breadcrumb |
+| 2 | **A1 (S2)** — AI Fill reads DB options (`categories` + the enums) + sets `selection_model`; confidence + flag/suggest-empty; **remove hard-coded `autofill.ts:168`**; `getEntityTypeLabel` + stale `autofill.ts:169` entityType fix; `b4_slug_history` for the general auto-redirect | M | `b4_slug_history.sql`, `a1_ai_fill_options.sql` | A1, A2, B3, B4 (history) |
 | 3 | **D1 + E1 dates & status**: extend `important_dates` in place (JSONB keys `end_date`/`start_time`/`end_time`/`round_id`/`sort`, **no new table**) + `exam_computed_status` fn that **replaces** the `exam_derived_status` view (§6 cut-over) + TS/SQL parity mirrors + fixtures | L | `d1_important_dates_extension.sql`, `e1_exam_status_fn.sql` | D1, D2, E1 |
 | 4 | **A2/A3/A5 + C1/C2 rounds + model-driven modules**: `counselling_rounds` (metadata only, §5); modules ordered/gated by `(entity_type, selection_model)`; eligibility/fee/faqs as modules; reorder + toggle/badge cleanup | L | `c2_counselling_rounds.sql` | C1, C2, I1, I2, I3, A3, A5 |
 | 5 | **A7/A8 + F2**: PDF input (text-extraction **+ OCR fallback for scanned Hindi**) + pasted-text path, server-side templates, source quote/field, fill report in `ai_metadata`, **store notice PDF in `exam_resources` + record it as fill source**, never-verify/publish, checklist warning | L | `a1_ai_fill_options.sql` (+ `ai_metadata` conventions) | A7, A8, F2, A4, A6 |
@@ -537,11 +543,13 @@ more than one slice:** Phase-3 round (S4+S5), Important Dates (S3+S5), one-statu
 Eligibility/Fee/Warning (S5+S6), breadcrumb+title+related (S1+S6). **Everything else is a single
 slice.** No box is a [GAP] — the field list and checklist are now the owner's verbatim text.
 
-> **Owner numbering note.** The owner calls the first implementation slice **"Slice 1 (A1)"**.
-> In this table A1 (AI Fill `selection_model` + DB-driven dropdowns) is **S2**, and it *depends
-> on* the Teacher Education `categories` rows + DB-read dropdown plumbing of **S1** to have
-> "Teacher Education" available as a real option (acceptance box 1). Confirm the intended first
-> slice (S1 taxonomy-seed then S2, or a merged S1+S2) before implementation begins.
+> **Owner numbering — RESOLVED (2026-10-03).** S1 is **not** A1. Because the Identity form's
+> Category dropdown already reads `categories`, **S1 = breadcrumb (`categories.name`) + the one
+> hand-written 301** for the D.El.Ed move; the owner adds the flat `teacher-education` row via
+> `/categories` themselves. **A1 (AI Fill DB-read + `selection_model` + confidence) is S2**, and it
+> *depends on* the owner's `teacher-education` row existing so "Teacher Education" is a real option
+> (acceptance box 1). The general `b4_slug_history` auto-redirect is deferred to S2 — S1 ships only
+> the single 301.
 
 ---
 
@@ -557,7 +565,8 @@ slice.** No box is a [GAP] — the field list and checklist are now the owner's 
    band, eligibility text, seat note, fee amount+label, notice resource FK); **no date columns** —
    windows live in `important_dates` keyed by `round_id` (owner change #3).
 4. `b4_slug_history.sql` — `entity_slug_history` + rename-capture trigger (redirect source).
-5. `b1_teacher_education_categories.sql` — Teacher Education category tree rows.
+5. `b1_teacher_education_categories.sql` — **ONE flat Teacher Education row** (sketch; the owner
+   adds it via `/categories`; no children — a tree is deferred until justified, §1 B1).
 6. `a1_ai_fill_options.sql` — DB-driven dropdown options view(s) for AI Fill (+ `ai_metadata`
    fill-source / OCR-method / quote conventions).
 
@@ -579,6 +588,45 @@ once a slice is approved.
 | 6 | Status function **replaces** `exam_derived_status`; show cut-over | §6 (5-step cut-over: fn → view-as-projection → readers untouched → prove parity → drop old CASE) |
 | 7 | Resolve the 5 [UNVERIFIED] items with targeted reads | §1 (categories admin **exists**: `CategoriesPage.tsx`/`categoryService.ts`), §2 (redirects `next.config.ts:113,117-134,155-162`; breadcrumb **is** slug-title-cased at `admission/[category]/[slug]/page.tsx:49`), §3 (reorder comment verbatim `ModuleCard.tsx:24-26`; toggle-vs-badge has **no** help string), §7 (title via `buildExamMetadata`). JSON-LD verified to leak no "University" (§1 site 3). All 5 resolved; no [UNVERIFIED] markers remain. |
 
-**Still open for the owner:** confirm the intended **first slice** (see §11 numbering note — the
-owner's "Slice 1 (A1)" maps to this table's S2, which depends on S1's Teacher Education rows so
-the dropdown can offer "Teacher Education"). **Nothing implemented — awaiting the go-ahead.**
+**Still open for the owner:** the exact **slug** of the UP D.El.Ed record so the S1 301 can be
+written correctly (see §14 note: I could not self-verify it — the Supabase MCP tool schemas are
+not present in this project's cache, so I will not guess a URL or fire an unverified DB read).
+**S1 code NOT started — awaiting your go-ahead after this scope confirmation.**
+
+---
+
+## 14. Additional design constraints (owner, 2026-10-03) — for LATER slices, not S1
+
+### 14.1 D1 — times are evaluated in IST end-to-end
+- Store `start_time`/`end_time` in `important_dates` with an **explicit `Asia/Kolkata`
+  interpretation** — either an offset-bearing time (e.g. `"18:00+05:30"`) or `date`+`time`
+  assembled to an IST instant. Never treat a bare time as wall-clock UTC.
+- **Every consumer evaluates in IST, not server UTC**: the countdown, a row's `closed` state, and
+  `exam_computed_status` (§6). The view already anchors "today" via `getTodayIST()` /
+  `(now() AT TIME ZONE 'Asia/Kolkata')::date` (`migrations/20260902122910…sql:35`); the same IST
+  anchor must apply once a time-of-day is present.
+- **Required test (pin this):** a deadline of `end_date` 7 Oct `end_time` **18:00 IST** is **OPEN
+  at 17:59 IST and CLOSED at 18:01 IST**, asserted against a **fixed instant** (e.g.
+  `2026-10-07T12:31:00Z` = 18:01 IST) so it never depends on the runner's server timezone. This
+  is exactly the bug where a 6:00 PM IST deadline judged in UTC server time flips by ~5.5 hours.
+
+### 14.2 D1/C2 — validate the `important_dates` JSONB on save (CMS service, not the DB)
+JSONB cannot enforce relational rules, so the edition write path
+(`entranceExamService.updateEdition` / edition save) must reject an invalid array before insert:
+- **range:** if `end_date` present → `end_date >= date`.
+- **time needs a day:** `start_time`/`end_time` only allowed on a row that has `date`.
+- **time ordering:** if both `start_time` and `end_time` are on the same day → `end_time >= start_time`.
+- **round link:** if `round_id` present → a row MUST exist in `counselling_rounds` for the **same
+  edition** (`edition_id`); no dangling links (FK cannot live inside JSONB, so it is checked here).
+- **sort:** integer when present.
+
+### 14.3 C2 — deleting a round: fate of its linked date rows
+**Proposed (I was asked to pick one): UNLINK WITH A WARNING**, not block, not cascade-delete.
+- Deleting a `counselling_rounds` row sets `round_id = NULL` on the `important_dates` rows that
+  referenced it; the **date rows REMAIN** (they are edition timeline history — cascade-deleting
+  would silently destroy dates the owner curated, against the single-date-source principle §4).
+- The CMS shows an explicit pre-delete warning with a count: "This round has N linked date rows.
+  Deleting the round keeps the dates but detaches them from the round."
+- Rationale vs BLOCK: blocking is too rigid for editorial cleanup and forces deleting dates first;
+  a round is metadata layered over dates that pre-exist it. If a date row is meaningless without
+  its round, the owner deletes that row separately.

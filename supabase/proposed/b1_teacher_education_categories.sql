@@ -1,24 +1,26 @@
--- ══════════════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════════════════════════════
 -- PROPOSED — NOT APPLIED. Design doc §1 (B1).
--- Teacher Education category tree. Categories already live in the DB (table `categories`,
--- migrations/20260702150637:2-20) — this just adds ROWS (add/rename/reorder/slug is a data
--- operation, not code). AI Fill must read these from the table, not from the hard-coded
--- prompt list at src/lib/ai/autofill.ts:168.
+-- Teacher Education — ONE FLAT category (owner decision, 2026-10-03: "one flat category
+-- under the admission pillar (slug teacher-education). No sub-category tree unless you
+-- show me why it's needed now." Nothing needs a tree now, so this file deliberately does
+-- NOT create children).
 --
--- pillar_type value: entrance-exam (per the DB CHECK on exams pillar↔entity_type,
--- migrations/20260926023410:13). A state counselling admission (UP D.El.Ed) is
--- entity_type='university-admission' + selection_model='merit-based' (design doc §1 B2).
+-- Categories already live in the DB (table `categories`, migrations/20260702150637:2-20);
+-- adding this row is a DATA operation done through the existing /categories admin screen
+-- (src/pages/categories/CategoriesPage.tsx), NOT code. The owner will add it themselves.
+-- AI Fill must read `categories` (not the hard-coded prompt list at
+-- src/lib/ai/autofill.ts:168) — that wiring is a later slice (S2), not S1.
 --
--- Exact order_index / parent linkage to be finalised with the owner's category taxonomy.
--- ══════════════════════════════════════════════════════════════════════════════
+-- pillar value: entrance-exam (public root /admission; per the DB CHECK on exams
+-- pillar<->entity_type, migrations/20260926023410:13). A state counselling admission
+-- (UP D.El.Ed) is entity_type='university-admission' + selection_model='merit-based' (§1 B2).
+--
+-- If a tree is ever justified later, children (d-el-ed, b-ed, m-ed, shiksha-shastri) can
+-- be added via parent_id; exams.subcategory_id already exists. Deferred until needed.
+-- ═══════════════════════════════════════════════════════════════════════════════════
 
+-- Single flat row — SKETCH ONLY (the owner creates this via the /categories UI, so this
+-- file is documentation of the intended row, NOT an applied migration):
 -- INSERT INTO categories (slug, name, pillar, order_index, is_active)
 -- VALUES ('teacher-education', 'Teacher Education', 'entrance-exam', <n>, true)
 -- ON CONFLICT (slug) DO NOTHING;
-
--- Children (parent_id = the teacher-education row above):
--- INSERT INTO categories (slug, name, pillar, parent_id, order_index, is_active) VALUES
---   ('d-el-ed',          'D.El.Ed / BTC',        'entrance-exam', <parent>, <n>, true),
---   ('b-ed',             'B.Ed',                 'entrance-exam', <parent>, <n>, true),
---   ('m-ed',             'M.Ed',                 'entrance-exam', <parent>, <n>, true),
---   ('shiksha-shastri',  'Shiksha Shastri',      'entrance-exam', <parent>, <n>, true);
