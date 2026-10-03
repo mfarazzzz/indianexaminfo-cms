@@ -1,0 +1,24 @@
+-- ══════════════════════════════════════════════════════════════════════════════
+-- PROPOSED — NOT APPLIED. Design doc §1 (B1).
+-- Teacher Education category tree. Categories already live in the DB (table `categories`,
+-- migrations/20260702150637:2-20) — this just adds ROWS (add/rename/reorder/slug is a data
+-- operation, not code). AI Fill must read these from the table, not from the hard-coded
+-- prompt list at src/lib/ai/autofill.ts:168.
+--
+-- pillar_type value: entrance-exam (per the DB CHECK on exams pillar↔entity_type,
+-- migrations/20260926023410:13). A state counselling admission (UP D.El.Ed) is
+-- entity_type='university-admission' + selection_model='merit-based' (design doc §1 B2).
+--
+-- Exact order_index / parent linkage to be finalised with the owner's category taxonomy.
+-- ══════════════════════════════════════════════════════════════════════════════
+
+-- INSERT INTO categories (slug, name, pillar, order_index, is_active)
+-- VALUES ('teacher-education', 'Teacher Education', 'entrance-exam', <n>, true)
+-- ON CONFLICT (slug) DO NOTHING;
+
+-- Children (parent_id = the teacher-education row above):
+-- INSERT INTO categories (slug, name, pillar, parent_id, order_index, is_active) VALUES
+--   ('d-el-ed',          'D.El.Ed / BTC',        'entrance-exam', <parent>, <n>, true),
+--   ('b-ed',             'B.Ed',                 'entrance-exam', <parent>, <n>, true),
+--   ('m-ed',             'M.Ed',                 'entrance-exam', <parent>, <n>, true),
+--   ('shiksha-shastri',  'Shiksha Shastri',      'entrance-exam', <parent>, <n>, true);
