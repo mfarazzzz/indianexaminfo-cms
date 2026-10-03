@@ -146,6 +146,17 @@ function generateAutoContent(
   }
 }
 
+/** "a" vs "an" for a display phrase — decided on the first letter (owner S1 item 5:
+ *  the template wrote "It is a exam."). Pure and exported so tests pin the rule. */
+export function indefiniteArticle(phrase: string): "a" | "an" {
+  return /^[aeiou]/i.test(phrase.trim()) ? "an" : "a";
+}
+
+/** Cosmetic slug→title fallback for legacy rows whose category join carried no name. */
+function titleCaseSlug(slug: string): string {
+  return slug.split("-").filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
 /**
  * Generate Overview HTML from structured exam data.
  */
@@ -161,7 +172,14 @@ export function generateOverviewAuto(
   const body = exam.conductingBody;
   const website = exam.officialWebsite;
   const status = edition?.status?.replace(/-/g, " ") ?? "upcoming";
-  const category = exam.category?.replace(/-/g, " ") ?? "";
+  // Category clause (owner S1 item 5): use the category DISPLAY name (categories.name,
+  // verbatim — correct casing, "&" survives), title-casing the slug only as a legacy
+  // fallback, and OMIT the clause entirely when the record has no category. The old
+  // template emitted "It is a  exam." with a broken article and an empty category.
+  const categoryDisplay = (exam.categoryName ?? "").trim() || (exam.category ? titleCaseSlug(exam.category) : "");
+  const categoryClause = categoryDisplay
+    ? ` It is ${indefiniteArticle(categoryDisplay)} ${categoryDisplay} exam.`
+    : "";
 
   // Build upcoming dates (next 3)
   const dates = (edition?.importantDates ?? [])
@@ -186,7 +204,7 @@ export function generateOverviewAuto(
     : "";
 
   const html = `
-<p><strong>${name} (${shortName}) ${year}</strong> is conducted by <strong>${body}</strong>. It is a ${category} exam. Current status: <strong>${status}</strong>.</p>
+<p><strong>${name} (${shortName}) ${year}</strong> is conducted by <strong>${body}</strong>.${categoryClause} Current status: <strong>${status}</strong>.</p>
 ${website ? `<p>Official Website: <a href="${website}" target="_blank" rel="noopener">${website}</a></p>` : ""}
 ${datesHtml ? `<h3>Key Dates</h3>${datesHtml}` : ""}
 ${eligSnippet}
