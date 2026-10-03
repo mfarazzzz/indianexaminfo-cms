@@ -110,10 +110,12 @@ describe('createEntranceExam — categoryId is required for the entrance pillar'
     expect(inserted.exams).toBeUndefined()
   })
 
-  it('leaves OTHER pillars on their current behaviour (report-only — not flipped to draft, category not forced)', async () => {
+  it('every pillar starts as draft on create (R0.12: publishing is always an explicit editor action)', async () => {
     const inserted = installChains({ examRow })
     await createEntranceExam({ ...baseInput, pillar: 'government-exam', categoryId: '' as never })
-    expect(inserted.exams.workflow_status).toBe('published')
+    // R0.12 (2026-10-04): non-entrance pillars also start as draft, not published.
+    expect(inserted.exams.workflow_status).toBe('draft')
+    // Non-entrance pillars do NOT require a category (that rule stays entrance-only).
     expect(inserted.exams.category_id).toBeNull()
   })
 })

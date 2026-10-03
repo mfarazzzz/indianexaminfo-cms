@@ -410,9 +410,12 @@ export async function importExamsFromExcel(
           conducting_body: conductingBody,
           official_website: officialWebsite,
           // status DROPPED from exams (step 4) — written to the edition insert below.
-          // New record: absent flag → sensible default (not featured; published).
+          // R0.12: new records from bulk import start as DRAFT — publishing is always
+          // an explicit editor action. is_published is derived from workflow_status by
+          // the DB trigger; pass isPublished only to override the draft default.
           is_featured: isFeatured ?? false,
-          is_published: isPublished ?? true,
+          workflow_status: "draft",
+          is_published: isPublished ?? false,
           seo_title: seoTitle || null,
           seo_description: seoDescription || null,
           tags,

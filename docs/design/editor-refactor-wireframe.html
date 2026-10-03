@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<!--
+  R-track wireframe — new exam editor shell at 1366x768.
+  Static HTML mock only. NOT app code. Open in a browser.
+  Companion: docs/design/editor-refactor.md §2, §8.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Editor wireframe — 1366×768</title>
+<style>
+  :root{
+    --ink:#111827; --mut:#6b7280; --line:#e5e7eb; --bg:#f3f4f6;
+    --brand:#1d4ed8; --brandbg:#eff6ff; --ok:#065f46; --okbg:#ecfdf5;
+    --warn:#92400e; --warnbg:#fffbeb; --danger:#b91c1c; --dangerbg:#fef2f2;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; font-family:Inter,system-ui,Segoe UI,Arial,sans-serif;}
+  body{background:#d1d5db; display:flex; justify-content:center; padding:16px;}
+  /* Fixed 1366x768 device frame */
+  .frame{width:1366px; height:768px; background:#fff; border:1px solid #9ca3af; overflow:hidden;
+         display:flex; flex-direction:column; box-shadow:0 8px 30px rgba(0,0,0,.25);}
+  /* ── Header ─────────────────────────────── */
+  header{height:56px; border-bottom:1px solid var(--line); display:flex; align-items:center;
+         gap:12px; padding:0 16px; flex:none;}
+  .title{font-size:15px; font-weight:700; color:var(--ink);}
+  .title small{display:block; font-weight:400; font-size:11px; color:var(--mut);}
+  .yearsel{border:1px solid var(--line); border-radius:8px; padding:5px 8px; font-size:12px; color:var(--ink);}
+  .chip{font-size:11px; font-weight:600; border-radius:999px; padding:3px 10px;}
+  .chip.draft{background:var(--warnbg); color:var(--warn); border:1px solid #fcd34d;}
+  .chip.unverified{background:var(--dangerbg); color:var(--danger); border:1px solid #fca5a5;}
+  .spacer{flex:1;}
+  .btn{font-size:12px; font-weight:600; border-radius:8px; padding:7px 14px; border:1px solid var(--line); background:#fff; color:var(--ink);}
+  .btn.preview{color:var(--brand); border-color:#bfdbfe;}
+  .btn.publish{background:var(--brand); border-color:var(--brand); color:#fff;}
+  .btn.publish.off{background:#9ca3af; border-color:#9ca3af;}
+  /* ── Body: rail + content ───────────────── */
+  .body{flex:1; display:flex; min-height:0;}
+  nav{width:210px; flex:none; border-right:1px solid var(--line); background:#fafafa;
+      padding:10px 8px; overflow-y:auto; font-size:12.5px;}
+  nav .grp{font-size:10px; color:var(--mut); text-transform:uppercase; letter-spacing:.05em; padding:8px 8px 3px;}
+  nav a{display:flex; justify-content:space-between; align-items:center; color:#374151;
+        text-decoration:none; padding:6px 8px; border-radius:7px; margin-bottom:1px;}
+  nav a.active{background:var(--brandbg); color:var(--brand); font-weight:700;}
+  nav a .dot{width:6px; height:6px; border-radius:50%; background:#d1d5db;}
+  nav a.active .dot{background:var(--brand);}
+  nav a .warn{color:var(--danger); font-size:10px; font-weight:700;}
+  main{flex:1; overflow-y:auto; padding:16px 24px 40px; background:var(--bg);}
+  main h2{font-size:15px; color:var(--ink); margin-bottom:2px;}
+  main .sub{font-size:12px; color:var(--mut); margin-bottom:12px;}
+  .card{background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px;}
+  .card h3{font-size:13px; color:var(--ink); margin-bottom:8px;}
+  label{display:block; font-size:11.5px; font-weight:600; color:#374151; margin:8px 0 3px;}
+  .inp{width:100%; max-width:520px; border:1px solid var(--line); border-radius:8px; padding:7px 9px; font-size:12.5px; color:var(--ink); background:#fff;}
+  select.inp{max-width:260px;}
+  textarea.inp{min-height:64px;}
+  .hint{font-size:11px; color:var(--mut); margin-top:3px;}
+  .radio-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;}
+  .radio{border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12px; background:#fff; color:#374151;}
+  .radio.sel{border-color:var(--brand); background:var(--brandbg); color:var(--brand); font-weight:700;}
+  /* dates table */
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th{text-align:left; color:var(--mut); font-weight:600; font-size:10.5px; text-transform:uppercase; padding:4px 8px; border-bottom:1px solid var(--line);}
+  td{padding:6px 8px; border-bottom:1px solid #f1f5f9; color:var(--ink);}
+  .pill{font-size:10.5px; font-weight:700; border-radius:999px; padding:2px 8px;}
+  .pill.conf{background:var(--okbg); color:var(--ok);}
+  .pill.exp{background:var(--brandbg); color:var(--brand);}
+  .urgent{color:var(--danger); font-weight:700; font-size:10.5px;}
+  /* notice review */
+  .notice-step{display:flex; gap:8px; margin-bottom:12px; font-size:11.5px; color:var(--mut);}
+  .step{border:1px solid var(--line); border-radius:999px; padding:3px 10px; background:#fff;}
+  .step.now{border-color:var(--brand); color:var(--brand); font-weight:700; background:var(--brandbg);}
+  .diff{display:flex; gap:10px; align-items:flex-start; border-top:1px solid #f1f5f9; padding:9px 0;}
+  .diff:first-child{border-top:none;}
+  .diff .sec{font-size:10.5px; font-weight:700; color:var(--mut); width:96px; flex:none; padding-top:2px;}
+  .diff .chg{flex:1;}
+  .diff .old{color:var(--danger); text-decoration:line-through; font-size:12px;}
+  .diff .new{color:var(--ok); font-weight:700; font-size:12.5px;}
+  .diff .quote{font-size:11px; color:var(--mut); font-style:italic; border-left:2px solid var(--line); padding-left:8px; margin-top:4px;}
+  .diff .acts{flex:none; display:flex; gap:6px;}
+  .mini{font-size:11px; font-weight:700; border-radius:6px; padding:4px 9px; border:1px solid var(--line); background:#fff;}
+  .mini.acc{background:var(--okbg); color:var(--ok); border-color:#a7f3d0;}
+  .mini.rej{background:var(--dangerbg); color:var(--danger); border-color:#fecaca;}
+  /* checklist */
+  .ck{display:flex; gap:8px; align-items:center; font-size:12.5px; color:#374151; padding:5px 0;}
+  .ck .b{width:15px; height:15px; border-radius:4px; border:1.5px solid var(--line); flex:none;}
+  .ck .b.y{background:var(--ok); border-color:var(--ok);}
+  .ck .b.n{background:#fff; border-color:var(--danger);}
+  .ck .go{margin-left:auto; font-size:11px; color:var(--brand); font-weight:700;}
+  /* hidden section sample */
+  .secrow{display:flex; justify-content:space-between; align-items:center; border-top:1px solid #f1f5f9; padding:8px 0; font-size:12.5px;}
+  .secrow:first-of-type{border-top:none;}
+  .hide{font-size:11px; color:var(--mut);}
+  .sw{width:30px; height:16px; border-radius:999px; background:#d1d5db; position:relative; display:inline-block; vertical-align:middle;}
+  .sw:after{content:""; width:12px; height:12px; border-radius:50%; background:#fff; position:absolute; top:2px; left:2px;}
+  .sw.on{background:var(--brand);} .sw.on:after{left:16px;}
+  .note{font-size:11px; color:var(--warn); background:var(--warnbg); border:1px solid #fde68a; border-radius:8px; padding:8px 10px; margin-top:8px;}
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <!-- HEADER: year switcher · state chips · Preview · Publish (design §2) -->
+  <header>
+    <div class="title">UP CET 2026 <small>Entrance exam · UPTUPC</small></div>
+    <select class="yearsel"><option>2026 (current)</option><option>2025 — opens as separate view</option></select>
+    <span class="chip draft">Draft</span>
+    <span class="chip unverified">⚠ Not verified — verify</span>
+    <div class="spacer"></div>
+    <button class="btn preview">Preview on site</button>
+    <button class="btn publish">Publish</button>
+  </header>
+
+  <div class="body">
+    <!-- SECTION RAIL: one fact, one place. Model-driven block per selection answer. -->
+    <nav>
+      <a class="active" href="#"><span>Update from notice</span><span class="dot"></span></a>
+      <div class="grp">Content</div>
+      <a href="#">Basics <span class="dot"></span></a>
+      <a href="#">Key dates <span class="warn">2 missing</span></a>
+      <a href="#">Who can apply <span class="warn">empty</span></a>
+      <a href="#">Fee <span class="dot"></span></a>
+      <a href="#">How to apply <span class="dot"></span></a>
+      <div class="grp">Selected by “How are candidates selected?” → Written exam</div>
+      <a href="#">Exam pattern <span class="dot"></span></a>
+      <a href="#">Admit card <span class="dot"></span></a>
+      <a href="#">Answer key <span class="dot"></span></a>
+      <a href="#">Result <span class="dot"></span></a>
+      <a href="#">Cut-off <span class="dot"></span></a>
+      <div class="grp">More</div>
+      <a href="#">Syllabus <span class="dot"></span></a>
+      <a href="#">Documents &amp; links <span class="dot"></span></a>
+      <a href="#">FAQs <span class="dot"></span></a>
+      <a href="#">Updates <span class="dot"></span></a>
+      <a href="#">Search appearance <span class="dot"></span></a>
+      <a href="#">Checklist <span class="warn">3 open</span></a>
+    </nav>
+
+    <main>
+      <!-- ACTIVE SECTION: Update from notice — the front door, review-then-apply -->
+      <h2>Update from a notice</h2>
+      <div class="sub">Paste the official notice text (or attach the PDF). Nothing changes on the site until you apply and Publish.</div>
+
+      <div class="notice-step">
+        <span class="step">1 · Paste notice</span>
+        <span class="step">2 · Reading… 12 changes found</span>
+        <span class="step now">3 · Review &amp; apply</span>
+      </div>
+
+      <div class="card">
+        <h3>Review changes — every one shows the notice line it came from</h3>
+        <div class="diff">
+          <span class="sec">Key dates</span>
+          <div class="chg">
+            <div><span class="old">Application ends: 24 Oct 2026</span> → <span class="new">Application ends: 07 Nov 2026</span></div>
+            <div class="quote">“The last date to apply online is now 07 November 2026 (extended).” — p.1 line 12</div>
+          </div>
+          <div class="acts"><button class="mini acc">Apply</button><button class="mini rej">Skip</button></div>
+        </div>
+        <div class="diff">
+          <span class="sec">Fee</span>
+          <div class="chg">
+            <div><span class="new">General/OBC ₹500 · SC/ST ₹350 (credit/debit card, net banking, UPI)</span></div>
+            <div class="quote">“Application fee: Rs. 500 for General/EWS/OBC and Rs. 350 for SC/ST…” — p.2 line 4</div>
+          </div>
+          <div class="acts"><button class="mini acc">Apply</button><button class="mini rej">Skip</button></div>
+        </div>
+        <div class="diff">
+          <span class="sec">Who can apply</span>
+          <div class="chg">
+            <div><span class="new">Bachelor's degree with 50% marks; age 21–30 as on 01 Jul 2026</span></div>
+            <div class="quote">“Candidate must hold a Bachelor's degree… should not have attained the age of 30 years…” — p.1 line 21</div>
+          </div>
+          <div class="acts"><button class="mini acc">Apply</button><button class="mini rej">Skip</button></div>
+        </div>
+        <div class="diff">
+          <span class="sec">Cut-off</span>
+          <div class="chg">
+            <div><span class="new">Cut-off (General): 142/200</span> &nbsp;<span class="urgent">⚠ notice does not state this — flagged low confidence</span></div>
+            <div class="quote">inferred from table on p.4 — check before applying</div>
+          </div>
+          <div class="acts"><button class="mini acc">Apply</button><button class="mini rej">Skip</button></div>
+        </div>
+        <div style="margin-top:10px; display:flex; gap:8px;">
+          <button class="btn publish" style="background:#065f46;border-color:#065f46;">Apply 11 selected to draft</button>
+          <button class="btn">Discard this reading</button>
+        </div>
+        <div class="note">Long notices are read in full — no 5,000-character cutoff. Dates with times and “X to Y” windows are kept as written.</div>
+      </div>
+
+      <!-- OTHER SECTIONS, shown collapsed for the wireframe -->
+      <div class="card">
+        <h3>Basics</h3>
+        <label>How are candidates selected? <span style="color:var(--danger)">(required — sets the sections above and the exam type)</span></label>
+        <div class="radio-row">
+          <span class="radio sel">Written exam, then merit list</span>
+          <span class="radio">Written exam + interview</span>
+          <span class="radio">Counselling rounds after the exam</span>
+          <span class="radio">Scores of another exam (CAT/MAT…)</span>
+          <span class="radio">Direct application / merit only</span>
+        </div>
+        <label>Exam name</label><input class="inp" value="UP Common Entrance Test 2026">
+        <label>Conducted by</label><input class="inp" value="Uttar Pradesh TPTU">
+        <div class="hint">Slug, tags and other technical details live under “More”.</div>
+      </div>
+
+      <div class="card">
+        <h3>Key dates</h3>
+        <table>
+          <tr><th>Date</th><th>What it is</th><th>Status</th><th>Urgent</th></tr>
+          <tr><td><b>01 Oct 2026</b></td><td>Notification release</td><td><span class="pill conf">Confirmed</span></td><td>—</td></tr>
+          <tr><td><input class="inp" style="max-width:110px;padding:4px 6px;" value="07 Nov 2026"></td><td>Application ends</td><td><select class="inp" style="max-width:120px;padding:4px 6px;"><option>Confirmed</option><option>Expected</option><option>Postponed</option><option>Cancelled</option></select></td><td><span class="sw on"></span></td></tr>
+          <tr><td><input class="inp" style="max-width:110px;padding:4px 6px;" value="15 Dec 2026"></td><td>Exam date</td><td><span class="pill exp">Expected</span></td><td><span class="sw"></span></td></tr>
+          <tr><td>—</td><td>Admit card available</td><td colspan="2" style="color:var(--mut)">Add date — the Admit card page shows this automatically</td></tr>
+        </table>
+        <div class="hint">One place for every date. Admit card / Result / Cut-off pages read these — their sections show them read-only.</div>
+      </div>
+
+      <div class="card">
+        <h3>Who can apply &amp; Fee — now real inputs (were: no editor at all)</h3>
+        <label>Who can apply</label><textarea class="inp">Bachelor's degree with at least 50% marks. Age 21–30 as on 01 Jul 2026.</textarea>
+        <label>Application fee</label><input class="inp" value="₹500 General/OBC · ₹350 SC/ST — paid online">
+      </div>
+
+      <div class="card">
+        <h3>Sections readers see — no switches, no modes</h3>
+        <div class="secrow"><span>Exam pattern</span><span class="hide">Hide on site <span class="sw"></span></span></div>
+        <div class="secrow"><span>Admit card</span><span class="hide">Hide on site <span class="sw"></span></span></div>
+        <div class="secrow"><span>Answer key</span><span class="hide">Hide on site <span class="sw on"></span></span></div>
+        <div class="secrow"><span>Result</span><span class="hide">Hide on site <span class="sw"></span></span></div>
+        <div class="hint">Sections that don't apply to this selection type aren't listed here at all.</div>
+      </div>
+
+      <div class="card">
+        <h3>Checklist — why Publish is greyed out until done</h3>
+        <div class="ck"><span class="b y"></span>Notice applied and dates confirmed</div>
+        <div class="ck"><span class="b n"></span>Who can apply — filled <span class="go">fix</span></div>
+        <div class="ck"><span class="b n"></span>Verified against the official notice <span class="go">verify now</span></div>
+        <div class="ck"><span class="b n"></span>Search appearance reviewed <span class="go">open</span></div>
+        <div class="ck"><span class="b y"></span>Official website link works</div>
+        <div class="hint">Verification records who checked (your name), when, and links the notice it was checked against.</div>
+      </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>

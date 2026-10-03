@@ -1,8 +1,15 @@
 /**
- * ModulePanel — Unified content module editing interface with smart data binding.
+ * ModulePanel — Content module editing interface.
  *
- * Features: Enable/disable, data modes (auto/hybrid/manual), AI Fill per-module,
- * stale detection, auto-population from source data (Dates, SEO, News, Identity).
+ * Features: per-module enable/disable, AI Fill per-module, stale detection,
+ * module content editing (autosaved).
+ *
+ * R0.2 (2026-10-04): the Auto/Hybrid/Manual mode dropdown and Enable-all /
+ * Disable-all were removed with owner approval. The mode was a session-only
+ * editor-view override (_config.modes has no reader anywhere); enable-all/
+ * disable-all bulk-wrote enabledModules and could hide whole groups of live
+ * sections with one click. The per-module toggle stays — enabledModules IS the
+ * live presence rule the frontend reads (sectionRegistry + ContentModulesBlock).
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -11,7 +18,7 @@ import { ContentModuleCard } from "./ContentModuleCard";
 import { getModuleRegistry } from "@/services/moduleRegistryService";
 import { getContentModules, saveModuleConfig, toggleModuleEnabled, saveModuleContent } from "@/services/moduleContentService";
 import { BUILT_IN_MODULES } from "@/lib/modules/builtInSchemas";
-import { resolveModuleContent, getModuleMode, getDefaultBindingConfig, countStaleModules, type DataMode, type BindingConfig } from "@/lib/modules/dataBindingService";
+import { countStaleModules } from "@/lib/modules/dataBindingService";
 import { aiGenerateForModule } from "@/lib/modules/moduleAI";
 import type { ModuleDefinition, ModuleConfig, ContentModulesData, ModuleContentData, SaveStatus } from "@/types/modules";
 import type { ExamIdentity, ExamEdition } from "@/services/entranceExamService";
@@ -136,19 +143,13 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
   const [allCollapsed, setAllCollapsed] = useState(false);
   const { user } = useAuth();
 
-  // Step 4 (2026-09-19): the per-module Auto/Hybrid/Manual mode is an EDITOR-VIEW
-  // toggle only — the frontend never read _config.modes. We no longer persist it or
-  // read it from the saved config. It lives as session-only local state, seeded from
-  // DEFAULT_MODES and overridden in-memory by the dropdown. Any stale _config.modes on
-  // existing rows is ignored (not cleaned this pass).
-  const [modeOverrides, setModeOverrides] = useState<Record<string, DataMode>>({});
-
-  const bindingConfig: BindingConfig = {
-    modes: { ...getDefaultBindingConfig().modes, ...modeOverrides },
-    syncTimestamps: (config.syncTimestamps ?? {}) as Record<string, string>,
-  };
-
-  const staleCount = countStaleModules(bindingConfig, exam ?? null, edition ?? null);
+  // Stale count only — the per-module Auto/Hybrid/Manual mode dropdown was
+  // removed (R0.2). countStaleModules compares each module's last sync timestamp
+  // against its sources; the header badge remains as an informational hint.
+  const staleCount = countStaleModules(
+    { modes: {}, syncTimestamps: (config.syncTimestamps ?? {}) as Record<string, string> },
+    exam ?? null, edition ?? null,
+  );
 
   // Snapshot used for the "Live / Hidden — no content yet" badge on each module.
   // Same predicate the public site uses (sectionRegistry.hasData), so the badge
@@ -222,14 +223,9 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
     }));
     try {
       const updated = await toggleModuleEnabled(editionId, slug, enabled);
-      setConfig((prev) => ({ ...prev, enabledModules: updated.enabledModules }));
+      setConfig((prev) => ({ ...prev, enabledModules: updated.enabledModules, moduleOrder: updated.moduleOrder }));
     } catch (err) { toast.error(getErrorMessage(err)); }
   }, [editionId]);
-
-  const handleModeChange = useCallback((slug: string, mode: DataMode) => {
-    // Editor-view only — not persisted. See Step 4 note above.
-    setModeOverrides((prev) => ({ ...prev, [slug]: mode }));
-  }, []);
 
   const handleAIFill = useCallback(async (slug: string) => {
     if (!editionId || !exam) return;
@@ -252,26 +248,6 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
       setAiLoadingSlug(null);
     }
   }, [editionId, exam, edition, modules, user]);
-
-  const handleSync = useCallback(async (slug: string) => {
-    if (!editionId) return;
-    const mode = getModuleMode(bindingConfig, slug);
-    const resolved = resolveModuleContent(slug, mode, exam ?? null, edition ?? null, contentModules);
-    if (resolved.autoContent) {
-      await saveModuleContent(editionId, slug, resolved.autoContent, user?.id ?? "system");
-      // Persist syncTimestamps + order/enabled only — never `modes` (Step 4). Rebuild the
-      // config explicitly so a stale modes key on the loaded config is not re-written.
-      const newConfig: ModuleConfig = {
-        moduleOrder: config.moduleOrder,
-        enabledModules: config.enabledModules,
-        syncTimestamps: { ...config.syncTimestamps, [slug]: new Date().toISOString() },
-      };
-      setConfig(newConfig);
-      await saveModuleConfig(editionId, newConfig).catch(() => {});
-      setContentModules((prev) => ({ ...prev, [slug]: { ...resolved.autoContent!, _meta: { updatedAt: new Date().toISOString(), updatedBy: user?.id ?? "" } } }));
-      toast.success("Synced!");
-    }
-  }, [editionId, exam, edition, contentModules, config, bindingConfig, user]);
 
   const handleStatusChange = useCallback((slug: string, status: SaveStatus) => {
     setStatuses((prev) => ({ ...prev, [slug]: status }));
@@ -349,9 +325,13 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
     return Array.from(bySection.values());
   }, [orderedModules]);
 
-  // Group B reorder handler REMOVED (2026-09-19): the frontend main page renders in
-  // registry order, not _config.moduleOrder, so persisting a reorder here changed
-  // nothing on the site. The moduleOrder array is left in the data untouched.
+  // Drag-to-reorder UI was removed (2026-09-19). CORRECTED REASON (R0.3,
+  // 2026-10-04): _config.moduleOrder IS a live value — the frontend editorial
+  // block renders FROM it (EntityDetailPage ContentModulesBlock: order =
+  // config.moduleOrder ?? Object.keys; a slug missing from moduleOrder is
+  // HIDDEN). We keep writing moduleOrder (append-on-enable/save so no module
+  // with content is ever lost). Only the drag control stays removed; reordering
+  // returns with R1.
 
   if (loading) {
     return <div className="flex justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" /></div>;
@@ -369,40 +349,13 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
         isVerified={exam?.isVerified}
         allCollapsed={allCollapsed}
         onToggleCollapse={() => setAllCollapsed(!allCollapsed)}
-        onEnableAll={async () => {
-          if (!editionId) return;
-          const allSlugs = orderedModules.map((m) => m.slug);
-          const newConfig = { ...config, enabledModules: allSlugs };
-          setConfig(newConfig);
-          await saveModuleConfig(editionId, newConfig).catch(() => {});
-          toast.success("All modules enabled.");
-        }}
-        onDisableAll={async () => {
-          if (!editionId) return;
-          const newConfig = { ...config, enabledModules: [] };
-          setConfig(newConfig);
-          await saveModuleConfig(editionId, newConfig).catch(() => {});
-          toast.success("All modules disabled.");
-        }}
       />
-      <p className="text-xs text-slate-500 mb-1.5">
-        Sections are grouped by how they behave on the live page. Only <span className="font-medium">Editable content modules</span> can be reordered — that order is what the page renders.
-      </p>
-      {/* Item 8: one always-visible line explaining the per-module data mode
-          dropdown, so its meaning isn't hover-only. Accurate to dataBindingService
-          resolveModuleContent(): Auto = generated from other tabs (read-only here),
-          Hybrid = that auto content plus a manual notes field, Manual = fully
-          hand-edited here. Shown once for the panel, not per card, to preserve the
-          Item 5 collapsed/decluttered layout. */}
-      <p className="text-[11px] text-slate-400 mb-4">
-        Each module's <span className="font-medium">mode</span>: <span className="font-medium">Auto</span> pulls the content from other tabs (read-only here) · <span className="font-medium">Hybrid</span> shows that auto content plus your own notes · <span className="font-medium">Manual</span> means you edit everything here yourself.
+      <p className="text-xs text-slate-500 mb-4">
+        Sections are grouped by how they behave on the live page. A section appears on the site when it is <span className="font-medium">enabled</span> and has <span className="font-medium">content</span>; the site renders enabled sections with content in the order stored on the record.
       </p>
 
-      {/* ── Group 1: Facts you edit here (editable modules only) ──
-          Drag-to-reorder REMOVED (2026-09-19): it persisted _config.moduleOrder, but the
-          main page renders in registry order (mainSectionsForPillar), so reordering here
-          changed nothing a visitor sees. _config.moduleOrder is left in the data untouched. */}
-      <GroupHeading title="Edited here" hint="Fill these in; the main page renders them in a fixed order." />
+      {/* ── Group 1: Facts you edit here (editable modules only) ── */}
+      <GroupHeading title="Edited here" hint="Fill these in; a section with content goes live when its toggle is on." />
       <div className="mb-5 space-y-1.5">
         {editHereModules.length === 0 ? (
           <p className="text-xs text-slate-400 italic px-1 py-2">No editable modules.</p>
@@ -437,13 +390,11 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
     </div>
   );
 
-  // Shared card renderer — used by Group B (with drag handle) and Group C (without).
+  // Shared card renderer for the "Edited here" group.
   function renderModuleCard(
     mod: ModuleDefinition,
     { dragHandleProps, isDragging }: { dragHandleProps?: any; isDragging?: boolean }
   ) {
-    const mode = getModuleMode(bindingConfig, mod.slug);
-    const resolved = resolveModuleContent(mod.slug, mode, exam ?? null, edition ?? null, contentModules);
     const sectionSlug = MODULE_SLUG_TO_SECTION[mod.slug] ?? mod.slug;
     const hasLiveContent = liveView && SECTION_BY_SLUG[sectionSlug]
       ? hasData(liveView, sectionSlug)
@@ -458,13 +409,8 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
         enabled={config.enabledModules.includes(mod.slug)}
         editionId={editionId}
         content={(contentModules[mod.slug] as ModuleContentData) ?? null}
-        mode={mode}
-        isStale={resolved.isStale}
-        autoContent={resolved.autoContent}
         onToggle={(enabled) => handleToggle(mod.slug, enabled)}
-        onModeChange={(m) => handleModeChange(mod.slug, m)}
         onAIFill={handleAIFill}
-        onSync={handleSync}
         onStatusChange={handleStatusChange}
         onPendingChange={handlePendingChange}
         aiLoading={aiLoadingSlug === mod.slug}

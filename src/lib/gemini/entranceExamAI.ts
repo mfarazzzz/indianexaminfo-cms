@@ -18,6 +18,10 @@ export interface AIExamData {
   importantDates: { label: string; date: string; isUrgent: boolean }[];
   vacancy: number | null;
   status: string;
+  // R0.6: stage-1 eligibility and fee flow through to the form and R0.5 save.
+  // Shapes match exam_editions.eligibility and exam_editions.application_fee JSONB.
+  eligibility?: Record<string, unknown> | null;
+  applicationFee?: Record<string, unknown> | null;
   hasNotification: boolean;
   hasApplication: boolean;
   hasAdmitCard: boolean;
@@ -238,6 +242,9 @@ export async function generateExamDataWithAI(
     importantDates,
     vacancy: facts.vacancy,
     status: facts.status,
+    // R0.6: pass stage-1 structured eligibility/fee into the form and R0.5 save.
+    eligibility: facts.eligibility ?? null,
+    applicationFee: facts.fee ? { general: facts.fee.general, scSt: facts.fee.scSt } : null,
     hasNotification: true,
     hasApplication: true,
     hasAdmitCard: importantDates.some((d) => d.label === "Admit Card Release"),
@@ -271,6 +278,9 @@ function parseAIResponse(raw: string): AIExamData {
       importantDates: Array.isArray(data.importantDates) ? data.importantDates : [],
       vacancy: data.vacancy ?? null,
       status: data.status ?? "upcoming",
+      // R0.6: single-prompt mode has no structured fee/eligibility extraction.
+      eligibility: data.eligibility ?? null,
+      applicationFee: data.applicationFee ?? null,
       hasNotification: data.hasNotification ?? true,
       hasApplication: data.hasApplication ?? true,
       hasAdmitCard: data.hasAdmitCard ?? true,

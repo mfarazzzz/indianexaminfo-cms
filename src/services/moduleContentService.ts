@@ -53,6 +53,13 @@ export async function getModuleContent(
  * without overwriting other modules' data.
  *
  * Injects _meta with updatedAt and updatedBy automatically.
+ *
+ * R0.3 (2026-10-04): saving content also APPENDS the slug to
+ * _config.moduleOrder if missing. The frontend editorial block builds its
+ * render list FROM moduleOrder (EntityDetailPage ContentModulesBlock — a slug
+ * absent from moduleOrder is HIDDEN even when enabled). So a module with
+ * content must always be present in moduleOrder; enabledModules and the rest
+ * of the config are left untouched.
  */
 export async function saveModuleContent(
   editionId: string,
@@ -80,7 +87,14 @@ export async function saveModuleContent(
   if (readErr) throw readErr;
 
   const existing = ((current as any)?.content_modules as Record<string, unknown>) ?? {};
-  const merged = { ...existing, [moduleSlug]: contentWithMeta };
+  const merged: Record<string, unknown> = { ...existing, [moduleSlug]: contentWithMeta };
+
+  // Append the slug to moduleOrder when missing (order-preserving; never
+  // reorders, never removes, never touches enabledModules).
+  const prevConfig = (existing._config as ModuleConfig | undefined) ?? { moduleOrder: [], enabledModules: [] };
+  if (!prevConfig.moduleOrder.includes(moduleSlug)) {
+    merged._config = { ...prevConfig, moduleOrder: [...prevConfig.moduleOrder, moduleSlug] };
+  }
 
   const { error: writeErr } = await db
     .from("exam_editions")

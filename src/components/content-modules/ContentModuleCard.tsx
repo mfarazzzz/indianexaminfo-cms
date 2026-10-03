@@ -1,13 +1,19 @@
 /**
- * ContentModuleCard — Collapsible card with data mode support.
- * Shows: toggle, mode selector, AI Fill, stale indicator, expand/collapse.
- * Renders content based on mode: auto (read-only), hybrid (auto+notes), manual (full editor).
+ * ContentModuleCard — Collapsible module card.
+ * Shows: enable toggle, honest Live/Hidden badge, AI Fill, full content editor.
+ *
+ * R0.2 (2026-10-04): the Auto/Hybrid/Manual mode dropdown was REMOVED with owner
+ * approval. The mode was a session-only editor-view override (never persisted —
+ * _config.modes has no reader anywhere, frontend included) that switched the card
+ * between a read-only preview, a preview+notes, and the full editor. Every module
+ * now gets the full editor directly, which is the honest surface: what you edit
+ * here is exactly what is stored. The per-module enable toggle stays — enabledModules
+ * IS read by the frontend.
  */
 import React, { useState, useEffect } from "react";
-import { ChevronDown, ChevronRight, GripVertical, Sparkles, RefreshCw, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, GripVertical, Sparkles, Loader2 } from "lucide-react";
 import { ModuleContentEditor } from "./ModuleContentEditor";
 import type { ModuleDefinition, ModuleContentData, SaveStatus } from "@/types/modules";
-import type { DataMode } from "@/lib/modules/dataBindingService";
 import type { DragHandleProps } from "@/components/shared/DraggableList";
 
 interface Props {
@@ -15,13 +21,8 @@ interface Props {
   enabled: boolean;
   editionId: string | null;
   content: ModuleContentData | null;
-  mode: DataMode;
-  isStale: boolean;
-  autoContent: Record<string, unknown> | null;
   onToggle: (enabled: boolean) => void;
-  onModeChange: (mode: DataMode) => void;
   onAIFill: (slug: string) => void;
-  onSync: (slug: string) => void;
   onStatusChange?: (slug: string, status: SaveStatus) => void;
   /** Reports this module's unsaved (debouncing/in-flight) state up to the panel
    *  so the unsaved-changes guard treats a pending autosave as dirty. */
@@ -41,7 +42,7 @@ interface Props {
    * vacancy-details, faqs, syllabus, academic-info). Their content lives in a typed
    * column, not content_modules — so the on/off toggle is a no-op and an
    * "Off — has content" badge would be false. When set, this card renders a
-   * read-only source row (no toggle, no mode, no Off badge) that deep-links to
+   * read-only source row (no toggle, no Off badge) that deep-links to
    * the tab where the content is actually edited.
    */
   columnBacked?: { sourceTab: string; tabId: string; live?: boolean };
@@ -57,12 +58,12 @@ interface Props {
 }
 
 export function ContentModuleCard({
-  module, enabled, editionId, content, mode, isStale, autoContent,
-  onToggle, onModeChange, onAIFill, onSync, onStatusChange, onPendingChange, aiLoading, forceCollapsed,
+  module, enabled, editionId, content,
+  onToggle, onAIFill, onStatusChange, onPendingChange, aiLoading, forceCollapsed,
   hasLiveContent, columnBacked, onNavigateTab, dragHandleProps, isDragging,
 }: Props) {
   // ── Column-backed module: read-only source row ─────────────────────────────
-  // No toggle (it's a no-op), no mode, no "Off — has content" (false here). Just
+  // No toggle (it's a no-op), no "Off — has content" (false here). Just
   // the name, an honest Live/Hidden signal from the column, and a deep link to the
   // tab that actually edits this content.
   if (columnBacked) {
@@ -70,7 +71,7 @@ export function ContentModuleCard({
       <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
         <span className="text-sm text-slate-600 flex-1 min-w-0 truncate">{module.name}</span>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 font-medium shrink-0"
-          title="This section's content comes from a fixed field, not this module. The on/off toggle does not affect it.">
+          title="This section's content comes from a field in another tab, not from this module list. Edit it where the link below points.">
           from {columnBacked.sourceTab.replace(/ tab$/i, "")}
         </span>
         {columnBacked.live === true && (
@@ -98,13 +99,13 @@ export function ContentModuleCard({
     }
   }, [forceCollapsed]);
 
-  // Collapse when disabled (e.g. Disable All)
+  // Collapse when disabled (e.g. the editor turns a module off)
   useEffect(() => {
     if (!enabled) setExpanded(false);
   }, [enabled]);
 
-  const isPassThrough = ["important-dates", "news"].includes(module.slug) && mode === "auto";
-  const isFaqAuto = module.slug === "faqs" && mode === "auto";
+  const isPassThrough = ["important-dates", "news"].includes(module.slug);
+  const isFaqAuto = module.slug === "faqs";
 
   const handleToggle = () => {
     const newEnabled = !enabled;
@@ -135,7 +136,7 @@ export function ContentModuleCard({
           <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-[16px]" : "translate-x-[2px]"}`} />
         </button>
 
-        {/* Module name + stale indicator. Item 1: ml-1 gap so the toggle never
+        {/* Module name. Item 1: ml-1 gap so the toggle never
             clips the first character of the name (")verview", ":ligibility"…). */}
         <button type="button" onClick={() => enabled && setExpanded(!expanded)}
           className="flex items-center gap-2 flex-1 text-left min-w-0 ml-1" disabled={!enabled}>
@@ -167,44 +168,15 @@ export function ContentModuleCard({
           {enabled && hasLiveContent === false && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium shrink-0" title="Hidden on the live site — this section has no content yet. Fill it to make the tab, page and sitemap entry appear.">Hidden — no content yet</span>
           )}
-          {isStale && enabled && mode !== "manual" && (
-            <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title="Content may be stale" />
-          )}
-          {mode === "auto" && enabled && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium shrink-0">Auto</span>
-          )}
-          {mode === "hybrid" && enabled && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-medium shrink-0">Hybrid</span>
-          )}
         </button>
 
         {/* Controls */}
         {enabled && (
           <div className="flex items-center gap-1 shrink-0">
-            {/* Editing mode — this changes THIS EDITOR only (which fields you see),
-                not the live page. The frontend does not read _config.modes. Relabelled
-                from the old "Auto/Hybrid/Manual" data-mode that implied it affected the
-                site (it never did). */}
-            <select value={mode} onChange={(e) => onModeChange(e.target.value as DataMode)}
-              title="Editing mode — changes this editor only, not the live page. Auto shows a read-only preview pulled from other tabs; Hybrid adds a notes field; Manual lets you edit every field here."
-              aria-label="Editing mode (affects this editor only)"
-              className="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 bg-white">
-              <option value="auto">Editing: Auto (preview)</option>
-              <option value="hybrid">Editing: Hybrid (+notes)</option>
-              <option value="manual">Editing: Manual (full)</option>
-            </select>
-            {isStale && mode !== "manual" && (
-              <button type="button" onClick={() => onSync(module.slug)} title="Sync now"
-                className="p-1 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded">
-                <RefreshCw size={13} />
-              </button>
-            )}
-            {mode !== "auto" || !["important-dates", "news"].includes(module.slug) ? (
-              <button type="button" onClick={() => onAIFill(module.slug)} disabled={aiLoading} title="AI Fill"
-                className="p-1 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded disabled:opacity-50">
-                {aiLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-              </button>
-            ) : null}
+            <button type="button" onClick={() => onAIFill(module.slug)} disabled={aiLoading} title="AI Fill"
+              className="p-1 text-purple-500 hover:text-purple-700 hover:bg-purple-50 rounded disabled:opacity-50">
+              {aiLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+            </button>
             <button type="button" onClick={() => setExpanded(!expanded)} className="p-1 text-slate-400 hover:text-slate-600">
               {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
             </button>
@@ -212,119 +184,25 @@ export function ContentModuleCard({
         )}
       </div>
 
-      {/* Content area. Collapsing HIDES with CSS (`hidden`) rather than unmounting:
-          ModuleContentEditor's autosave keeps a pending edit in a 2s debounce timer with
-          NO flush-on-unmount, so unmounting a card mid-edit (collapse, or Collapse All)
-          would silently drop that edit. Staying mounted preserves the timer so the save
-          still lands. Kept mounted only while `enabled` (a disabled module has nothing to
-          edit and is toggled off deliberately). */}
       {enabled && (
         <div className={`px-4 pb-4 border-t border-slate-100${expanded ? "" : " hidden"}`}>
-          {mode === "auto" && autoContent && (
-            <div className="py-3">
-              {isPassThrough && (
-                <p className="text-xs text-blue-600 bg-blue-50 px-3 py-1.5 rounded mb-3">
-                  📌 This content is automatically pulled from the {module.slug === "important-dates" ? "Dates & Status" : "News"} tab. Edit it there.
-                </p>
-              )}
-              {isFaqAuto && (
-                <p className="text-xs text-blue-600 bg-blue-50 px-3 py-1.5 rounded mb-3">
-                  📌 FAQs are automatically pulled from the SEO tab. Edit them there or switch to Manual mode.
-                </p>
-              )}
-              <AutoContentDisplay content={autoContent} moduleSlug={module.slug} />
-            </div>
+          {isPassThrough && (
+            <p className="text-xs text-blue-600 bg-blue-50 px-3 py-1.5 rounded mt-3">
+              📌 The site reads this section from the {module.slug === "important-dates" ? "Dates & Status" : "News"} tab. What you type here is stored on this module only.
+            </p>
           )}
-          {mode === "hybrid" && (
-            <div className="py-3 space-y-4">
-              {autoContent && (
-                <div className="bg-slate-50 rounded p-3 border border-slate-100">
-                  <p className="text-[10px] uppercase text-slate-400 font-semibold mb-2">Auto-Generated</p>
-                  <AutoContentDisplay content={autoContent} moduleSlug={module.slug} />
-                </div>
-              )}
-              <div>
-                <p className="text-[10px] uppercase text-slate-500 font-semibold mb-2">Additional Notes (Manual)</p>
-                <ModuleContentEditor editionId={editionId} moduleSlug={module.slug} fields={module.fields}
-                  initialContent={content} onStatusChange={(s) => onStatusChange?.(module.slug, s)}
-                  onPendingChange={(p) => onPendingChange?.(module.slug, p)} />
-              </div>
-            </div>
+          {isFaqAuto && (
+            <p className="text-xs text-blue-600 bg-blue-50 px-3 py-1.5 rounded mt-3">
+              📌 The site reads FAQs from the SEO tab. What you type here is stored on this module only.
+            </p>
           )}
-          {mode === "manual" && (
+          <div className="py-3">
             <ModuleContentEditor editionId={editionId} moduleSlug={module.slug} fields={module.fields}
               initialContent={content} onStatusChange={(s) => onStatusChange?.(module.slug, s)}
               onPendingChange={(p) => onPendingChange?.(module.slug, p)} />
-          )}
+          </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function AutoContentDisplay({ content, moduleSlug }: { content: Record<string, unknown>; moduleSlug: string }) {
-  if (moduleSlug === "important-dates") {
-    const dates = (content.dates as any[]) ?? [];
-    if (dates.length === 0) return <p className="text-xs text-slate-400 italic">No dates available yet.</p>;
-    return (
-      <div className="space-y-1">
-        {dates.map((d: any, i: number) => (
-          <div key={i} className="flex items-center justify-between text-sm">
-            <span className="text-slate-700">{d.label}</span>
-            <span className={`font-mono text-xs ${d.isUrgent ? "text-red-600 font-semibold" : "text-slate-500"}`}>
-              {d.date ? new Date(d.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
-            </span>
-          </div>
-        ))}
-      </div>
-    );
-  }
-  if (moduleSlug === "faqs") {
-    const items = (content.items as any[]) ?? [];
-    if (items.length === 0) return <p className="text-xs text-slate-400 italic">No FAQs available. Add them in the SEO tab.</p>;
-    return (
-      <div className="space-y-2">
-        {items.map((faq: any, i: number) => (
-          <div key={i} className="border border-slate-100 rounded p-2">
-            <p className="text-sm font-medium text-slate-700">{faq.question}</p>
-            <p className="text-xs text-slate-500 mt-1 line-clamp-2">{typeof faq.answer === "string" ? faq.answer.replace(/<[^>]*>/g, "").slice(0, 150) : ""}</p>
-          </div>
-        ))}
-      </div>
-    );
-  }
-  if (moduleSlug === "overview") {
-    const body = content.body as string;
-    const summary = content.summary as string;
-    return (
-      <div>
-        {summary && <p className="text-sm text-slate-600 font-medium mb-2">{summary}</p>}
-        {body && <div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: body }} />}
-        {!body && !summary && <p className="text-xs text-slate-400 italic">No data to generate overview from yet.</p>}
-      </div>
-    );
-  }
-  // Item 2: never leak raw JSON like "items: []" into the UI. Skip empty
-  // values and render a calm empty state when nothing meaningful is present.
-  const meaningful = Object.entries(content).filter(([k, v]) => {
-    if (k === "_meta") return false;
-    if (v == null) return false;
-    if (typeof v === "string") return v.trim().length > 0;
-    if (Array.isArray(v)) return v.length > 0;
-    if (typeof v === "object") return Object.keys(v).length > 0;
-    return true;
-  });
-  if (meaningful.length === 0) {
-    return <p className="text-xs text-slate-400 italic">No content yet.</p>;
-  }
-  return (
-    <div className="space-y-1 text-sm">
-      {meaningful.map(([key, val]) => (
-        <div key={key}>
-          <span className="text-xs text-slate-400">{key}: </span>
-          <span className="text-slate-600">{typeof val === "string" ? val.slice(0, 100) : JSON.stringify(val).slice(0, 100)}</span>
-        </div>
-      ))}
     </div>
   );
 }

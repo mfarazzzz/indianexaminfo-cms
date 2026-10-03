@@ -75,6 +75,11 @@ type FormData = {
   vacancy: string;
   // Dates — full DateRow so state/verified/stage_label/type survive the round-trip.
   importantDates: DateRow[];
+  // R0.6: stage-1 eligibility and fee carried in form state for R0.5 new-record save.
+  // These JSONB objects have no dedicated editor inputs yet (R1); the form holds them
+  // for AI-fill + save round-tripping only. Omit from writes if still null/empty.
+  eligibility: Record<string, unknown> | null;
+  applicationFee: Record<string, unknown> | null;
   // Modules
   hasNotification: boolean;
   hasApplication: boolean;
@@ -151,18 +156,26 @@ export function EntranceExamEditorPage() {
   const [workflowStatus, setWorkflowStatus] = useState<ExamWorkflowStatus>("published");
   const [publishing, setPublishing] = useState(false);
   // ── Unsaved-changes guard state ────────────────────────────────────────────
-  // Local-state tabs (Modules/News/News-SEO) hold edits outside react-hook-form,
+  // Local-state tabs (Modules/News) hold edits outside react-hook-form,
   // so they report their own dirty flag up here. Aggregated with form dirtiness
   // below into a single `isDirty`. Each flag is set by comparing the tab's current
   // state to the values it was seeded from (type-and-revert clears it) — never a
   // bare "a keystroke happened" flag, so the guard doesn't fire on no-op edits.
   // NOTE: the Modules tab (ModulePanel) autosaves module content on a 2-second
-  // debounce (useModuleAutosave). Config actions (enable/mode/reorder) persist
+  // debounce (useModuleAutosave). Config actions (enable/reorder) persist
   // immediately, but a content edit has a ~2s window where it's unsaved. So the
   // Modules tab DOES feed the guard: `moduleDirty` mirrors ModulePanel's aggregate
   // "an autosave is pending" flag, closing that window without redesigning the
-  // module save model. News list and News-SEO block are manual-save and report
-  // their own compared-to-seed flags. All feed the single unsaved-changes guard.
+  // module save model. The News list is manual-save and reports its own
+  // compared-to-seed flag. All feed the single unsaved-changes guard.
+  // R0.1 (2026-10-04): the News-SEO block was removed — content_modules.newsSeo
+  // had NO reader anywhere (frontend included), so the 7 fields silently went
+  // nowhere. Existing stored data is left untouched for now.
+  // R0.5: when AI fills a NEW record (no currentEdition), the generated content_modules
+  // are stored here (not written to DB immediately). handleSave's isNew branch feeds
+  // them into the single updateEdition call after create, so one Save persists everything.
+  const pendingModulesRef = React.useRef<Record<string, unknown> | null>(null);
+
   const [moduleDirty, setModuleDirty] = useState(false);
   // Mirror of moduleDirty readable synchronously inside guard callbacks (so
   // "Save & continue" can wait for the pending module autosave to land before
@@ -170,16 +183,13 @@ export function EntranceExamEditorPage() {
   const moduleDirtyRef = React.useRef(false);
   React.useEffect(() => { moduleDirtyRef.current = moduleDirty; }, [moduleDirty]);
   const [newsDirty, setNewsDirty] = useState(false);
-  const [newsSeoDirty, setNewsSeoDirty] = useState(false);
-  // Item 3 (Group 3) — unified Save. News and News-SEO live in child-component
-  // local state; the children mirror their CURRENT value up into these refs on
-  // every change. The primary Save reads the refs to build ONE merged
-  // content_modules object and persists it in a SINGLE updateEdition call — so a
-  // News save and a News-SEO save can no longer each write a stale whole-column
-  // snapshot over the other (the old two-button race). null = the tab hasn't
-  // mounted/reported yet, so Save leaves that key untouched.
+  // Item 3 (Group 3) — unified Save. News lives in child-component local state;
+  // the child mirrors its CURRENT value up into this ref on every change. The
+  // primary Save reads the ref to build ONE merged content_modules object and
+  // persists it in a SINGLE updateEdition call — so a News save can no longer
+  // write a stale whole-column snapshot over the other surfaces. null = the tab
+  // hasn't mounted/reported yet, so Save leaves the news key untouched.
   const newsRef = React.useRef<any[] | null>(null);
-  const newsSeoRef = React.useRef<Record<string, unknown> | null>(null);
   // The pending action awaiting a Save/Discard/Cancel decision. `kind` distinguishes
   // an in-editor tab switch from an in-app route navigation (they resume differently).
   const [pendingExit, setPendingExit] = useState<
@@ -205,7 +215,9 @@ export function EntranceExamEditorPage() {
       selectionModel: "",
       isFeatured: false, editionYear: new Date().getFullYear(), editionSession: "main",
       editionStatus: "upcoming", notificationDate: "", vacancy: "",
-      importantDates: [], hasNotification: false, hasApplication: false,
+      // R0.6: no editor input yet; form holds null until AI-fill writes stage-1 data.
+      importantDates: [], eligibility: null, applicationFee: null,
+      hasNotification: false, hasApplication: false,
       hasAdmitCard: false, hasSyllabus: false, hasAnswerKey: false,
       hasResult: false, hasCutoff: false, hasCounselling: false,
       seoTitle: "", seoDescription: "", tags: "", faqs: [],
@@ -278,6 +290,9 @@ export function EntranceExamEditorPage() {
         notificationDate: data.currentEdition?.notificationDate ?? "",
         vacancy: data.currentEdition?.vacancy?.toString() ?? "",
         importantDates: mergeWithStandardDates(data.currentEdition?.importantDates ?? []),
+        // R0.6: load structured eligibility/fee from the edition JSONB columns.
+        eligibility: data.currentEdition?.eligibility ?? null,
+        applicationFee: data.currentEdition?.applicationFee ?? null,
         hasNotification: data.currentEdition?.hasNotification ?? false,
         hasApplication: data.currentEdition?.hasApplication ?? false,
         hasAdmitCard: data.currentEdition?.hasAdmitCard ?? false,
@@ -340,7 +355,10 @@ export function EntranceExamEditorPage() {
     setSaving(true);
     try {
       if (isNew) {
-        // Create new exam + first edition
+        // R0.5 (2026-10-04): the old branch returned immediately after create,
+        // discarding every AI-filled field (dates, eligibility, fee, modules, FAQs,
+        // SEO) the operator had reviewed. The corrected flow: create the draft exam
+        // + first edition, THEN persist all form state in the same Save click.
         const result = await createEntranceExam({
           name: data.name,
           shortName: data.shortName,
@@ -351,13 +369,64 @@ export function EntranceExamEditorPage() {
           conductingBody: data.conductingBody,
           officialWebsite: data.officialWebsite,
           cycleFrequency: data.cycleFrequency,
-          // Pillar decides the type at write time — backstop against a stale value.
           entityType: resolveEntityType(pillarFromUrl, data.entityType),
           selectionModel: data.selectionModel as SelectionModel,
           firstEditionYear: data.editionYear,
         });
-        toast.success(`"${data.name}" created.`);
-        // Navigate back to the correct pillar list
+
+        // Identity fields that createEntranceExam does not accept (SEO, FAQs, tags,
+        // subcategoryId, isFeatured). Write them now so the draft is complete.
+        await updateExamIdentity(result.exam.id, {
+          subcategoryId: data.subcategoryId || undefined,
+          isFeatured: data.isFeatured,
+          selectionModel: data.selectionModel as SelectionModel,
+          seoTitle: data.seoTitle || undefined,
+          seoDescription: data.seoDescription || undefined,
+          tags: data.tags ? data.tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined,
+          faqs: data.faqs?.length ? data.faqs : undefined,
+        });
+
+        // Build the full content_modules for the first edition:
+        //   - Start from the seeded config from createEntranceExam (has _config).
+        //   - Overlay AI-generated modules stored in pendingModulesRef (R0.5).
+        //   - Overlay the News tab's items if the tab was mounted (newsRef).
+        const baseContentModules: Record<string, unknown> =
+          (result.edition as any)?.content_modules ?? {};
+        const finalContentModules: Record<string, unknown> = {
+          ...baseContentModules,
+          ...(pendingModulesRef.current ?? {}),
+        };
+        if (newsRef.current !== null) {
+          // R0.10: canonical news shape { items: [...] }.
+          finalContentModules.news = { items: newsRef.current };
+        }
+
+        await updateEdition(result.edition.id, {
+          status: data.editionStatus,
+          notificationDate: data.notificationDate || null,
+          vacancy: data.vacancy ? parseInt(data.vacancy) : null,
+          importantDates: data.importantDates.filter((d: any) => d.date && d.date.trim() !== ""),
+          eligibility: data.eligibility ?? undefined,
+          applicationFee: data.applicationFee ?? undefined,
+          hasNotification: data.hasNotification,
+          hasApplication: data.hasApplication,
+          hasAdmitCard: data.hasAdmitCard,
+          hasSyllabus: data.hasSyllabus,
+          hasAnswerKey: data.hasAnswerKey,
+          hasResult: data.hasResult,
+          hasCutoff: data.hasCutoff,
+          hasCounselling: data.hasCounselling,
+          // Only write content_modules if there's something beyond the seeded _config.
+          ...(Object.keys(finalContentModules).length > 1 || pendingModulesRef.current || newsRef.current !== null
+            ? { contentModules: finalContentModules }
+            : {}),
+        });
+
+        // Clear the pending modules now that they've been persisted.
+        pendingModulesRef.current = null;
+
+        toast.success(`"${data.name}" created as Draft.`);
+        // Navigate to the freshly saved record (all form state is now on disk).
         const basePath = window.location.pathname.split("/new")[0] || "/entrance-exams";
         navigate(`${basePath}/${result.exam.id}`, { replace: true });
         return;
@@ -385,19 +454,18 @@ export function EntranceExamEditorPage() {
         faqs: data.faqs,
       });
 
-      // Item 3 — build ONE merged content_modules from the live News / News-SEO
-      // child state (refs), overlaying the current edition's existing modules.
-      // Written in the SAME updateEdition call below (single whole-column write),
-      // which removes the stale-snapshot cross-overwrite between News and News-SEO.
-      // `undefined` when neither tab has reported, so we don't touch the column.
+      // Item 3 — build ONE merged content_modules from the live News child state
+      // (ref), overlaying the current edition's existing modules. Written in the
+      // SAME updateEdition call below (single whole-column write), which removes
+      // the stale-snapshot cross-overwrite. R0.1: the newsSeo overlay is gone —
+      // nothing writes content_modules.newsSeo anymore.
+      // `undefined` when the tab hasn't reported, so we don't touch the column.
+      // R0.10: canonical news shape is { items: [...] }. The tab reports the items
+      // array; wrap it into the canonical form before writing to the column.
       const buildMergedContentModules = (): Record<string, unknown> | undefined => {
-        if (newsRef.current === null && newsSeoRef.current === null) return undefined;
+        if (newsRef.current === null) return undefined;
         const base = (currentEdition?.contentModules ?? {}) as Record<string, unknown>;
-        return {
-          ...base,
-          ...(newsRef.current !== null ? { news: newsRef.current } : {}),
-          ...(newsSeoRef.current !== null ? { newsSeo: newsSeoRef.current } : {}),
-        };
+        return { ...base, news: { items: newsRef.current } };
       };
 
       // Update current edition (if one exists)
@@ -408,6 +476,10 @@ export function EntranceExamEditorPage() {
           notificationDate: data.notificationDate || null,
           vacancy: data.vacancy ? parseInt(data.vacancy) : null,
           importantDates: data.importantDates.filter((d: any) => d.date && d.date.trim() !== ""),
+          // R0.6: write eligibility/fee only when the form holds a non-null value.
+          // `undefined` means "don't touch this column" — existing DB data is safe.
+          eligibility: data.eligibility ?? undefined,
+          applicationFee: data.applicationFee ?? undefined,
           hasNotification: data.hasNotification,
           hasApplication: data.hasApplication,
           hasAdmitCard: data.hasAdmitCard,
@@ -416,7 +488,11 @@ export function EntranceExamEditorPage() {
           hasResult: data.hasResult,
           hasCutoff: data.hasCutoff,
           hasCounselling: data.hasCounselling,
-          faqs: data.faqs.filter((f: any) => f.question && f.question.trim() !== ""),
+          // R0.8 (2026-10-04): the FAQs shadow write to exam_editions.faqs is
+          // STOPPED. The frontend reads exams.faqs only (examService maps row.faqs
+          // from the exams table); exam_editions.faqs had no reader. The canonical
+          // write to exams.faqs (updateExamIdentity above) stays. No data change —
+          // existing edition faqs values are left as they are.
           ...(mergedModules !== undefined ? { contentModules: mergedModules } : {}),
         });
       }
@@ -429,6 +505,9 @@ export function EntranceExamEditorPage() {
           notificationDate: data.notificationDate || null,
           vacancy: data.vacancy ? parseInt(data.vacancy) : null,
           importantDates: data.importantDates.filter((d: any) => d.date && d.date.trim() !== ""),
+          // R0.6: eligibility/fee (see above).
+          eligibility: data.eligibility ?? undefined,
+          applicationFee: data.applicationFee ?? undefined,
           hasNotification: data.hasNotification,
           hasApplication: data.hasApplication,
           hasAdmitCard: data.hasAdmitCard,
@@ -437,7 +516,7 @@ export function EntranceExamEditorPage() {
           hasResult: data.hasResult,
           hasCutoff: data.hasCutoff,
           hasCounselling: data.hasCounselling,
-          faqs: data.faqs.filter((f: any) => f.question && f.question.trim() !== ""),
+          // R0.8: no edition faqs shadow write (see above).
           ...(mergedModulesDraft !== undefined ? { contentModules: mergedModulesDraft } : {}),
         });
         await activateEdition(draftEdition.id);
@@ -446,10 +525,9 @@ export function EntranceExamEditorPage() {
       } else {
         toast.success("Saved successfully.");
       }
-      // Unified Save persisted News + News-SEO too — clear their local dirty flags.
+      // Unified Save persisted News too — clear its local dirty flag.
       // (loadExam() below re-seeds the child tabs from the freshly saved edition.)
       setNewsDirty(false);
-      setNewsSeoDirty(false);
       await loadExam();
     } catch (err) {
       toast.error("Save failed: " + getErrorMessage(err));
@@ -463,17 +541,16 @@ export function EntranceExamEditorPage() {
   // compares against the loaded defaults, so typing a value and reverting it is
   // NOT dirty), plus the local-state tabs report their own compared-to-seed flags.
   const formDirty = form.formState.isDirty;
-  const isDirty = formDirty || moduleDirty || newsDirty || newsSeoDirty;
+  const isDirty = formDirty || moduleDirty || newsDirty;
 
   // Human label for the surface that's dirty — named in the dialog so the editor
   // knows what they'd lose. Prefer the active tab when it's the dirty one.
   const dirtyWhere = (() => {
     if (activeTab === "modules" && moduleDirty) return "Modules";
     if (activeTab === "news" && newsDirty) return "News";
-    if (activeTab === "seo" && (newsSeoDirty || formDirty)) return "SEO";
+    if (activeTab === "seo" && formDirty) return "SEO";
     if (moduleDirty) return "Modules";
     if (newsDirty) return "News";
-    if (newsSeoDirty) return "News SEO";
     const LABELS: Record<string, string> = {
       identity: "Identity", resources: "Resources", syllabus: "Syllabus",
       edition: "Dates & Status", modules: "Modules", news: "News",
@@ -522,7 +599,6 @@ export function EntranceExamEditorPage() {
   // it false here would lie about whether the edit was actually persisted.
   const clearLocalDirty = useCallback(() => {
     setNewsDirty(false);
-    setNewsSeoDirty(false);
   }, []);
 
   const guardProceed = useCallback(() => {
@@ -551,13 +627,12 @@ export function EntranceExamEditorPage() {
     setGuardSaving(true);
     try {
       // Item 3: the primary Save (handleSave) is now unified — it persists the RHF
-      // form fields AND the News / News-SEO local state (merged into one
-      // content_modules write). So "Save & continue" must run it whenever ANY of
-      // those surfaces is dirty, not only when the RHF form is dirty — otherwise a
-      // News-only edit wouldn't be saved before leaving. handleSave reads the live
-      // newsRef/newsSeoRef, so it captures the current values regardless of which
-      // tab is active.
-      if (formDirty || newsDirty || newsSeoDirty) {
+      // form fields AND the News local state (merged into one content_modules
+      // write). So "Save & continue" must run it whenever ANY of those surfaces is
+      // dirty, not only when the RHF form is dirty — otherwise a News-only edit
+      // wouldn't be saved before leaving. handleSave reads the live newsRef, so it
+      // captures the current value regardless of which tab is active.
+      if (formDirty || newsDirty) {
         await form.handleSubmit(handleSave)();
       }
       // Modules: a content edit autosaves on a 2s debounce. If one is still pending
@@ -576,7 +651,7 @@ export function EntranceExamEditorPage() {
     } finally {
       setGuardSaving(false);
     }
-  }, [formDirty, newsDirty, newsSeoDirty, form, clearLocalDirty, guardProceed]);
+  }, [formDirty, newsDirty, form, clearLocalDirty, guardProceed]);
 
   const handleStartNewEdition = async (year: number, session: CycleSession, editionLabel?: string) => {
     try {
@@ -716,6 +791,24 @@ export function EntranceExamEditorPage() {
         }
       }
 
+      // R0.6: eligibility and application fee — fill only when the form holds no value.
+      // Populated from Stage-1 structured extraction; carried in form state for the
+      // R0.5 single-save (new records) and written by the existing-record save path.
+      if (data.eligibility && Object.keys(data.eligibility).length > 0) {
+        const curElig = cur.eligibility;
+        if (!curElig || Object.keys(curElig).length === 0) {
+          form.setValue("eligibility", data.eligibility);
+          filledEdition.eligibility = data.eligibility;
+        }
+      }
+      if (data.applicationFee && Object.keys(data.applicationFee).length > 0) {
+        const curFee = cur.applicationFee;
+        if (!curFee || Object.keys(curFee).length === 0) {
+          form.setValue("applicationFee", data.applicationFee);
+          filledEdition.applicationFee = data.applicationFee;
+        }
+      }
+
       // SEO — fill only when blank.
       if (data.seoTitle && isBlank(cur.seoTitle)) { form.setValue("seoTitle", data.seoTitle); filledIdentity.seoTitle = data.seoTitle; }
       if (data.seoDescription && isBlank(cur.seoDescription)) { form.setValue("seoDescription", data.seoDescription); filledIdentity.seoDescription = data.seoDescription; }
@@ -723,12 +816,19 @@ export function EntranceExamEditorPage() {
       if (data.faqs.length > 0 && (cur.faqs?.length ?? 0) === 0) { replaceFaqs(data.faqs); filledIdentity.faqs = data.faqs; }
 
       // Content modules — merge onto existing (fills gaps, existing keys win via
-      // spread order: existing last would clobber, so spread AI first then existing).
+      // spread order: AI first then existing so existing values are preserved).
+      // R0.5: on a NEW record (no currentEdition), store in pendingModulesRef so
+      // handleSave's single-save persists them after create.
       let modulesToSave: Record<string, unknown> | null = null;
-      if (currentEdition && data.contentModules && Object.keys(data.contentModules).length > 0) {
-        const existing = (currentEdition.contentModules ?? {}) as Record<string, unknown>;
-        // AI first, existing second → existing values are preserved on key clash.
-        modulesToSave = { ...data.contentModules, ...existing };
+      if (data.contentModules && Object.keys(data.contentModules).length > 0) {
+        if (currentEdition) {
+          const existing = (currentEdition.contentModules ?? {}) as Record<string, unknown>;
+          modulesToSave = { ...data.contentModules, ...existing };
+        } else {
+          // New record — defer the write to handleSave.
+          pendingModulesRef.current = { ...data.contentModules };
+          modulesToSave = pendingModulesRef.current;
+        }
       }
 
       // Persist EXACTLY what we filled (empty-only). Nothing here can overwrite an
@@ -1175,7 +1275,7 @@ export function EntranceExamEditorPage() {
         />}
         {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} onDirtyChange={setModuleDirty} entityType={watchedEntityType} selectionModel={watchedSelectionModel} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
         {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onDirtyChange={setNewsDirty} onNewsChange={(n) => { newsRef.current = n; }} />}
-        {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onNewsSeoDirtyChange={setNewsSeoDirty} onNewsSeoChange={(s) => { newsSeoRef.current = s; }} />}
+        {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
         {activeTab === "editions" && <HistoryTab editions={editions}
           onDelete={async (edId, label) => {
             if (!confirm(`Delete edition "${label}"? This cannot be undone.`)) return;
@@ -1548,7 +1648,7 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
         <div className="flex items-center justify-between mb-2">
           <div>
             <label className="text-xs font-medium text-slate-600">Important Dates</label>
-            <p className="text-xs text-slate-400">Leave date blank if not yet announced — blank dates won't appear on frontend. Drag to reorder.</p>
+            <p className="text-xs text-slate-400">Leave a date blank if it hasn't been announced yet — blank dates won't appear on the site. Drag to reorder.</p>
           </div>
           <button type="button" onClick={() => appendDate({ label: "", date: "", isUrgent: false })}
             className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add Custom Date</button>
@@ -1564,6 +1664,17 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
                   className="flex-1 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
                 <input {...form.register(`importantDates.${i}.date`)} type="date"
                   className="w-40 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
+                {/* R0.4: state is the field the site reads to determine cancelled / postponed. */}
+                <select {...form.register(`importantDates.${i}.state`)}
+                  className="w-28 rounded border border-slate-200 px-2 py-1.5 text-xs bg-white text-slate-700"
+                  title="Set this date event's confirmation state. Cancelled or Postponed on a key date changes the status shown on the site.">
+                  <option value="">— State —</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="expected">Expected</option>
+                  <option value="tba">TBA</option>
+                  <option value="postponed">Postponed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
                 <label className="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap">
                   <input type="checkbox" {...form.register(`importantDates.${i}.isUrgent`)} className="rounded" /> Urgent
                 </label>
@@ -1579,251 +1690,26 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
   );
 }
 
-function ModulesTab({ form }: { form: any }) {
-  const modules = [
-    { name: "hasNotification", label: "Notification" },
-    { name: "hasApplication", label: "Application / Registration" },
-    { name: "hasAdmitCard", label: "Admit Card" },
-    { name: "hasSyllabus", label: "Syllabus" },
-    { name: "hasAnswerKey", label: "Answer Key" },
-    { name: "hasResult", label: "Result" },
-    { name: "hasCutoff", label: "Cutoff" },
-    { name: "hasCounselling", label: "Counselling" },
-  ];
-
-  return (
-    <div className="space-y-2">
-      <p className="text-xs text-slate-500 mb-3">Toggle which lifecycle content is available for this edition.</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-        {modules.map((m) => (
-          <label key={m.name} className="flex items-center gap-2 p-3 rounded border border-slate-200 hover:border-blue-200 cursor-pointer transition-colors">
-            <input type="checkbox" {...form.register(m.name)} className="rounded" />
-            <span className="text-sm text-slate-700">{m.label}</span>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Content Modules Tab ────────────────────────────────────────────────────
-
-const STEP_GUIDE_MODULES = [
-  { key: "howToApply", title: "How to Apply" },
-  { key: "howToDownloadAdmitCard", title: "How to Download Admit Card" },
-  { key: "howToCheckResult", title: "How to Check Result" },
-  { key: "howToDownloadAnswerKey", title: "How to Download Answer Key" },
-  { key: "howToDownloadNotification", title: "How to Download Notification" },
-  { key: "howToFillApplication", title: "How to Fill Application Form" },
-  { key: "howToPayFee", title: "How to Pay Application Fee" },
-  { key: "howToCorrectApplication", title: "How to Correct Application Form" },
-  { key: "howToRecoverLogin", title: "How to Recover Login Details" },
-];
-
-function ContentModulesTab({ editionId, contentModules, onSave }: { editionId: string | null; contentModules: Record<string, unknown>; onSave: (modules: Record<string, unknown>) => Promise<void> }) {
-  const [modules, setModules] = React.useState<Record<string, any>>(contentModules);
-  const [saving, setSaving] = React.useState(false);
-  const [expandedSection, setExpandedSection] = React.useState<string | null>(null);
-
-  const updateModule = (key: string, value: any) => {
-    setModules((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try { await onSave(modules); } finally { setSaving(false); }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-slate-500">Structured content modules for this edition. AI fills these automatically, or edit manually.</p>
-        <button type="button" onClick={handleSave} disabled={saving || !editionId}
-          className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">
-          {saving ? "Saving..." : "Save Content"}
-        </button>
-      </div>
-
-      {/* Step-by-Step Guides */}
-      <div className="border border-slate-200 rounded-lg">
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
-          <h3 className="text-sm font-semibold text-slate-700">📋 Step-by-Step Guides</h3>
-        </div>
-        <div className="divide-y divide-slate-100">
-          {STEP_GUIDE_MODULES.map((guide) => {
-            const data = modules[guide.key] as { title?: string; steps?: any[] } | undefined;
-            const stepCount = data?.steps?.length ?? 0;
-            const isExpanded = expandedSection === guide.key;
-
-            return (
-              <div key={guide.key}>
-                <button type="button" onClick={() => setExpandedSection(isExpanded ? null : guide.key)}
-                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50">
-                  <span className="text-sm text-slate-700">{guide.title}</span>
-                  <span className="text-xs text-slate-400">{stepCount > 0 ? `${stepCount} steps` : "Empty"}</span>
-                </button>
-                {isExpanded && (
-                  <div className="px-4 pb-3 space-y-2">
-                    {(data?.steps ?? []).map((step: any, i: number) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <span className="text-xs font-bold text-slate-400 mt-1.5 w-5">{step.order ?? i + 1}.</span>
-                        <input value={step.text ?? ""} onChange={(e) => {
-                          const newSteps = [...(data?.steps ?? [])];
-                          newSteps[i] = { ...newSteps[i], text: e.target.value };
-                          updateModule(guide.key, { ...data, title: data?.title ?? guide.title, steps: newSteps });
-                        }} className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Step description" />
-                        <button type="button" onClick={() => {
-                          const newSteps = (data?.steps ?? []).filter((_: any, idx: number) => idx !== i);
-                          updateModule(guide.key, { ...data, steps: newSteps });
-                        }} className="text-red-400 hover:text-red-600 mt-1"><Trash2 size={14} /></button>
-                      </div>
-                    ))}
-                    <button type="button" onClick={() => {
-                      const newSteps = [...(data?.steps ?? []), { order: (data?.steps?.length ?? 0) + 1, text: "" }];
-                      updateModule(guide.key, { title: data?.title ?? guide.title, steps: newSteps });
-                    }} className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add Step</button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Exam Pattern */}
-      <div className="border border-slate-200 rounded-lg">
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
-          <h3 className="text-sm font-semibold text-slate-700">📝 Exam Pattern</h3>
-        </div>
-        <div className="p-4 space-y-3">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div>
-              <label className="text-xs text-slate-500">Mode</label>
-              <input value={(modules.examPattern as any)?.mode ?? ""} onChange={(e) => updateModule("examPattern", { ...modules.examPattern, mode: e.target.value })}
-                className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Online CBT" />
-            </div>
-            <div>
-              <label className="text-xs text-slate-500">Duration</label>
-              <input value={(modules.examPattern as any)?.duration ?? ""} onChange={(e) => updateModule("examPattern", { ...modules.examPattern, duration: e.target.value })}
-                className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="3 hours" />
-            </div>
-            <div>
-              <label className="text-xs text-slate-500">Total Marks</label>
-              <input type="number" value={(modules.examPattern as any)?.totalMarks ?? ""} onChange={(e) => updateModule("examPattern", { ...modules.examPattern, totalMarks: parseInt(e.target.value) || 0 })}
-                className="w-full rounded border border-slate-200 px-2 py-1 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs text-slate-500">Marking Scheme</label>
-              <input value={(modules.examPattern as any)?.markingScheme ?? ""} onChange={(e) => updateModule("examPattern", { ...modules.examPattern, markingScheme: e.target.value })}
-                className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="+4 / -1" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Eligibility */}
-      <div className="border border-slate-200 rounded-lg">
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
-          <h3 className="text-sm font-semibold text-slate-700">✅ Eligibility</h3>
-        </div>
-        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-slate-500">Qualification</label>
-            <input value={(modules.eligibility as any)?.qualification ?? ""} onChange={(e) => updateModule("eligibility", { ...modules.eligibility, qualification: e.target.value })}
-              className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Graduate with 50% marks" />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500">Age Limit</label>
-            <input value={(modules.eligibility as any)?.ageLimit ?? ""} onChange={(e) => updateModule("eligibility", { ...modules.eligibility, ageLimit: e.target.value })}
-              className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="No age limit" />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500">Attempts</label>
-            <input value={(modules.eligibility as any)?.attempts ?? ""} onChange={(e) => updateModule("eligibility", { ...modules.eligibility, attempts: e.target.value })}
-              className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="No limit" />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500">Nationality</label>
-            <input value={(modules.eligibility as any)?.nationality ?? ""} onChange={(e) => updateModule("eligibility", { ...modules.eligibility, nationality: e.target.value })}
-              className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Indian / NRI / PIO" />
-          </div>
-        </div>
-      </div>
-
-      {/* Application Fee */}
-      <div className="border border-slate-200 rounded-lg">
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
-          <h3 className="text-sm font-semibold text-slate-700">💰 Application Fee</h3>
-        </div>
-        <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-          {["general", "obc", "sc", "st"].map((cat) => (
-            <div key={cat}>
-              <label className="text-xs text-slate-500 capitalize">{cat}</label>
-              <input type="number" value={(modules.applicationFee as any)?.[cat] ?? ""} onChange={(e) => updateModule("applicationFee", { ...modules.applicationFee, [cat]: parseInt(e.target.value) || 0 })}
-                className="w-full rounded border border-slate-200 px-2 py-1 text-sm" placeholder="₹" />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Highlights */}
-      <div className="border border-slate-200 rounded-lg">
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-700">⭐ Highlights</h3>
-          <button type="button" onClick={() => updateModule("highlights", [...(modules.highlights ?? []), ""])}
-            className="text-xs text-blue-600 font-medium">+ Add</button>
-        </div>
-        <div className="p-4 space-y-2">
-          {((modules.highlights as string[]) ?? []).map((h, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input value={h} onChange={(e) => {
-                const arr = [...(modules.highlights as string[] ?? [])];
-                arr[i] = e.target.value;
-                updateModule("highlights", arr);
-              }} className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Key highlight" />
-              <button type="button" onClick={() => updateModule("highlights", (modules.highlights as string[]).filter((_, idx) => idx !== i))}
-                className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-            </div>
-          ))}
-          {(!modules.highlights || (modules.highlights as string[]).length === 0) && <p className="text-xs text-slate-400 italic">No highlights yet.</p>}
-        </div>
-      </div>
-
-      {/* Important Links */}
-      <div className="border border-slate-200 rounded-lg">
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-700">🔗 Important Links</h3>
-          <button type="button" onClick={() => updateModule("importantLinks", [...(modules.importantLinks ?? []), { label: "", url: "", isOfficial: true, type: "other" }])}
-            className="text-xs text-blue-600 font-medium">+ Add Link</button>
-        </div>
-        <div className="p-4 space-y-2">
-          {((modules.importantLinks as any[]) ?? []).map((link, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input value={link.label ?? ""} onChange={(e) => {
-                const arr = [...(modules.importantLinks as any[])];
-                arr[i] = { ...arr[i], label: e.target.value };
-                updateModule("importantLinks", arr);
-              }} className="w-40 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="Label" />
-              <input value={link.url ?? ""} onChange={(e) => {
-                const arr = [...(modules.importantLinks as any[])];
-                arr[i] = { ...arr[i], url: e.target.value };
-                updateModule("importantLinks", arr);
-              }} className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="https://..." />
-              <button type="button" onClick={() => updateModule("importantLinks", (modules.importantLinks as any[]).filter((_, idx) => idx !== i))}
-                className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-            </div>
-          ))}
-          {(!modules.importantLinks || (modules.importantLinks as any[]).length === 0) && <p className="text-xs text-slate-400 italic">No links yet.</p>}
-        </div>
-      </div>
-    </div>
-  );
-}
+// R0.7 (2026-10-04): the old in-file ModulesTab / STEP_GUIDE_MODULES / ContentModulesTab
+// were DEAD — the tabs array (:1015) always renders ModulePanel for modules and never
+// imported these three. ~240 lines of never-rendered JSX removed.
 
 // ── News Tab ───────────────────────────────────────────────────────────────
 
+// ── News section tolerant reader (R0.10) ────────────────────────────────────
+// The canonical shape is content_modules.news = { items: [...] }.
+// Legacy records may store a bare array: content_modules.news = [...].
+// Always return an array of items, regardless of which shape is on disk.
+function readNewsSection(contentModules: Record<string, unknown>): any[] {
+  const raw = contentModules?.news as unknown;
+  if (Array.isArray(raw)) return raw;                         // legacy bare array
+  if (raw && typeof raw === "object" && Array.isArray((raw as any).items))
+    return (raw as any).items;                                // canonical { items }
+  return [];                                                   // nothing yet
+}
+
 function NewsTab({ editionId, contentModules, onNewsChange, onDirtyChange }: { editionId: string | null; contentModules: Record<string, unknown>; onNewsChange?: (news: any[] | null) => void; onDirtyChange?: (dirty: boolean) => void }) {
-  const [news, setNews] = React.useState<any[]>((contentModules.news as any[]) ?? []);
+  const [news, setNews] = React.useState<any[]>(() => readNewsSection(contentModules));
   const [editingIdx, setEditingIdx] = React.useState<number | null>(null);
   const [draft, setDraft] = React.useState({ title: "", content: "", excerpt: "", tags: "", isFeatured: false, featureImage: "" });
 
@@ -1841,7 +1727,7 @@ function NewsTab({ editionId, contentModules, onNewsChange, onDirtyChange }: { e
 
   // Dirty = saved news list changed from its seed, OR a new-item draft has typed
   // content not yet added. Compared by value (JSON) so type-and-revert clears it.
-  const seedRef = React.useRef(JSON.stringify((contentModules.news as any[]) ?? []));
+  const seedRef = React.useRef(JSON.stringify(readNewsSection(contentModules)));
   React.useEffect(() => {
     const listChanged = JSON.stringify(news) !== seedRef.current;
     const draftHasContent = !!(draft.title.trim() || draft.content.trim() || draft.excerpt.trim());
@@ -1975,37 +1861,10 @@ function NewsTab({ editionId, contentModules, onNewsChange, onDirtyChange }: { e
   );
 }
 
-function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModules, onNewsSeoChange, onNewsSeoDirtyChange }: { form: any; faqFields: any[]; appendFaq: (v: any) => void; removeFaq: (i: number) => void; editionId: string | null; contentModules: Record<string, unknown>; onNewsSeoChange?: (newsSeo: Record<string, unknown> | null) => void; onNewsSeoDirtyChange?: (dirty: boolean) => void }) {
-  const existingSeo = (contentModules.newsSeo as any) ?? {};
-  const initialNewsSeo = {
-    newsKeywords: existingSeo.newsKeywords ?? "",
-    standout: existingSeo.standout ?? "",
-    syndicationSource: existingSeo.syndicationSource ?? "",
-    maxImagePreview: existingSeo.maxImagePreview ?? "large",
-    robotsNewsTag: existingSeo.robotsNewsTag ?? "",
-    googleNewsCategory: existingSeo.googleNewsCategory ?? "",
-    discoverOptIn: existingSeo.discoverOptIn ?? true,
-  };
-  const [newsSeo, setNewsSeo] = React.useState(initialNewsSeo);
-
-  // Item 3: mirror the CURRENT news-SEO block up to the editor on every change so
-  // the primary Save reads live state. Persistence is the editor's single Save —
-  // no separate "Save News SEO" button.
-  React.useEffect(() => { onNewsSeoChange?.(newsSeo); }, [newsSeo, onNewsSeoChange]);
-  // Post-audit fix (symmetric to NewsTab): reset the editor's newsSeoRef to null on
-  // unmount, so a stale news-SEO snapshot from a now-unmounted tab can't overwrite a
-  // fresher server value on a later Save. null = "leave the server's newsSeo untouched".
-  React.useEffect(() => () => onNewsSeoChange?.(null), [onNewsSeoChange]);
-
-  // Report ONLY the local news-SEO block's dirtiness (the standard SEO fields above
-  // are react-hook-form and are already tracked by the page's form.isDirty). Compared
-  // by value against the seed, so type-and-revert clears it.
-  const seedRef = React.useRef(JSON.stringify(initialNewsSeo));
-  React.useEffect(() => {
-    onNewsSeoDirtyChange?.(JSON.stringify(newsSeo) !== seedRef.current);
-  }, [newsSeo, onNewsSeoDirtyChange]);
-  React.useEffect(() => () => onNewsSeoDirtyChange?.(false), [onNewsSeoDirtyChange]);
-
+// R0.1 (2026-10-04): the "News SEO (Google News & Discover)" block was removed
+// from this tab. Its 7 fields wrote content_modules.newsSeo, which has NO reader
+// anywhere — not the CMS, not the frontend — so they were a phantom surface.
+function SEOTab({ form, faqFields, appendFaq, removeFaq }: { form: any; faqFields: any[]; appendFaq: (v: any) => void; removeFaq: (i: number) => void }) {
   return (
     <div className="space-y-6">
       {/* Standard SEO */}
@@ -2016,69 +1875,6 @@ function SEOTab({ form, faqFields, appendFaq, removeFaq, editionId, contentModul
           <textarea {...form.register("seoDescription")} rows={3} placeholder="Meta description..." className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" />
         </div>
         <Field label="Tags (comma-separated)" name="tags" form={form} placeholder="cat, mba, management, entrance" />
-      </div>
-
-      {/* Google News & Discover SEO */}
-      <div className="border border-slate-200 rounded-lg">
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-700">📰 News SEO (Google News & Discover)</h3>
-          {/* Item 3: no separate "Save News SEO" button — this block is persisted by
-              the editor's primary Save (top-right), in the same write as everything else. */}
-          <span className="text-[11px] text-slate-400 whitespace-nowrap">Saved with the main <span className="font-medium">Save</span> button (top-right).</span>
-        </div>
-        <div className="p-4 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">News Keywords</label>
-            <input value={newsSeo.newsKeywords} onChange={(e) => setNewsSeo({ ...newsSeo, newsKeywords: e.target.value })}
-              className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="comma-separated keywords for Google News (max 10)" />
-            <p className="text-xs text-slate-400 mt-0.5">Used in news_keywords meta tag for Google News indexing</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Google News Category</label>
-              <select value={newsSeo.googleNewsCategory} onChange={(e) => setNewsSeo({ ...newsSeo, googleNewsCategory: e.target.value })}
-                className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
-                <option value="">Select category</option>
-                <option value="Education">Education</option>
-                <option value="India">India</option>
-                <option value="Science">Science</option>
-                <option value="Technology">Technology</option>
-                <option value="Business">Business</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Max Image Preview</label>
-              <select value={newsSeo.maxImagePreview} onChange={(e) => setNewsSeo({ ...newsSeo, maxImagePreview: e.target.value })}
-                className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
-                <option value="large">Large (recommended for Discover)</option>
-                <option value="standard">Standard</option>
-                <option value="none">None</option>
-              </select>
-              <p className="text-xs text-slate-400 mt-0.5">Large images improve visibility in Google Discover</p>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Standout Tag URL</label>
-            <input value={newsSeo.standout} onChange={(e) => setNewsSeo({ ...newsSeo, standout: e.target.value })}
-              className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="URL of the original story (if this is original reporting)" />
-            <p className="text-xs text-slate-400 mt-0.5">Google News standout tag for original journalism credit</p>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Syndication Source</label>
-            <input value={newsSeo.syndicationSource} onChange={(e) => setNewsSeo({ ...newsSeo, syndicationSource: e.target.value })}
-              className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="Original source URL if content is syndicated" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Robots News Directives</label>
-            <input value={newsSeo.robotsNewsTag} onChange={(e) => setNewsSeo({ ...newsSeo, robotsNewsTag: e.target.value })}
-              className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm" placeholder="e.g. noindex, nosnippet (leave empty for default indexing)" />
-            <p className="text-xs text-slate-400 mt-0.5">Controls how Google News indexes this content</p>
-          </div>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={newsSeo.discoverOptIn} onChange={(e) => setNewsSeo({ ...newsSeo, discoverOptIn: e.target.checked })} className="rounded" />
-            Opt-in to Google Discover (ensure large featured image is set)
-          </label>
-        </div>
       </div>
 
       {/* FAQs */}
@@ -2270,7 +2066,7 @@ function AIFillDialog({ onGenerate, onCancel, examName }: { onGenerate: (rawCont
 
         <div className="bg-purple-50 border border-purple-100 rounded p-3">
           <p className="text-xs text-purple-700">
-            <strong>What AI will generate:</strong> Important dates, status, eligibility, fees, vacancy, all module flags, SEO title & description (Google Discover optimized), tags, and 6+ FAQs targeting featured snippets.
+            <strong>What AI will generate:</strong> Important dates, status, eligibility, fees, vacancy, module flags, SEO title &amp; description, tags, and FAQs. The AI fills blank fields only — it never overwrites a value you already set.
           </p>
         </div>
 

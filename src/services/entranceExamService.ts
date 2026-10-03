@@ -396,11 +396,11 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
       // status DROPPED from exams (step 4) — set on the edition insert below.
       is_featured: false,
       // workflow_status is the publish source of truth; is_published derives from it.
-      // Owner S1 item 4: NEW ENTRANCE RECORDS START AS DRAFT — publishing is an explicit
-      // editor action, never a side effect of create. Other pillars routed through this
-      // shared create keep their current behaviour UNCHANGED pending the owner's review
-      // of the item-4 report (they are listed there, not silently flipped).
-      workflow_status: pillarForCreate === "entrance-exam" ? "draft" : "published",
+      // R0.12 (2026-10-04): ALL exam pillars now start as DRAFT on create. Publishing
+      // is always an explicit editor action (owner: "draft-on-create for every exam
+      // pillar, not only entrance"). The old branch left non-entrance records live on
+      // the site immediately after creation.
+      workflow_status: "draft",
     })
     .select(DETAIL_SELECT)
     .single();

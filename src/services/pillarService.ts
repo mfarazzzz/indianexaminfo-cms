@@ -171,7 +171,9 @@ export function createPillarService(pillar: Pillar) {
         official_website: normalizeUrlOrThrow(input.officialWebsite), cycle_frequency: input.cycleFrequency ?? "annual",
         // status DROPPED from exams (step 4) — set on the edition insert below.
         // workflow_status is the publish source of truth; is_published derives from it.
-        is_featured: false, workflow_status: "published",
+        // R0.12 (2026-10-04): ALL pillars start as DRAFT — publishing is an explicit
+        // editor action, never a side effect of create.
+        is_featured: false, workflow_status: "draft",
       }).select(DETAIL_SELECT).single();
       if (examErr) throw examErr;
 

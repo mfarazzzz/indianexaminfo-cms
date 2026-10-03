@@ -61,7 +61,7 @@ describe('generateOverviewAuto — the category sentence (S1 item 5)', () => {
   it('writes the display name with correct casing and the right article — never "a exam"', () => {
     const out = generateOverviewAuto(exam(), null) as { body: string }
     expect(out.body).toContain('It is a Teacher Education exam.')
-    expect(out.body).not.toMatch(/\ba (?:exam|  exam)\b/)
+    expect(out.body).not.toMatch(/\ba\s+exam\b/)
   })
 
   it('keeps an ampersand in the category name verbatim', () => {
