@@ -1,0 +1,52 @@
+-- ══════════════════════════════════════════════════════════════════════════════
+-- PROPOSED — NOT APPLIED. Design doc: docs/design/admission-counselling-model.md §4.
+-- Owner change #2: DO NOT add a separate exam_events table. Extend
+-- exam_editions.important_dates (JSONB array of objects) IN PLACE so the existing
+-- exam_derived_status view and the new exam_computed_status function keep ONE date
+-- source. Because important_dates is JSONB, these are just new optional keys on each
+-- event object — there is NO ALTER TABLE, NO new table, and old rows (which simply
+-- lack the new keys) keep working unchanged.
+--
+-- New optional keys per event object (all nullable; readers must tolerate absence):
+--   end_date    "YYYY-MM-DD" | null   -- point date -> range (e.g. reporting 9 Oct..14 Oct)
+--   start_time  "HH:MM" 24h     | null -- "13:00" -> "afternoon"; "17:00" -> "5:00 PM"
+--   end_time    "HH:MM" 24h     | null -- window close time (e.g. choice-filling 6:00 PM)
+--   round_id    uuid            | null -- links this row to a counselling_rounds row (§5)
+--   sort        integer         | null -- explicit display order; falls back to date order
+--
+-- Existing keys are UNCHANGED and remain the source of truth for the status fn:
+--   label, date, isUrgent, state (confirmed|expected|cancelled|postponed),
+--   type (machine event kind), stage_label, verified, note.
+-- ══════════════════════════════════════════════════════════════════════════════
+
+-- ── One-time normalising backfill (LOSS-FREE; runs UPDATE, inserts nothing new) ──
+-- Purpose: set `sort` from date order, and RETYPE rows the old label-LIKE inference
+-- got wrong (the acceptance bug: a "Registration Opens" that is really the
+-- choice-filling window). This edits the JSONB in place; no second table, no drops.
+--
+-- The exact retype rules are agreed with the owner per record before applying; sketch:
+--
+-- UPDATE exam_editions ee
+-- SET important_dates = (
+--   SELECT jsonb_agg(
+--     d.obj
+--       || jsonb_build_object('sort', (ordinality - 1))                       -- order by date
+--       || CASE
+--            -- A "Registration/Choice filling opens" window that has an end_date is a
+--            -- choice-filling window, not generic registration:
+--            WHEN d.obj->>'label' ILIKE '%choice filling%' OR d.obj->>'label' ILIKE '%registration opens%'
+--                 AND (d.obj ? 'end_date')
+--              THEN jsonb_build_object('type', 'choice_filling')
+--            ELSE '{}'::jsonb
+--          END
+--     ORDER BY (d.obj->>'date')::date NULLS LAST, ordinality
+--   )
+--   FROM jsonb_array_elements(COALESCE(NULLIF(ee.important_dates, 'null'::jsonb), '[]'::jsonb))
+--        WITH ORDINALITY AS d(obj, ordinality)
+-- )
+-- WHERE jsonb_typeof(ee.important_dates) = 'array';
+--
+-- NOTE: this file adds NO columns and NO tables. exam_derived_status (20260902122910)
+-- keeps reading .type/.state/.date exactly as today; exam_computed_status (e1) additionally
+-- reads .end_date/.start_time/.end_time/.round_id. The revalidation trigger
+-- (20260930171935) already fires on important_dates and needs no change.

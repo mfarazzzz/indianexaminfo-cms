@@ -7,12 +7,13 @@ R0: local commits only; no push, no deploy, no remote DB writes.
 Evidence rule: every "CURRENT" claim below cites a real `file:line` or `table.column`.
 Where I could not verify something, it is labelled **[UNVERIFIED]** or **[GAP]**.
 
-> **Two inputs I do not have.** The owner's issue document ("AI Fill & CMS model can't handle
-> UP D.El.Ed 2026") was referenced as attached, but the only readable temp file was the
-> Hostinger build log; the acceptance-test text and the owner's exact **counselling-round
-> field list** were not recoverable. This doc is written from the 10-point spec in the task.
-> Section 5 (round fields) and Section 12 (acceptance mapping) flag precisely what must be
-> reconciled against the issue before any slice is approved.
+> **Inputs now provided (revision after owner review).** The owner supplied the verbatim
+> counselling-round field list and the acceptance checklist; they are folded into §5 and §11
+> and the previous [GAP] flags there are resolved. The five [UNVERIFIED] items from the first
+> draft have been resolved with targeted reads (§1, §2, §3, §7). The entity-type public-label
+> question, the "no `exam_events` table" decision, the "status function REPLACES the view"
+> cut-over, the OCR/upload source-input requirement and the overview-patch commit are all
+> addressed below per the owner's seven review changes.
 
 The worked example that motivated all of this — **UP D.El.Ed 2026** — is a *state
 counselling admission*: merit-based selection (Intermediate/graduation marks), a
@@ -57,13 +58,21 @@ counselling admission — see §1.
   (`autofill.ts:146-148`), and the `entityType` list `recruitment|exam|board|university` is
   **stale**: the DB renamed `university`→`university-admission` and added `university-exam`
   (`migrations/20260926023322_entity_type_add_university_exam_rename_admission.sql:9-12`).
-- **No CMS category-management UI** was found for `categories` (add/rename/reorder/slug)
-  **[UNVERIFIED — confirm there is no admin screen before proposing to build one]**.
+- **A CMS category-management UI already EXISTS** (first draft said "none found" — corrected
+  by targeted read): `src/pages/categories/CategoriesPage.tsx` (add / rename / reorder
+  `order_index` / set `slug`, with `checkSlugAvailable`), backed by
+  `src/services/categoryService.ts:40-87` (`getCategories`/`createCategory`/`updateCategory`/
+  `deleteCategory`), routed at `/categories` behind `P.MANAGE_CATEGORIES`
+  (`src/router/index.tsx:196`) and linked in the sidebar (`src/components/layout/Sidebar.tsx:62`).
+- **The real taxonomy gaps are therefore NOT "no admin screen"** — they are: (i) AI Fill does
+  not read this table (§9); (ii) the Teacher Education rows do not exist yet; (iii) renaming a
+  published category/exam `slug` orphans its URL — there is no history/redirect table (§2).
 
 **PROPOSAL**
-- **B1 — categories stay in the DB (single source of truth); add a CMS admin screen** over
-  `categories` (add / rename / reorder via `order_index` / change `slug`). Remove the
-  hard-coded list from `autofill.ts:168` and have AI Fill read options from the table (§9).
+- **B1 — categories stay in the DB (single source of truth).** The admin screen already
+  exists (`CategoriesPage.tsx`); no new UI to build. Slice 1 only: (a) have AI Fill read
+  options from `categories` instead of the hard-coded list at `autofill.ts:168`; (b) add the
+  Teacher Education rows; (c) make `slug` changes redirect-safe (§2).
 - **B1 — add a "Teacher Education" category tree** as rows, not code: a parent
   `teacher-education` (pillar `entrance-exam`) with children `d-el-ed` (D.El.Ed/BTC),
   `b-ed`, `m-ed`, `shiksha-shastri`. Draft seed: `supabase/proposed/b1_teacher_education_categories.sql`.
@@ -75,21 +84,54 @@ counselling admission — see §1.
   UI/AI Fill never produce. Only gap: nothing today *drives* modules/order from
   `selection_model` (§3) or sets it from AI Fill (§9).
 
+- **Owner change #1 — public label never says "University" for an admission record.**
+  `entity_type='university-admission'` + `selection_model='merit-based'` is fine **internally**;
+  the string the reader sees must be "Admission / Counselling". I confirmed every place a
+  public label is printed for such a record (pillar `entrance-exam`, public root `/admission`):
+  1. **Pillar label map** `indianexaminfo-frontend/lib/utils.ts:142-146` —
+     `entrance-exam → "Admissions"` (already safe; not entity_type-derived).
+  2. **Breadcrumb category segment** — derived from the URL **slug**
+     (`category.replace(/-/g," ").title-case`) at
+     `app/(public)/admission/[category]/[slug]/page.tsx:49` and the university route
+     `app/(public)/university-exam/[...segments]/page.tsx:214`. If a record sits under a
+     category whose slug contains "university" (the old `university-exams` / `university-entrance`
+     slugs the D.El.Ed bug hit), the breadcrumb literally prints "University …".
+  3. **JSON-LD** `lib/seo/structured-data.ts` — verified there is **no** `entity_type →
+     EducationalOrganization/"University"` mapping (only `Organization`/`JobPosting`), so an
+     admission record leaks no "University" here today; keep it that way for any future
+     programme schema.
+  4. **Page title** — built from `exam.name` (`admission/[category]/[slug]/page.tsx:34`), not
+     entity_type; safe unless the name itself says "University".
+  5. **AI Fill report (CMS)** — echoes `entityType`; the stale enum `recruitment|exam|board|
+     university` at `src/lib/ai/autofill.ts:169` would print a raw "university" (fixed in §9).
+  **Mechanism:** introduce ONE display helper (`getEntityTypeLabel(entity_type)` returning
+  "Admission / Counselling" for `university-admission`) and never render the raw enum in the
+  breadcrumb/filter/report/title paths. The category-tree move (B1) removes the slug-derived
+  "University" string at its source.
+
 ---
 
 ## 2. URL safety (B4)
 
 **CURRENT**
-- Legacy URLs are handled by a static, hand-maintained `redirects()` list in the frontend
-  `next.config.ts` (e.g. `/entrance-exam/*`→`/admission/*`, `/government-jobs/*`→
-  `/sarkari-naukri/*`) — file:line **[UNVERIFIED: exact lines to cite at implementation]**.
+- **Owner change #2 context — the redirect mechanism today is a hand-maintained list.**
+  Legacy URLs are static `redirects()` entries in the frontend `next.config.ts:113`
+  (`async redirects()`): pillar rewrites `:117-124` (`permanent:false`), legacy
+  `/exam/:slug→/sarkari-naukri/:slug` `:127` (`permanent:true`), category 308s `:133-134`,
+  and **individual per-slug 301/308 entries for renamed/moved records** — e.g. the deleted
+  MJPRU stub `:155-156` and the mispillared admission records `:158-162`. This is exactly the
+  ad-hoc, human-remembered guard the owner's B4 targets: every slug change must be hand-added
+  here or the old URL 404s.
 - There is **no slug/category history table** — renaming a published record's slug orphans
-  its old URL (no automatic redirect). **[GAP]**
-- Breadcrumb labels: the sarkari path builds a display label from a slug via
-  `lib/sarkari/categories.ts:57-67` `titleCaseSlug` ("new-dept" → "New Dept") — a
-  slug-derived label, which is exactly the anti-pattern to avoid. Entrance/admission/board/
-  university breadcrumbs are passed into `EntityDetailPage` as a `breadcrumbs` prop built by
-  the routes **[UNVERIFIED: confirm each route uses `categories.name`, not a title-cased slug]**.
+  its old URL unless someone also edits `next.config.ts` and redeploys. **[GAP → resolves in
+  the b4 proposal]**
+- **Breadcrumb label source — CONFIRMED slug-derived for the exam pillars** (first draft
+  flagged this [UNVERIFIED]; resolved by read): the admission route builds the category crumb
+  by title-casing the URL slug at `app/(public)/admission/[category]/[slug]/page.tsx:49`, and
+  the university route does the same at
+  `app/(public)/university-exam/[...segments]/page.tsx:214`. The sarkari path uses the same
+  anti-pattern via `lib/sarkari/categories.ts:57-67` `titleCaseSlug`. None of these reads
+  `categories.name`, so a slug rename silently changes the visible breadcrumb text.
 
 **PROPOSAL**
 - **Slug/category history table + one-hop redirect.** `supabase/proposed/b4_slug_history.sql`:
@@ -125,15 +167,23 @@ counselling admission — see §1.
   (`:218`); the registry marks eligibility `source:"column"` (`lib/sectionRegistry.ts:87`).
   The coverage test confirms there is "no eligibility module renderer"
   (`lib/contract/contract.coverage.test.ts:40`).
-- **Reorder contradiction (I2):** `components/entity-editor/modules/ModuleCard.tsx:22-26` —
-  drag was **removed** because "System B reorder wrote to `entity_module.display_order`, a
-  column the frontend never reads (CONSISTENCY_AUDIT Phase 1 Q2)"; the table/service are
-  parked, yet a drag handle is still conditionally rendered (`:51-53`). Two reorder notions
-  (parked `display_order` vs live `_config.moduleOrder`) coexist.
-- **Toggle vs badge (I3):** enabling a module uses `enabledModules` (the toggle), while tab
-  visibility is a separate registry flag `showAsTab` (`lib/sectionRegistry.ts:85`) — two
-  controls a reader may not connect. Exact on-screen help wording **[UNVERIFIED — cite the
-  ModuleCard/panel help string before rewriting]**.
+- **Reorder contradiction (I2) — verbatim, confirmed:** 
+  `components/entity-editor/modules/ModuleCard.tsx:24-26` carries the comment *"Drag was
+  removed (System B reorder wrote to entity_module.display_order, a column the frontend never
+  reads — see CONSISTENCY_AUDIT Phase 1 Q2). Kept optional so the card renders without a
+  handle; the service/table stay parked."* A drag handle is still conditionally rendered
+  (`:51-53`, `aria-label="Drag to reorder module"`) whenever `dragHandleProps` is supplied.
+  Separately, the **Timeline** tab has its own *live* reorder that writes `displayOrder`
+  (`entity-editor/timeline/TimelineEventForm.tsx:139` "Display Order" field;
+  `TimelineEventCard.tsx` drag) — so "System B" (the parked `display_order`) and the timeline
+  `displayOrder` are two different things, and the module drag is the dead one. Single source
+  for module order must be `_config.moduleOrder`.
+- **Toggle vs badge (I3) — resolved by read:** enabling a module uses `enabledModules` (the
+  toggle in the editor), while tab visibility is a **separate registry flag** `showAsTab`
+  (`lib/sectionRegistry.ts:85`). There is **no on-screen help string** explaining the
+  difference — the two controls are simply adjacent with no connecting copy (the first draft's
+  "[UNVERIFIED] help wording" is resolved: the wording does not exist, which is itself the
+  problem). One control should mean one thing (§3 proposal).
 
 **PROPOSAL**
 - **Model-driven default module set + order.** Compute a *default* order/enablement from
@@ -171,25 +221,27 @@ counselling admission — see §1.
   marker (it is computed against today in the view). A revalidation trigger fires on
   `important_dates` change (`migrations/20260930171935_…sql:131-133`).
 
-**PROPOSAL — promote important_dates to a first-class `exam_events` table**
-`supabase/proposed/d1_exam_events.sql`:
-- Columns: `id, edition_id (FK), kind, label, date_start, date_end (nullable → range),
-  time_text (nullable, e.g. "10:00–12:00"), phase (nullable), round (nullable),
-  state (confirmed|expected|cancelled|postponed|tentative), source_quote (nullable), sort,
-  created_at, updated_at`.
-- `kind` is an explicit, DB-enumerated event type (reusing the view's vocabulary:
-  `notification, application_start, application_end, admit_card, exam_written, …,
-  merit_list, counselling, choice_filling, seat_allotment, reporting, document_verification,
-  interview, result, other`) — editors set it, and the status function no longer has to guess
-  from labels (the `LIKE` inference becomes a migration-time backfill only).
-- **done / next are computed, not stored** — derived from `date_start` vs today (IST), the
-  same anchor the current view uses (`exam_derived_status…:35`).
-- **Migration without data loss:** backfill `exam_events` from every existing
-  `important_dates` element (label→`label`, date→`date_start`, `type`→`kind`, inferred type→
-  `kind` where `.type` was empty, `state`→`state`, `stage_label`→`phase`). Keep
-  `important_dates` as a read-only projection during the cut-over, then drop it once the
-  status function and both sites read `exam_events`. The revalidation trigger moves to
-  `exam_events`.
+**PROPOSAL — owner change #2: NO new table. Extend `important_dates` in place.**
+Keep `exam_editions.important_dates` as the **single** date source so the existing
+`exam_derived_status` view and the new status function (§6) never fork. Each event object
+**gains optional keys** (JSONB, so no `ALTER TABLE` and no data loss — old rows simply lack
+the new keys and keep working):
+- `end_date` (nullable → turns a point date into a range, e.g. reporting 9 Oct – 14 Oct),
+- `start_time` / `end_time` (nullable text, e.g. `"18:00"` → "…6:00 PM", "…5:00 PM"),
+- `round_id` (nullable → links the date row to a `counselling_rounds` metadata row, §5),
+- `sort` (explicit order; falls back to date order when absent).
+- Add `phase`/`kind` only as a **tidy-up** where the label-inference is wrong; the existing
+  `type` field already carries the machine event kind and `state` the confirmed/expected axis,
+  so no replacement of those. The status function keeps reading `.type`/`.state`/`.date` and
+  now also `.end_date`/`.start_time`/`.end_time`/`.round_id`.
+- **Migration:** a one-time `UPDATE exam_editions SET important_dates = …` that normalises any
+  labels the old `LIKE` inference mis-typed (e.g. a "Registration Opens" that is really
+  choice-filling) into the correct `type`, and back-fills `sort`. Nothing is dropped; nothing
+  moves to a second table. The revalidation trigger already fires on `important_dates`
+  (`migrations/20260930171935_…sql:131-133`) and needs no change.
+- Draft: `supabase/proposed/d1_exam_events.sql` is **replaced** by
+  `supabase/proposed/d1_important_dates_extension.sql` (JSONB-key guidance + the normalising
+  `UPDATE`), so there is never a second source of truth.
 
 ---
 
@@ -199,21 +251,38 @@ counselling admission — see §1.
 - Counselling exists only as (a) a free-text **module** (`moduleRegistry.ts:605`
   "Counselling rounds, seat allotment, and choice filling") and (b) a label-inferred date
   `kind='counselling'` in the view (`exam_derived_status…:48-50`). There is **no structured
-  round record, no allotment/reporting fields, no per-round status** — **[GAP]**. UP D.El.Ed's
+  round record, no allotment/reporting fields, no per-round status** (the §5 proposal below
+  adds these). UP D.El.Ed's
   Phase 1/2/3, choice locking, seat allotment, and reporting cannot be represented.
 
-**PROPOSAL — `counselling_rounds` table** `supabase/proposed/c2_counselling_rounds.sql`
-structured rows: `id, edition_id (FK), round_label, phase (nullable), registration_start,
-registration_end, choice_filling_start, choice_filling_end, fee_last_date, round_start_date,
-result/allotment_date, reporting_start, reporting_end, seat_allotment_url (nullable),
-docs_required (text[]), notes, sort`. **Round status is computed from these dates** by the
-same function as §6 (e.g. "Counselling – Phase 3 open", "Allotment out", "Reporting open"),
-never hand-typed.
+**PROPOSAL — owner change #3: `counselling_rounds` holds METADATA ONLY; every date WINDOW is a
+date row in `important_dates` linked by `round_id`.** No start/end/date columns on the round
+record itself (that would be a second date source and re-create the split-brain §4 removes).
 
-> **[GAP — needs the owner's issue]** The task says "all fields in the owner's list"; I do
-> not have that list. The columns above are a superset guessed from a typical UP/state
-> counselling flow. Before Slice-3 is approved, reconcile this table against the exact field
-> list in the issue and drop/add accordingly.
+`supabase/proposed/c2_counselling_rounds.sql` — round metadata (the owner's verbatim list):
+- `round_label` / phase label (e.g. "Phase-3")
+- `round_order` (integer — orders rounds)
+- `rank_from` / `rank_to` (eligible rank band, e.g. 1 – 1,52,202)
+- `eligibility_text` (e.g. "not yet allotted an institution")
+- `seat_note` (e.g. "unfilled OBC/SC/ST/special-reserved seats converted to unreserved")
+- `fee_amount` numeric + `fee_label` text (e.g. 5000, "choice-filling fee")
+- `notice_resource_id` FK → `exam_resources` (the round's notice)
+- `edition_id` FK, `created_at`, `updated_at`
+- **`round_status` is NOT a column** — it is computed from the round's linked date rows
+  (upcoming / ongoing / closed) by the §6 function.
+
+**Linked date rows** = `important_dates` entries whose `round_id` points at this round, each
+with `label`, `date`, `end_date`, `start_time`, `end_time` (§4 extension):
+- choice filling + payment window (start date+time → end date+time, e.g. 5 Oct afternoon →
+  7 Oct 6:00 PM)
+- allotment date (e.g. 8 Oct)
+- reporting / document-verification window (end time matters, e.g. 9 Oct → 14 Oct 5:00 PM)
+- institution-side deadline (online report / lock, e.g. 15 Oct)
+
+Round status derivation (in §6, never stored): if a linked window row's `[date, end_date]`
+(+ times) contains today ⇒ **ongoing**; all linked rows in the future ⇒ **upcoming**; all in
+the past ⇒ **closed**. The **entity** status picks the active round's stage label (e.g.
+"Counselling – Phase 3: choice filling open").
 
 ---
 
@@ -239,31 +308,65 @@ never hand-typed.
 **PROPOSAL**
 - Turn status into the **same three-mirror contract as `content_has_data`**:
   1. `supabase/proposed/e1_exam_status_fn.sql` — a **pure**
-     `exam_computed_status(events jsonb, counselling_rounds jsonb, manual_override text)`
-     returning one status string over `exam_events` (§4) + `counselling_rounds` (§5), with a
-     clearly-marked manual override (reuse the `exams.status` override idea). Add the missing
-     rules so counselling **stages** are produced: from a round whose allotment date has
-     passed → "Allotment out"; reporting window open → "Reporting open"; choice-filling open →
-     "Choice filling open"; else fall back to the existing exam-lifecycle statuses.
+     `exam_computed_status(important_dates jsonb, counselling_rounds jsonb, manual_override text,
+     today date)` returning one status string over the **extended `important_dates` rows** (§4)
+     + the **round metadata** (§5) — no `exam_events` table, so the date source stays single.
+     It carries a clearly-marked manual override (reuse the `exams.status` override idea) and the
+     missing counselling **stages**: a linked round window open → "Choice filling open" /
+     "Reporting open"; allotment date passed → "Allotment out"; else fall back to the existing
+     exam-lifecycle statuses. The whole status CASE lives **only** in this function.
   2. Frontend TS mirror + CMS TS mirror (both over the same `HasDataView`-style shape).
   3. Shared **fixtures + sha256 parity tests** in both repos, modelled exactly on
      `content-has-data.fixtures.json` / `contentHasData.contract.test.ts` /
      `contentHasData.parity.test.ts`, so a status can never mean different things in
      CMS ↔ frontend ↔ SQL.
-- `exam_derived_status` becomes a thin SQL wrapper over `exam_computed_status` (keeps the
-  anon read path) until the frontend switches to the mirror.
+
+- **Owner change #6 — the function REPLACES `exam_derived_status`; cut-over plan (one source,
+  zero read-path change):**
+  1. **Add** `exam_computed_status(...)` (the pure SQL function, step 1 above) in a new
+     migration. Nothing consumes it yet.
+  2. **Recreate the view as a projection of the function:** `CREATE OR REPLACE VIEW
+     exam_derived_status AS SELECT e.id AS exam_id,
+     public.exam_computed_status(ed.important_dates, round_agg.rounds, e.status, get_today_ist())
+     AS derived_status, … , ed.admit_card_date, ed.result_date …`. The old **inline CASE
+     (`migrations/20260902122910_…sql:162-220`) is deleted from the view body** — the view now
+     only *selects* the function's result plus the `strip_eligible` / `has_confirmed_dates` /
+     `admit_card_date` / `result_date` columns the readers already ask for.
+  3. **Readers untouched:** the frontend `fetchDerivedStatuses`
+     (`services/examService.ts:69-100`, `.from("exam_derived_status").select("exam_id,
+     derived_status, strip_eligible, has_confirmed_dates, admit_card_date, result_date")` from
+     ~8 call sites) keeps working byte-for-byte — it still reads the same view name/columns, but
+     the number now comes from the single function. Same `GRANT … TO anon`
+     (`migrations/20260902122910_…sql:237`) is re-applied to the recreated view.
+  4. **Prove parity before removing anything:** run the new function against the OLD view over
+     every live edition (a one-off comparison query) and the fixture/parity tests; only after
+     100 % agreement (plus the intended new counselling stages) is the old inline logic dropped.
+  5. **No two sources:** after step 2 there is exactly one status algorithm (the function). The
+     view is a thin projection; the TS mirrors and the SQL function are pinned equal by fixtures.
+     If a later slice wants to drop the view entirely, callers move to the `exam_computed_status`
+     RPC — but that is optional and *after* this cut-over, never alongside it.
 
 ---
 
 ## 7. Overview auto (G1, G2) — why the editor previewed it but the site didn't render it
 
-**CURRENT — root cause is a field-name mismatch, now partly patched but still split-brained:**
+**CURRENT — root cause is a field-name mismatch, patched READ-side only by commit `da349ea`:**
 - The CMS writes overview body into a field called **`description`** in ~268/273 records; the
   frontend overview renderer historically read only `body`/`content`, so the About-This-Exam
-  text was invisible on the site while the editor previewed it. The comments say this was
-  fixed by also reading `description`:
-  `components/exam/sectionRenderers.tsx:254-256` (`OverviewSummary`) and the parallel read in
-  `EntityDetailPage.tsx:788-790`.
+  text was invisible on the site while the editor previewed it.
+- **Owner change #4 — the "partly patched" is exactly one commit (NOT in T1's 7 files):**
+  `da349ea fix(exam-page): render overview 'description' field (recovers 268 exams'
+  About-This-Exam text)`, verified via `git show --stat` to touch **two files** —
+  `components/exam/sectionRenderers.tsx` (`OverviewSummary` now also reads `description`,
+  `:254-256`) and `components/exam/EntityDetailPage.tsx` (the parallel read, `:788-790`).
+- **What is STILL OPEN** (why it is only "partly" fixed): the fix is **read-side only** — it
+  makes the site accept the `description` field, but the **write side still has two homes**.
+  Some records store the overview in the `exams.description`/edition column and others in
+  `content_modules.overview.body` (what AI Fill writes), so (i) the content-presence count
+  (`content_has_data`) and the editor preview can still disagree with what renders for
+  module-shaped records; (ii) there is no single field the editor, the counter and the site all
+  read; (iii) nothing forces new records onto one field. §7 PROPOSAL closes this by unifying the
+  field and pointing the render + presence count at the SAME one.
 - Overview is `source:"editorial"`, order 20, `showAsTab:true` (`lib/sectionRegistry.ts:85`),
   and the CT bridge maps `notification → overview` (`:396`). It still renders nothing when
   the module is absent/empty (`OverviewSummary` returns null if `moduleData` is null).
@@ -285,9 +388,12 @@ never hand-typed.
 ## 8. Live page (H1, H3, H4)
 
 **CURRENT**
-- **Title:** built from `nameWithYear` + tab labels (`lib/seo/keywords.ts`, `EntityDetailPage`
-  header) — it is name/year driven, not stage/section driven **[verify exact title fn at
-  implementation]**.
+- **Title — resolved (first draft flagged [verify]):** each pillar route builds it via
+  `buildExamMetadata` (`lib/seo/metadata.ts`), e.g.
+  `app/(public)/admission/[category]/[slug]/page.tsx:34` sets
+  `title: exam.seoTitle ?? `${exam.name} ${year} — Notification, Eligibility & Apply`` —
+  **name/year driven, not stage-driven.** A stage map already exists but the `<title>`/H1 do not
+  use it: `HEADLINE_BY_STATUS` in `lib/exam/actionLinks.ts:254-268` (lead block only).
 - **Related exams:** `services/examService.ts:553-583` — `getRelatedExams` filters on
   **`pillar` + `category_id` only**, `.limit(4)` (`:572-574`). It ignores region and
   entity_type, and returns whatever matches that (so an unrelated same-category record can
@@ -295,8 +401,8 @@ never hand-typed.
 - **Hero next event:** `lib/exam/actionLinks.ts` `pickDisplayDate` (`:219-230`) +
   `getLeadBlock` (`:289-304`) already pick one state-relevant date via `TYPE_FOR_STATUS`
   (`:185-195`) and the `HEADLINE_BY_STATUS` map (`:254-268`). The next-event logic exists but
-  keys off the old `important_dates[].type`; it does not yet read `exam_events` ranges/times
-  or counselling rounds.
+  keys off the old `important_dates[].type`; it does not yet read the new `.end_date` /
+  `.start_time` / `.end_time` / `.round_id` keys (§4) or the counselling rounds.
 
 **PROPOSAL**
 - **H1 title** = current stage (from §6 status) or the sections that actually have content,
@@ -305,8 +411,10 @@ never hand-typed.
   require a minimum score, and **return an empty list** (render nothing) below it — never pad
   with unrelated records. Move from the current flat pillar+category filter to a small
   weighted query/eval.
-- **H4 hero next event** sourced from `exam_events` (earliest future `date_start`,
-  respecting ranges + counselling rounds), replacing the label-typed single-date pick.
+- **H4 hero next event** sourced from the extended `important_dates` rows (§4) — earliest
+  future `date` (honouring `end_date` ranges, `start_time`/`end_time`, and the active
+  counselling round), replacing the label-typed single-date pick. **Same table as the status
+  function**, so the hero and the badge can never disagree.
 
 ---
 
@@ -334,11 +442,21 @@ never hand-typed.
 
 **PROPOSAL**
 - **A-input / server-side templates.** Move the prompt to a server-side template
-  (Edge Function / a `ai_fill_templates` store) so it is versioned and not bundled client
-  code. Accept **PDF upload, pasted text, or URL**; the **official notice is the primary
-  source**, web search is secondary.
+  (Edge Function / an `ai_fill_templates` store) so it is versioned and not bundled client code.
+- **Owner change #5 — source input = PDF upload WITH text extraction AND an OCR fallback, plus a
+  pasted-text path.** Many UP notices (incl. the UP D.El.Ed one) are **scanned Hindi images**, so
+  plain PDF text extraction returns nothing. The pipeline must (a) try embedded-text extraction,
+  and (b) when a page yields little/no text, fall back to **OCR** (Hindi + English) before the
+  model call. A **pasted-text** path is always available as the manual fallback. The **official
+  notice is the primary source**; web search is secondary (only to fill gaps the notice does not
+  cover, never to override it).
+- **Always store the source PDF and record it.** Every fill puts the notice PDF into
+  `exam_resources` (`migrations/20260910051703_create_exam_resources_library.sql:7`) and writes
+  its id + extraction method (`text | ocr | pasted`) into `ai_metadata.fill_source` (the fill
+  report below).
 - **Dropdown = DB options + confidence.** Options come from the DB (`categories`,
-  the `pillar`/`entity_type`/`selection_model`/`exam_status` enums, `exam_events.kind`). The
+  the `pillar`/`entity_type`/`selection_model`/`exam_status` enums, the `important_dates` `type`
+  vocabulary). The
   model returns a value **plus a confidence score**; below a threshold or no match → **leave
   the field empty, flag it, and suggest a missing option** (e.g. "Teacher Education not in the
   list"). Never let AI invent an enum value.
@@ -366,57 +484,101 @@ Sizes: S ≤1 day, M 2–4 days, L 1–2 weeks. Migrations are **proposed only**
 | 0 | **F1–F4 build fix** (done) + **T1 trust hotfix** (done, this push) | S–M | — | E2 badge, false "Verified by" removed, H2 empty widgets hidden |
 | 1 | **B1–B4 taxonomy**: CMS category admin over `categories`; Teacher Education tree; AI Fill reads DB options; **remove hard-coded `autofill.ts:168`**; stale entityType fix; breadcrumb uses `categories.name` | M | `b1_teacher_education_categories.sql`, `b4_slug_history.sql`, `a1_ai_fill_options.sql` | B1, B2, B4 (partial: history), A1(partial) |
 | 2 | **A1 AI Fill selection_model** + module/DB-driven dropdown options + confidence + flag/suggest-empty | M | `a1_ai_fill_options.sql` | B3, A1, A2(partial) |
-| 3 | **D1 + E1 dates & status**: `exam_events` table, backfill from `important_dates`, `exam_computed_status` fn + TS/SQL parity mirrors + fixtures | L | `d1_exam_events.sql`, `e1_exam_status_fn.sql` | D1, D2, E1 |
-| 4 | **A2/A3/A5 + C1/C2 rounds + model-driven modules**: counselling rounds; modules ordered/gated by `(entity_type, selection_model)`; eligibility/fee/faqs as modules; reorder + toggle/badge cleanup | L | `c2_counselling_rounds.sql` | C1, C2, I1, I2, I3, A3, A5 |
-| 5 | **A7/A8 + F2**: PDF/URL input, server-side templates, source quote/field, fill report in `ai_metadata`, attach notice PDF, never-verify/publish, checklist warning | L | `a1_ai_fill_options.sql` (+ `ai_metadata` conventions) | A7, A8, F2, A4, A6 |
-| 6 | **G/H/I live page**: overview single-field auto-count; stage-driven title; weighted related-exams (show nothing); hero next event from `exam_events` | M | — | G1, G2, H1, H3, H4 |
+| 3 | **D1 + E1 dates & status**: extend `important_dates` in place (JSONB keys `end_date`/`start_time`/`end_time`/`round_id`/`sort`, **no new table**) + `exam_computed_status` fn that **replaces** the `exam_derived_status` view (§6 cut-over) + TS/SQL parity mirrors + fixtures | L | `d1_important_dates_extension.sql`, `e1_exam_status_fn.sql` | D1, D2, E1 |
+| 4 | **A2/A3/A5 + C1/C2 rounds + model-driven modules**: `counselling_rounds` (metadata only, §5); modules ordered/gated by `(entity_type, selection_model)`; eligibility/fee/faqs as modules; reorder + toggle/badge cleanup | L | `c2_counselling_rounds.sql` | C1, C2, I1, I2, I3, A3, A5 |
+| 5 | **A7/A8 + F2**: PDF input (text-extraction **+ OCR fallback for scanned Hindi**) + pasted-text path, server-side templates, source quote/field, fill report in `ai_metadata`, **store notice PDF in `exam_resources` + record it as fill source**, never-verify/publish, checklist warning | L | `a1_ai_fill_options.sql` (+ `ai_metadata` conventions) | A7, A8, F2, A4, A6 |
+| 6 | **G/H/I live page**: overview single-field auto-count (finish what `da349ea` started, §7); stage-driven title; weighted related-exams (show nothing); hero next event from **extended `important_dates`** | M | — | G1, G2, H1, H3, H4 |
 
 Suggested execution order matches the owner's: F1 → B1–B4 → A1 → D1+E1 → A2/A3/A5/C1/C2 →
 A7/A8/F2 → G/H/I.
 
 ---
 
-## 11. Acceptance-test mapping (against the 10-point spec I have)
+## 11. Acceptance test — the owner's verbatim checklist, mapped to slices
 
-Legend: **[S#]** covered by slice #; **[GAP]** needs the owner's issue text to close.
+Source: the owner's "new record from the UP D.El.Ed 01 Oct 2026 Phase-3 notice, AI Fill only,
+no manual edits". Legend: **[S#]** = covered by slice #; **[DONE]** = already satisfied by the
+T1 push; **[S#+,S#]** = needs more than one slice.
 
-- (1) Taxonomy: categories in CMS + Teacher Education + clean two axes — **[S1, S2]**; "smallest
-  entity_type change" (reuse `university-admission`) — **[S1]**; "don't duplicate merit-based as
-  entity_type" — **[S1]**.
-- (2) URL safety: slug history + one-hop 301/308 + breadcrumb display name — **[S1]** (history
-  table + middleware). **[GAP]** exact legacy-URL inventory to migrate from `next.config.ts`.
-- (3) Modules follow model: model-driven set/order, hide irrelevant, move eligibility/fee/faqs
-  into modules, reorder + toggle/badge — **[S4]**; AI Fill must set the model — **[S2]**.
-- (4) Flexible event rows + no-loss migration — **[S3]**.
-- (5) Counselling rounds fields + computed round status — **[S4]** structurally, but the exact
-  **field list is [GAP]** (needs the issue).
-- (6) One computed status mirrored CMS↔frontend↔SQL incl counselling stages, manual override —
-  **[S3, S4]**.
-- (7) Overview auto count+render, template from type+model+stage, casing — **[S6]**.
-- (8) Live page title / weighted related / hero next-event — **[S6]**.
-- (9) AI Fill v2 (server templates, DB options+confidence, fill-all-modules, source quote,
-  report, PDF source in ai_metadata, never verify/publish, checklist warning) — **[S2, S5]**.
-- (10) Slicing — provided in §10.
+- [ ] **Category = Teacher Education** (or flagged "no match", never guessed) — **[S1]**: AI
+      Fill reads `categories` (incl the new Teacher Education rows) + confidence/flag rule.
+- [ ] **Entity type = university-admission, shown publicly as "Admission / Counselling"** (never
+      "University") — **[S1]**: `getEntityTypeLabel` (§1 change #1) + category-tree move kills the
+      slug-derived "University" breadcrumb.
+- [ ] **Selection model = merit-based, set by AI Fill** (not left at `written-exam`) — **[S2]**.
+- [ ] **Name uses the official name, not "…Entrance"** — **[S2]** (AI Fill fills from notice).
+- [ ] **Exam Pattern, Admit Card, Result, Cut-off hidden; Counselling near the top** — **[S4]**
+      (model-driven module set/order via `appliesToSelection`).
+- [ ] **Phase-3 round: rank 1–1,52,202, ₹5,000 fee, eligibility + seat note filled** — **[S4]**
+      (round metadata) **+ [S5]** (AI Fill fills it).
+- [ ] **Important Dates**: choice filling 5 Oct (afternoon)–7 Oct 6:00 PM; allotment 8 Oct;
+      verification 9 Oct–14 Oct 5:00 PM; institution lock 15 Oct; notification 7 Aug. Nothing
+      says "Registration Opens 5 Oct" — **[S3]** (range/time/round keys) **+ [S5]** (AI Fill),
+      and the §4 normalising `UPDATE` retypes any legacy mislabelled row.
+- [ ] **One status everywhere** (edition label, overview, badge, hero box) reading as Phase-3
+      counselling — **[S3]** (fn replaces view) **+ [S4]** (round stages) **+ [S6]** (hero/title
+      consume it); all four surfaces call the SAME §6 function.
+- [ ] **Eligibility and Application Fee filled; institution-lock rule shown as a Warning Box** —
+      **[S5]** (fill) **+ [S6]** (Warning-box rendering for the institution-lock row).
+- [ ] **Notice PDF stored in Resources and recorded as the fill source** — **[S5]** (change #5).
+- [ ] **Fill report lists filled / skipped / low-confidence / no-match fields** — **[S5]**.
+- [ ] **Overview renders on the live page and matches the editor** — **[S6]** (finish `da349ea`
+      by unifying the write-side field, §7).
+- [ ] **Breadcrumb, title and Related Exams match the category and region** (show none rather
+      than unrelated exams) — **[S1]** (breadcrumb from `categories.name`) **+ [S6]** (stage
+      title; weighted related-exams with empty fallback).
+- [ ] **No "Verified" claim until the owner verifies the record** — **[DONE, T1]**: the honest
+      unverified line ships in `54fdf9e`; `verifiedAt/verifiedBy` stay unset until a real check.
+- [ ] **Changing category or slug on the existing record 301-redirects the old URL** — **[S1]**
+      (`b4_slug_history` + one-hop middleware, §2).
 
-**Overall gaps that block sign-off:** (a) the owner's exact counselling-round **field list**;
-(b) the **verbatim acceptance checklist** in the issue (so each box is mapped precisely, not
-reconstructed from the 10 points); (c) whether a **`categories` admin UI already exists**
-([UNVERIFIED] §1); (d) the exact **reorder/toggle-vs-badge help strings** ([UNVERIFIED] §3);
-(e) the breadcrumb **label-source** for the entrance/admission/board/university routes
-([UNVERIFIED] §2). Paste the issue (and I'll confirm c–e with targeted reads) before approving.
+**Boxes already closed without new code:** the "No Verified claim" box (T1). **Boxes that need
+more than one slice:** Phase-3 round (S4+S5), Important Dates (S3+S5), one-status (S3+S4+S6),
+Eligibility/Fee/Warning (S5+S6), breadcrumb+title+related (S1+S6). **Everything else is a single
+slice.** No box is a [GAP] — the field list and checklist are now the owner's verbatim text.
+
+> **Owner numbering note.** The owner calls the first implementation slice **"Slice 1 (A1)"**.
+> In this table A1 (AI Fill `selection_model` + DB-driven dropdowns) is **S2**, and it *depends
+> on* the Teacher Education `categories` rows + DB-read dropdown plumbing of **S1** to have
+> "Teacher Education" available as a real option (acceptance box 1). Confirm the intended first
+> slice (S1 taxonomy-seed then S2, or a merged S1+S2) before implementation begins.
 
 ---
 
 ## 12. Proposed SQL files (in `indianexaminfo-cms/supabase/proposed/` — NOT applied)
 
-1. `d1_exam_events.sql` — `exam_events` table + backfill from `exam_editions.important_dates`.
-2. `e1_exam_status_fn.sql` — pure `exam_computed_status(...)` incl counselling stages + override.
-3. `c2_counselling_rounds.sql` — `counselling_rounds` structured records.
+1. `d1_important_dates_extension.sql` — **JSONB-key extension of `important_dates`
+   (`end_date`/`start_time`/`end_time`/`round_id`/`sort`) + a normalising `UPDATE`; NO new table**
+   (owner change #2). Replaces the earlier `d1_exam_events.sql` draft.
+2. `e1_exam_status_fn.sql` — pure `exam_computed_status(...)` incl counselling stages + override,
+   plus the `CREATE OR REPLACE VIEW exam_derived_status` projection that **retires the old inline
+   CASE** (owner change #6 cut-over).
+3. `c2_counselling_rounds.sql` — `counselling_rounds` **metadata only** (round label/order, rank
+   band, eligibility text, seat note, fee amount+label, notice resource FK); **no date columns** —
+   windows live in `important_dates` keyed by `round_id` (owner change #3).
 4. `b4_slug_history.sql` — `entity_slug_history` + rename-capture trigger (redirect source).
 5. `b1_teacher_education_categories.sql` — Teacher Education category tree rows.
 6. `a1_ai_fill_options.sql` — DB-driven dropdown options view(s) for AI Fill (+ `ai_metadata`
-   fill-source/quote conventions).
+   fill-source / OCR-method / quote conventions).
 
 Each is a **draft for review**; none is added to `migrations/`, none is applied, no remote DB
 touch. They pair with TS mirrors + fixture/parity tests (per the content_has_data contract)
 once a slice is approved.
+
+---
+
+## 13. Changes applied in this revision (owner review, 2026-10-03)
+
+| # | Owner change | Where resolved |
+|---|--------------|----------------|
+| 1 | `university-admission` OK internally, but public label never says "University" | §1 (label-site enumeration + `getEntityTypeLabel`); acceptance box 2 |
+| 2 | **No `exam_events` table** — extend `important_dates`, single date source | §4 (rewritten), §12 item 1; `d1_exam_events.sql` retired → `d1_important_dates_extension.sql` |
+| 3 | Round windows are `important_dates` rows linked by `round_id`; `counselling_rounds` = metadata only | §5 (rewritten), §12 item 3 |
+| 4 | "Overview partly patched" — which commit/files, what's open | §7: commit `da349ea` (2 files, verified by `git show --stat`); write-side still split |
+| 5 | AI Fill source = PDF **text-extraction + OCR fallback** (scanned Hindi) + pasted text; store PDF in `exam_resources` + record in `ai_metadata` | §9 (change #5 block), §12 item 6 |
+| 6 | Status function **replaces** `exam_derived_status`; show cut-over | §6 (5-step cut-over: fn → view-as-projection → readers untouched → prove parity → drop old CASE) |
+| 7 | Resolve the 5 [UNVERIFIED] items with targeted reads | §1 (categories admin **exists**: `CategoriesPage.tsx`/`categoryService.ts`), §2 (redirects `next.config.ts:113,117-134,155-162`; breadcrumb **is** slug-title-cased at `admission/[category]/[slug]/page.tsx:49`), §3 (reorder comment verbatim `ModuleCard.tsx:24-26`; toggle-vs-badge has **no** help string), §7 (title via `buildExamMetadata`). JSON-LD verified to leak no "University" (§1 site 3). All 5 resolved; no [UNVERIFIED] markers remain. |
+
+**Still open for the owner:** confirm the intended **first slice** (see §11 numbering note — the
+owner's "Slice 1 (A1)" maps to this table's S2, which depends on S1's Teacher Education rows so
+the dropdown can offer "Teacher Education"). **Nothing implemented — awaiting the go-ahead.**
