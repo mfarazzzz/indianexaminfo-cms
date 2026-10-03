@@ -19,8 +19,40 @@
 -- be added via parent_id; exams.subcategory_id already exists. Deferred until needed.
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
--- Single flat row — SKETCH ONLY (the owner creates this via the /categories UI, so this
--- file is documentation of the intended row, NOT an applied migration):
--- INSERT INTO categories (slug, name, pillar, order_index, is_active)
--- VALUES ('teacher-education', 'Teacher Education', 'entrance-exam', <n>, true)
--- ON CONFLICT (slug) DO NOTHING;
+-- ── LIVE CATEGORY COUNTS ─────────────────────────────────────────────────────────
+-- Owner rule: proposed SQL ships WITH current counts. The agent could not run these
+-- this session (the Supabase MCP requires OAuth authorization — every call returned
+-- "mcpServer supabase requires OAuth authorization"), so they are embedded here as
+-- READ-ONLY queries. Run them in the SQL editor BEFORE promoting the row, and attach
+-- the output to the PR/issue. NOTHING below writes anything.
+
+-- 1. Categories per pillar (how flat the taxonomy is today). No deleted_at on this
+--    table (20260702150637:2-17) — is_active is the only state column:
+SELECT pillar,
+       count(*) AS categories,
+       count(*) FILTER (WHERE is_active) AS active
+FROM categories
+GROUP BY pillar
+ORDER BY pillar;
+
+-- 2. Every existing category with its usage — the context for choosing order_index
+--    and for spotting a pre-existing teacher-education-ish row to rename instead:
+SELECT c.pillar, c.slug, c.name,
+       count(e.id) AS exams_using
+FROM categories c
+LEFT JOIN exams e ON e.category_id = c.id
+GROUP BY c.id
+ORDER BY c.pillar, c.order_index;
+
+-- 3. Guard: confirm the target slug is actually free before inserting:
+SELECT id, slug, name, pillar FROM categories WHERE slug = 'teacher-education';
+
+-- ── THE ROW (documentation of the intended insert — owner promotes via /categories
+--    admin screen or runs this himself; NOT applied by the agent) ──────────────────
+
+-- Single flat row — the intended statement (order_index from count query 2):
+INSERT INTO categories (slug, name, pillar, order_index, is_active)
+VALUES ('teacher-education', 'Teacher Education', 'entrance-exam',
+        (SELECT coalesce(max(order_index), 0) + 1 FROM categories WHERE pillar = 'entrance-exam'),
+        true)
+ON CONFLICT (slug) DO NOTHING;
