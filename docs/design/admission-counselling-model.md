@@ -630,3 +630,135 @@ JSONB cannot enforce relational rules, so the edition write path
 - Rationale vs BLOCK: blocking is too rigid for editorial cleanup and forces deleting dates first;
   a round is metadata layered over dates that pre-exist it. If a date row is meaningless without
   its round, the owner deletes that row separately.
+
+---
+
+## 15. AI Fill v2 (S2) — the extraction-failure analysis, the vision-model gap, and the golden test
+
+Design only (owner S1 item 6). No code was written for this section.
+
+### 15.0 CORRECTION to the earlier note (owner, 2026-10-03)
+
+My earlier note said the owner's pasted input "included junk (the distribution list)". **That was
+wrong and is retracted.** The pasted input was a **clean, structured English/Hindi extraction of
+the notice** — the full timeline, times, fee, rank range and lock warning were all present in it.
+The old AI Fill still filled **no dates and no modules** from it. So this is not a dirty-input
+problem; it is an **extraction failure inside AI Fill itself**. The rest of §15.1 explains, from
+the current code, exactly why.
+
+### 15.1 WHY the current AI Fill produced nothing — from the code, with file:line
+
+The entrance editor's "Fill Entire Exam" runs `generateExamDataWithAI`
+(`src/pages/entrance-exams/EntranceExamEditorPage.tsx:609` → `src/lib/gemini/entranceExamAI.ts:183`),
+a two-stage pipeline. Every failure mode below is silent by design — which is why the fill looked
+like "the model gave up" instead of "the pipeline dropped every row".
+
+1. **Input truncation.** Stage 1 sees only `rawContent.slice(0, 5000)`
+   (`entranceExamAI.ts:44`); Stage 2 only `slice(0, 3500)` (`:159`). A full structured extraction
+   of a 2-page Hindi notice with a timeline exceeds the caps — the tail (lock warning, emails,
+   reference number) is cut **before the model ever sees it**.
+2. **The schema cannot express the notice.** The Stage 1 JSON shape is
+   `{dates:[{label,dateText}], fee:{general,scSt}, eligibility, vacancy, status}`
+   (`:47-58`). There is **no round/phase, no rank range, no start/end time, no condition
+   ("not yet allotted"), no reserved-to-unreserved note, no notice reference, no contact emails**.
+   Fields the schema has no slot for cannot be extracted no matter what the model reads.
+3. **The label whitelist discarded the counselling timeline.** `processStage1Dates` calls
+   `normalizeLabel(label)` and **silently `continue`s on null** (`:123-124`). The whitelist
+   (`src/lib/dates/normalizeLabel.ts:26-52`) recognizes only registration / exam / admit-card /
+   answer-key / result / notification / correction / counselling / cutoff patterns. "Choice
+   Filling", "Seat Allotment", "Document Verification", "Institution Locking/FREEZE" match none
+   of them → **every Phase-3 row except the original-notification date was dropped in code, not
+   in the model.** (This is exactly what the D1 `important_dates` extension + round kinds fix.)
+4. **The date parser cannot hold a window or Hindi.** `parseDateText` documents English single
+   dates and, for ranges, **keeps only the first date** (`src/lib/utils/indianDateParser.ts:47-53`)
+   — "05 Oct afternoon to 07 Oct 18:00" loses its end; Devanagari dates are not in the supported
+   list. A parse failure is another silent `continue` (`entranceExamAI.ts:126-127`).
+5. **Stage 2 all-or-nothing JSON.** The modules come from ONE giant single-line JSON schema
+   (`:162`); any parse error is caught and **logged only to console.warn**, leaving
+   `contentModules = {}` (`:223-232`). Groq's small models truncating that payload = "no modules",
+   with the Stage-1 facts still reported partially — or, when items 1–4 already emptied Stage 1,
+   the editor's honest no-op gate fires: `gotAnything === false` → "AI found nothing to fill"
+   (`EntranceExamEditorPage.tsx:618-629`).
+6. **Fields AI Fill is even allowed to write.** The apply step is EMPTY-ONLY over a fixed list:
+   shortName, conductingBody, officialWebsite, importantDates (fill-blank/append only), vacancy,
+   edition status, `has_*` false→true, seoTitle/seoDescription, tags, faqs, contentModules merge
+   (`EntranceExamEditorPage.tsx:645-711`). It **cannot write category, subcategory, region or
+   selection_model at all** — so "AI Fill not choosing teacher-education / merit-based" was
+   structurally impossible even when extraction worked. S2 must widen this list **with
+   per-field preview + approve**, and S1 item 4 made the two identity fields required-on-create
+   instead of silently defaulted.
+
+**Net:** the pipeline produced nothing usable because of prompt truncation (:44/:159), a schema
+that cannot express counselling-round data (:47-58), a label whitelist that discarded every
+round-specific row (normalizeLabel.ts:26-52 via entranceExamAI.ts:123-124), a date parser that
+flattens windows (indianDateParser.ts:47-53), and silent-catch parsing (:102-104, :229-232) —
+not because the input was junk.
+
+### 15.2 Vision-model check — which configured provider can read a scanned Hindi PDF
+
+The original notice (`Press_Release_01102026.pdf`) is a **2-page scanned CamScanner image in
+Hindi with NO text layer**. Text extraction returns nothing; only a **vision-capable model** on
+the page images can read it.
+
+- Provider resolution lives in the `ai-fill` Edge Function: rows are read from `ai_providers`
+  and matched through `SECRET_BY_PROVIDER` (`supabase/functions/ai-fill/index.ts:86-93, 174-199`).
+  The function **supports `gemini`** (vision-capable family) via a dedicated
+  `:generateContent` branch (`:215-216`) with `AI_KEY_GEMINI` (`:92`) and
+  `BASE_URL_BY_PROVIDER.gemini` (`:106`). **No other listed provider is wired for images.**
+- **But `callOne` is text-only**: its signature takes `prompt: string`
+  (`ai-fill/index.ts:214`) and the gemini branch builds a text `contents` part; there is no
+  `inline_data`/image part anywhere in the function, and no client path uploads the PDF
+  (`autofill.ts:136` accepts raw text only — §9 CURRENT). So even a gemini row cannot see a page.
+- **Currently configured rows (names only, no keys):** the last verified inventory
+  (`docs/` measurements from the 2026-10 session) shows **two `groq` rows — `gpt-oss-120b` and
+  `llama-3.3-70b-versatile` — both TEXT-only.** Live re-check is **[GAP]** this session: the
+  Supabase MCP requires OAuth and every query attempt returned "requires OAuth authorization".
+- **Answer: NONE of the currently configured providers can read the Hindi scan.** Needed for S2:
+  (a) a vision-capable model row enabled in `ai_providers` — a Gemini 2.x Flash-class model is
+  the wired path; (b) the `AI_KEY_GEMINI` edge-function secret set; (c) `callOne` extended to
+  send image/PDF bytes (page rasterization server-side or `inline_data` parts); (d) per-page
+  token budget, since two scanned Hindi pages as images are far larger than the current text
+  caps. Pasted text **remains a supported input** (manual fallback, unchanged contract).
+
+### 15.3 Golden test for S2 — fixtures, expected.json, and the two pitfalls it must catch
+
+**Fixtures** (committed, deterministic inputs) at
+`src/lib/ai/__fixtures__/up-deled-2026-phase3/`:
+- `notice.pdf` — the original 2-page scanned CamScanner Hindi notice (ground truth);
+- `pasted.txt` — the owner's clean structured extraction;
+- `model.responses.json` — the RECORDED model response(s) per stage/provider, so CI replays the
+  pipeline without network (`vitest`) while a `LIVE=1` opt-in run exercises the real model on demand.
+  The test harness injects the transport: recorded mode stubs `aiFillClient.generateText` /
+  the `ai-fill` call with the stored responses; live mode calls the edge function with the owner
+  key. Same assertions both ways — only the transport differs.
+
+**`expected.json`** — built from the owner's acceptance table. Each expected field carries
+`{ value, sourceQuote }`:
+- official name; category `teacher-education`; selection model `merit-based`;
+- the five dated rows with **IST times**: choice filling + payment 05 Oct (afternoon) → 07 Oct
+  18:00; allotment 08 Oct; document verification 09 Oct → 14 Oct 17:00; institution lock 15 Oct;
+  original notification 07 Aug;
+- Phase-3 round with rank **1 to 152202** and the "not yet allotted" condition;
+- fee ₹5,000; the reserved-to-unreserved seat-conversion note; the lock warning; contact emails;
+- notice ref **"डीएलएड 2026 / 530-5603 / 2026-27" dated 01 Oct 2026**.
+
+**Pitfall 1 — transcription error must be catchable by the editor, not by luck.** The pasted
+summary contains "समस्त आवंटित अभ्यर्थी" ("all allotted candidates") where the notice actually
+says "आवेदित … जिन्हें … आवंटित न हुआ हो" ("applicants … to whom allotment has NOT been done") —
+an exact reversal of meaning. **Rule: EVERY extracted field must carry a verbatim `sourceQuote`
+from the accepted source.** The golden test asserts the quote for the Phase-3 condition row
+resolves (normalized fuzzy match) INSIDE `notice.pdf`'s text/OCR of that page — and because the
+pasted.txt version's wording does NOT appear in the notice, a pipeline that quotes its paste
+FAILS the test. Editors see the quote next to every filled field in the approve-diff (§9 fill
+report), which is what turns this class of error from invisible to one-glance.
+
+**Pitfall 2 — the page-2 distribution list must NOT become content.** The "copy to
+District Magistrate / banks / DIETs" list is addressing metadata, not exam data. The test
+asserts none of its strings (or their names/addresses) appear in ANY filled field — and the
+prompt/template must mark the distribution block as non-content (structural cue: it follows
+"प्रतिलिपि"), with the fixture pinning that behaviour.
+
+**S2 build dependency order:** D1 (date windows) + C2 (rounds) land first — without them the
+golden test's five dated rows and Phase-3 round have nowhere to be stored; the vision provider
+(§15.2 b–d) can be added independently because the paste path already reproduces every
+assertion except the OCR-of-the-scan parity check.
