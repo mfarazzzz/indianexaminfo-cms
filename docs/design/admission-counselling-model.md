@@ -762,3 +762,69 @@ prompt/template must mark the distribution block as non-content (structural cue:
 golden test's five dated rows and Phase-3 round have nowhere to be stored; the vision provider
 (§15.2 b–d) can be added independently because the paste path already reproduces every
 assertion except the OCR-of-the-scan parity check.
+
+---
+
+## Domain reference: UP D.El.Ed 2026 (R1.11)
+
+Source: updeled.gov.in News Flash. All PDFs on that site are scanned images (no text layer).
+Secondary sources cross-checked where noted.
+
+### What it is
+
+There is **NO entrance test**. UP D.El.Ed (Diploma in Elementary Education, also called BTC —
+Basic Teacher Training) is a **state-merit admission** to the 2-year D.El.Ed course in DIETs
+(District Institutes of Education & Training) and private recognised institutes across Uttar
+Pradesh. Admission is based on academic quality points from the candidate's graduation marks.
+
+The record is named **"UP D.El.Ed Admission 2026"** (not "Entrance"). Selection model:
+`merit-based`. Category: "Teaching and Education" (`teaching-and-education`).
+
+### Notices in one cycle (2026)
+
+| # | Notice | Date | Key content |
+|---|--------|------|-------------|
+| 1 | Government Order (GO) | Early 2026 | Establishes the academic year, seats, eligibility framework |
+| 2 | Registration Vigyapti | 9–10 Jun 2026 | Online registration 15 Jun → 8 Jul; fee by 9 Jul; print by 11 Jul; **no correction window** |
+| 3 | Extension Vigyapti | 29 Jul 2026 | Registration extended to 3 Aug; fee to 4 Aug; print to 5 Aug |
+| 4 | Counselling Vigyapti | 7 Aug 2026 | Phase 1 choice filling by rank batch: 1–20,000 on 11–13 Aug; 20,001–80,000 on 14–18 Aug; 80,001–1,52,202 on 19–23 Aug. Allotments 14, 19, 24 Aug. Verification/admission 17–31 Aug. Phase 2 in September. Institute lock 25 Sep. Session start 28 Sep. Fees ₹5,000 allotment + ₹5,000 confirmation, non-refundable on lapse. |
+| 5 | State Rank release | 10 Aug 2026 | Rank from academic points; rank-list PDFs 12 Aug |
+| 6 | Phase-3 Vigyapti | 1 Oct 2026 | Mop-up / last round (the attached notice) |
+
+### Fees (secondary sources, to verify against the PDFs)
+
+- **Application fee:** ₹700 General/OBC, ₹500 SC/ST, ₹200 PwD
+- **Counselling fees:** ₹5,000 allotment + ₹5,000 confirmation (non-refundable on lapse)
+
+### Eligibility (secondary sources)
+
+- Graduation with 50% (General) / 45% (SC/ST)
+- Age 18–35 years
+- Out-of-state candidates counted as unreserved (General)
+
+### CORRECTION to the golden test
+
+07 Aug 2026 is the **Counselling notice**, not the original advertisement. The registration
+advertisement is dated **9/10 Jun 2026**. `expected.json` must reflect this.
+
+### Design consequences for S2/S3 (NOT R1)
+
+**(a) One record per cycle, many notices.** "Update from a notice" must UPDATE the existing
+record: append new dates, mark earlier phases closed, add the notice PDF to Documents. It must
+never create a duplicate.
+
+**(b) Date rows need a richer schema:** phase/round identifier (Phase 1/2/3); a rank batch
+(for choice filling: "1–20,000", "20,001–80,000", …); multiple allotment dates within one
+phase; a candidate deadline separate from the institute deadline; a time that can be text
+("afternoon" / "अपराह्न") or a clock time; and REVISION history (registration end 8 Jul →
+3 Aug shown as "Extended").
+
+**(c) Fees need kinds.** Application fee by category (General/OBC/EWS/SC/ST/PwD) vs
+counselling fees (choice/allotment, confirmation) with refund rules. R1.2 covers application
+fee only; counselling fee is a different fee kind — noted for S3 (R1.11(c)).
+
+**(d) AI date vocabulary must cover:** registration start, registration end, fee last date,
+print/certificate last date, extension, rank release, choice filling per batch, allotment,
+document verification/admission, institute lock, session start, and the Phase 2/3 equivalents.
+
+**(e) Naming.** "Admission", not "Entrance". Selection model `merit-based`.
