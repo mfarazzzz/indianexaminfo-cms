@@ -16,6 +16,23 @@ import { resolveEntityType } from "@/config/moduleRegistry";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/**
+ * R0.12: computes the (workflow_status, is_published) pair for a bulk-import CREATE.
+ * Exported for unit-testability. Rules:
+ *   - isPublished === true  → published
+ *   - isPublished === false → draft
+ *   - isPublished undefined → draft (absent cell = sensible default)
+ * workflow_status is the source of truth; is_published must agree.
+ */
+export function resolvePublishForCreate(
+  isPublished: boolean | undefined,
+): { workflow_status: "draft" | "published"; is_published: boolean } {
+  const published = isPublished === true;
+  return { workflow_status: published ? "published" : "draft", is_published: published };
+}
+
+// ── Export/Import logic ───────────────────────────────────────────────────────
+
 export interface ExportRow {
   name: string;
   shortName: string;
@@ -409,13 +426,9 @@ export async function importExamsFromExcel(
           entity_type: entityType,
           conducting_body: conductingBody,
           official_website: officialWebsite,
-          // status DROPPED from exams (step 4) — written to the edition insert below.
-          // R0.12: new records from bulk import start as DRAFT — publishing is always
-          // an explicit editor action. is_published is derived from workflow_status by
-          // the DB trigger; pass isPublished only to override the draft default.
+          // R0.12 fix: derive publish state from isPublished (see resolvePublishForCreate).
           is_featured: isFeatured ?? false,
-          workflow_status: "draft",
-          is_published: isPublished ?? false,
+          ...resolvePublishForCreate(isPublished),
           seo_title: seoTitle || null,
           seo_description: seoDescription || null,
           tags,
