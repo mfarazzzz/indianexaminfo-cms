@@ -453,7 +453,17 @@ export async function importExamsFromExcel(
         });
 
         if (edErr) {
-          result.errors.push({ row: rowNum, name, error: `Exam created but edition failed: ${edErr.message}` });
+          // FX1.5: compensating delete — remove the just-created exam so a failed
+          // edition insert does not leave an orphan with zero editions (the FX1
+          // silent-save state). Report the row as failed, not created.
+          const { error: compensateErr } = await db.from("exams").delete().eq("id", newExam.id);
+          if (compensateErr) {
+            console.error(`[excelBulkOps] compensating delete failed for orphan exam ${newExam.id}:`, compensateErr);
+            result.errors.push({ row: rowNum, name, error: `Exam created but edition failed (${edErr.message}) AND the orphan exam could not be removed (${compensateErr.message}) — needs manual repair.` });
+          } else {
+            result.errors.push({ row: rowNum, name, error: `Edition create failed, exam rolled back: ${edErr.message}` });
+          }
+          continue; // do NOT count as created
         }
 
         result.created++;

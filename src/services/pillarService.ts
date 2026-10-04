@@ -186,7 +186,17 @@ export function createPillarService(pillar: Pillar) {
         exam_id: examRow.id, year: input.firstEditionYear, session: "main",
         edition_label: String(input.firstEditionYear), is_current: true, status: "upcoming",
       }).select("*").single();
-      if (edErr) throw edErr;
+      // FX1.5: compensating delete — a failed edition insert must not strand an
+      // exam with zero editions (the FX1 silent-save state). Remove the just-
+      // created exam and surface the real error.
+      if (edErr) {
+        const { error: compensateErr } = await db.from("exams").delete().eq("id", examRow.id);
+        if (compensateErr) {
+          console.error(`[pillarService:${pillar}] create compensating delete failed for exam ${examRow.id}:`, compensateErr);
+          throw new Error(`Edition create failed (${edErr.message}) AND the orphan exam could not be removed (${compensateErr.message}) — this exam needs manual repair.`);
+        }
+        throw new Error(`Could not create the first cycle: ${edErr.message}`);
+      }
 
       revalidateExams().catch(() => {});
       return { exam: mapIdentity(examRow), edition: mapEdition(edRow) };

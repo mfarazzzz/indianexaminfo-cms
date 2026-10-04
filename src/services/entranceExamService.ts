@@ -431,6 +431,11 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
   }
 
   // Create first edition
+  // FX1.5: the exam row already exists. If the edition insert fails, the exam
+  // would be stranded with zero editions (the FX1 silent-save state). Do a
+  // COMPENSATING DELETE of the just-created exam and surface the REAL error, so
+  // a failed create leaves no half-built record. (A single-transaction RPC is
+  // the durable fix — see supabase/proposed/fx1_create_exam_with_edition.sql.)
   const { data: edRow, error: edErr } = await db
     .from("exam_editions")
     .insert({
@@ -444,7 +449,15 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
     })
     .select("*")
     .single();
-  if (edErr) throw edErr;
+  if (edErr) {
+    // Compensating delete — best effort; if it also fails, name both problems.
+    const { error: compensateErr } = await db.from("exams").delete().eq("id", (examRow as any).id);
+    if (compensateErr) {
+      console.error(`[entranceExamService] createEntranceExam compensating delete failed for exam ${(examRow as any).id}:`, compensateErr);
+      throw new Error(`Edition create failed (${edErr.message}) AND the orphan exam could not be removed (${compensateErr.message}) — this exam needs manual repair.`);
+    }
+    throw new Error(`Could not create the first cycle: ${edErr.message}`);
+  }
 
   // Trigger frontend cache revalidation
   revalidateExams().catch(() => {});
