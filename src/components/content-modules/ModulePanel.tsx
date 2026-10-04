@@ -59,6 +59,10 @@ const COLUMN_BACKED_MODULE_SOURCE: Record<string, { sourceTab: string; tabId: st
   "faqs":               { sourceTab: "SEO tab",            tabId: "seo" },
   "syllabus":           { sourceTab: "Syllabus tab",       tabId: "syllabus" },
   "academic-info":      { sourceTab: "Identity tab",       tabId: "identity" },
+  // R0 post-review: News is edited in the dedicated News tab (buildMergedContentModules).
+  // Removing it from "Edited here" prevents the Modules card from writing content_modules.news
+  // via saveModuleContent autosave, which would conflict with the News tab.
+  "news":               { sourceTab: "News tab",           tabId: "news" },
 };
 
 /**
