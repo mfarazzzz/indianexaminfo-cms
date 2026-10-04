@@ -702,6 +702,59 @@ export async function startNewEdition(
 }
 
 /**
+ * FX1.2: create a CURRENT edition for an exam that has none.
+ *
+ * An exam can end up with zero editions (see FX1 root cause). The editor's Save
+ * must then CREATE the current cycle in the same save rather than silently drop
+ * every edition-level field. This inserts one edition with is_current=true for
+ * the given year/session; the DB trigger sets exams.current_edition_id.
+ *
+ * Unlike startNewEdition (which creates a DRAFT, is_current=false, to be
+ * activated on save), this creates the cycle as CURRENT immediately, because
+ * there is no existing current edition to archive and the caller is about to
+ * write the full edition data to it.
+ */
+export async function createCurrentEdition(
+  examId: string,
+  year: number,
+  session: string = "main",
+): Promise<ExamEdition> {
+  // Guard: refuse if a current edition already exists (caller thinks there is
+  // none — surface the inconsistency rather than create a second current).
+  const { data: existingCurrent, error: checkErr } = await db
+    .from("exam_editions")
+    .select("id")
+    .eq("exam_id", examId)
+    .eq("is_current", true)
+    .maybeSingle();
+  if (checkErr) {
+    console.error(`[entranceExamService] createCurrentEdition(${examId}) guard check failed:`, checkErr);
+    throw new Error(`Could not verify the exam's current cycle — ${checkErr.message}`);
+  }
+  if (existingCurrent) {
+    throw new Error("This exam already has a current cycle. Reload and edit it instead of creating a new one.");
+  }
+
+  const { data, error } = await db
+    .from("exam_editions")
+    .insert({
+      exam_id: examId,
+      year,
+      session,
+      edition_label: String(year),
+      is_current: true,
+      status: "upcoming",
+      content_modules: {},
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+
+  revalidateExams().catch(() => {});
+  return mapEditionRow(data as Record<string, unknown>);
+}
+
+/**
  * Activate a draft edition — makes it current and archives the old one.
  * Called when the editor saves the exam after starting a new edition.
  */

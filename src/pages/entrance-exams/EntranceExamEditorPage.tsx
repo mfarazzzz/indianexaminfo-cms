@@ -8,6 +8,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import {
   getEntranceExam, updateExamIdentity, updateEdition, startNewEdition,
   createEntranceExam, completeEdition, activateEdition, deleteEdition, promoteEdition,
+  createCurrentEdition,
   type ExamEdition, type ExamIdentity, type EditionStatus, type CycleFrequency, type CycleSession,
 } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
@@ -455,75 +456,63 @@ export function EntranceExamEditorPage() {
       });
 
       // Item 3 — build ONE merged content_modules from the live News child state
-      // (ref), overlaying the current edition's existing modules. Written in the
+      // (ref), overlaying the target edition's existing modules. Written in the
       // SAME updateEdition call below (single whole-column write), which removes
-      // the stale-snapshot cross-overwrite. R0.1: the newsSeo overlay is gone —
-      // nothing writes content_modules.newsSeo anymore.
+      // the stale-snapshot cross-overwrite. R0.1: the newsSeo overlay is gone.
       // `undefined` when the tab hasn't reported, so we don't touch the column.
-      // R0.10: canonical news shape is { items: [...] }. The tab reports the items
-      // array; wrap it into the canonical form before writing to the column.
-      const buildMergedContentModules = (): Record<string, unknown> | undefined => {
-        if (newsRef.current === null) return undefined;
-        const base = (currentEdition?.contentModules ?? {}) as Record<string, unknown>;
+      // R0.10: canonical news shape is { items: [...] }.
+      // FX1.2: when the exam has NO current edition, the base is the AI-pending
+      // modules (if any), not a stale snapshot.
+      const buildMergedContentModules = (baseModules?: Record<string, unknown> | null): Record<string, unknown> | undefined => {
+        const base = (baseModules ?? currentEdition?.contentModules ?? pendingModulesRef.current ?? {}) as Record<string, unknown>;
+        if (newsRef.current === null) {
+          // No news reported. Still carry AI-pending modules if this is a fresh cycle.
+          if (!currentEdition && pendingModulesRef.current) return { ...pendingModulesRef.current };
+          return undefined;
+        }
         return { ...base, news: { items: newsRef.current } };
       };
 
-      // Update current edition (if one exists)
-      if (currentEdition) {
-        const mergedModules = buildMergedContentModules();
-        await updateEdition(currentEdition.id, {
-          status: data.editionStatus,
-          notificationDate: data.notificationDate || null,
-          vacancy: data.vacancy ? parseInt(data.vacancy) : null,
-          importantDates: data.importantDates.filter((d: any) => d.date && d.date.trim() !== ""),
-          // R0.6: write eligibility/fee only when the form holds a non-null value.
-          // `undefined` means "don't touch this column" — existing DB data is safe.
-          eligibility: data.eligibility ?? undefined,
-          applicationFee: data.applicationFee ?? undefined,
-          hasNotification: data.hasNotification,
-          hasApplication: data.hasApplication,
-          hasAdmitCard: data.hasAdmitCard,
-          hasSyllabus: data.hasSyllabus,
-          hasAnswerKey: data.hasAnswerKey,
-          hasResult: data.hasResult,
-          hasCutoff: data.hasCutoff,
-          hasCounselling: data.hasCounselling,
-          // R0.8 (2026-10-04): the FAQs shadow write to exam_editions.faqs is
-          // STOPPED. The frontend reads exams.faqs only (examService maps row.faqs
-          // from the exams table); exam_editions.faqs had no reader. The canonical
-          // write to exams.faqs (updateExamIdentity above) stays. No data change —
-          // existing edition faqs values are left as they are.
-          ...(mergedModules !== undefined ? { contentModules: mergedModules } : {}),
-        });
-      }
+      // The edition-level payload, identical regardless of which edition we write to.
+      const editionWrite = (mergedModules: Record<string, unknown> | undefined) => ({
+        status: data.editionStatus,
+        notificationDate: data.notificationDate || null,
+        vacancy: data.vacancy ? parseInt(data.vacancy) : null,
+        importantDates: data.importantDates.filter((d: any) => d.date && d.date.trim() !== ""),
+        // R0.6: write eligibility/fee only when the form holds a non-null value.
+        eligibility: data.eligibility ?? undefined,
+        applicationFee: data.applicationFee ?? undefined,
+        hasNotification: data.hasNotification,
+        hasApplication: data.hasApplication,
+        hasAdmitCard: data.hasAdmitCard,
+        hasSyllabus: data.hasSyllabus,
+        hasAnswerKey: data.hasAnswerKey,
+        hasResult: data.hasResult,
+        hasCutoff: data.hasCutoff,
+        hasCounselling: data.hasCounselling,
+        // R0.8: no edition faqs shadow write (frontend reads exams.faqs only).
+        ...(mergedModules !== undefined ? { contentModules: mergedModules } : {}),
+      });
 
-      // If there's a draft edition pending, save it and activate it (archives old one)
+      // FX1.2: resolve the target edition and write ONCE. Priority:
+      //   pending draft (activate it) > existing current > a NEW current created
+      //   now (exam had zero editions). The old code wrote edition data ONLY when
+      //   currentEdition existed, then ALWAYS toasted success — silently dropping
+      //   dates/eligibility/fee/modules/news when the exam had lost its cycle.
       if (draftEdition) {
-        const mergedModulesDraft = buildMergedContentModules();
-        await updateEdition(draftEdition.id, {
-          status: data.editionStatus,
-          notificationDate: data.notificationDate || null,
-          vacancy: data.vacancy ? parseInt(data.vacancy) : null,
-          importantDates: data.importantDates.filter((d: any) => d.date && d.date.trim() !== ""),
-          // R0.6: eligibility/fee (see above).
-          eligibility: data.eligibility ?? undefined,
-          applicationFee: data.applicationFee ?? undefined,
-          hasNotification: data.hasNotification,
-          hasApplication: data.hasApplication,
-          hasAdmitCard: data.hasAdmitCard,
-          hasSyllabus: data.hasSyllabus,
-          hasAnswerKey: data.hasAnswerKey,
-          hasResult: data.hasResult,
-          hasCutoff: data.hasCutoff,
-          hasCounselling: data.hasCounselling,
-          // R0.8: no edition faqs shadow write (see above).
-          ...(mergedModulesDraft !== undefined ? { contentModules: mergedModulesDraft } : {}),
-        });
+        await updateEdition(draftEdition.id, editionWrite(buildMergedContentModules()));
         await activateEdition(draftEdition.id);
         setDraftEdition(null);
-        toast.success("New edition activated. Previous edition archived.");
-      } else {
+        toast.success("Saved. New edition activated. Previous edition archived.");
+      } else if (currentEdition) {
+        await updateEdition(currentEdition.id, editionWrite(buildMergedContentModules()));
         toast.success("Saved successfully.");
+      } else {
+        // No current edition — create the cycle now so nothing is dropped.
+        const newEdition = await createCurrentEdition(exam!.id, data.editionYear);
+        await updateEdition(newEdition.id, editionWrite(buildMergedContentModules({})));
+        pendingModulesRef.current = null;
+        toast.success(`Created the ${data.editionYear} cycle and saved.`);
       }
       // Unified Save persisted News too — clear its local dirty flag.
       // (loadExam() below re-seeds the child tabs from the freshly saved edition.)
