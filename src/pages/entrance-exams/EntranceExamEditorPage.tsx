@@ -409,7 +409,7 @@ export function EntranceExamEditorPage() {
           status: data.editionStatus,
           notificationDate: data.notificationDate || null,
           vacancy: data.vacancy ? parseInt(data.vacancy) : null,
-          importantDates: data.importantDates.filter((d: any) => d.date && d.date.trim() !== ""),
+          importantDates: serializeDateRowsForWrite(data.importantDates),
           eligibility: data.eligibility ?? undefined,
           applicationFee: data.applicationFee ?? undefined,
           hasNotification: data.hasNotification,
@@ -481,7 +481,7 @@ export function EntranceExamEditorPage() {
         status: data.editionStatus,
         notificationDate: data.notificationDate || null,
         vacancy: data.vacancy ? parseInt(data.vacancy) : null,
-        importantDates: data.importantDates.filter((d: any) => d.date && d.date.trim() !== ""),
+        importantDates: serializeDateRowsForWrite(data.importantDates),
         // R0.6: write eligibility/fee only when the form holds a non-null value.
         eligibility: data.eligibility ?? undefined,
         applicationFee: data.applicationFee ?? undefined,
@@ -1403,6 +1403,30 @@ type DateRow = {
   stage_label?: string;
   [key: string]: unknown;
 };
+
+/**
+ * FX2 — serialize date rows for the DB write (the single chokepoint for both
+ * the editor save and the AI-fill-then-save path, since AI now fills form state).
+ *
+ *  1. Drop rows with no date. The DB CHECK `exam_editions_important_dates_valid`
+ *     (important_dates_all_iso) rejects an empty-date row unless its state is a
+ *     tentative one (expected/postponed/cancelled); the CMS never writes an
+ *     empty-date row, so filtering first keeps a stray blank row from failing
+ *     the whole write.
+ *  2. Strip an empty `state`. The R0.4 per-row select defaults to "" ("— State —").
+ *     "" is NOT in the site's state vocabulary (confirmed|expected|tba|postponed|
+ *     cancelled), and "no state chosen" must mean the key is ABSENT — never
+ *     state:"". A dated row with state:"" passes the CHECK today, but writing ""
+ *     is semantically wrong and would be rejected on any future unfiltered path.
+ */
+export function serializeDateRowsForWrite(rows: DateRow[]): DateRow[] {
+  return rows
+    .filter((d) => d.date && d.date.trim() !== "")
+    .map((d) => {
+      const { state, ...rest } = d;
+      return state && state.trim() !== "" ? { ...rest, state } : rest;
+    });
+}
 
 // Standard date fields that every entrance exam typically has.
 // `type` is the PERSISTED/frontend vocabulary (what exam_derived_status reads) —
