@@ -529,8 +529,22 @@ export function EntranceExamEditorPage() {
       // (loadExam() below re-seeds the child tabs from the freshly saved edition.)
       setNewsDirty(false);
       await loadExam();
-    } catch (err) {
-      toast.error("Save failed: " + getErrorMessage(err));
+    } catch (err: any) {
+      // R1.9: friendly duplicate-slug error with a link to the existing record.
+      if (err?.code === 'DUPLICATE_SLUG' && err?.existingExam) {
+        const { id: existId, name: existName, status: existStatus } = err.existingExam;
+        const statusLabel = existStatus === 'published' ? 'Published' : existStatus === 'archived' ? 'Archived' : 'Draft';
+        toast.error(
+          `An exam with this name already exists: ${existName} (${statusLabel}).`,
+          {
+            description: `Open it to update, or change the Short Name / Slug and try again.`,
+            action: { label: "Open existing", onClick: () => navigate(`${listPath}/${existId}`) },
+            duration: 10000,
+          },
+        );
+      } else {
+        toast.error("Save failed: " + getErrorMessage(err));
+      }
     } finally {
       setSaving(false);
     }

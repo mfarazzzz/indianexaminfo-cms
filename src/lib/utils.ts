@@ -88,11 +88,47 @@ export function isSafeUrl(url: string): boolean {
   return true;
 }
 
+// ── R1.8: URL tracking parameter stripping ────────────────────────────────────
+
+/** Param names that are always tracking/analytics junk. */
+const ALWAYS_STRIP_PARAMS = /^utm_|^gclid$|^fbclid$|^mc_cid$|^mc_eid$|^msclkid$|^dclid$/i;
+/** Param names that are only stripped when their value matches AI/chat referral. */
+const CONDITIONAL_REF_PARAMS = /^(ref|source)$/i;
+/** Values in ref/source that indicate AI-generated or copy-pasted tracking. */
+const TRACKING_REF_VALUES = /chatgpt\.com|perplexity|copilot|gemini|claude\.ai|bing\.com\/chat/i;
+
+/**
+ * Strip tracking/analytics parameters from a URL string.
+ * Removes utm_*, gclid, fbclid, mc_cid, mc_eid, msclkid, dclid unconditionally.
+ * Removes ref/source only when their value matches known AI/chat platforms.
+ * Keeps all other query params intact.
+ */
+export function stripTrackingParams(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    const toDelete: string[] = [];
+    url.searchParams.forEach((value, key) => {
+      if (ALWAYS_STRIP_PARAMS.test(key)) {
+        toDelete.push(key);
+      } else if (CONDITIONAL_REF_PARAMS.test(key) && TRACKING_REF_VALUES.test(value)) {
+        toDelete.push(key);
+      }
+    });
+    for (const k of toDelete) url.searchParams.delete(k);
+    return url.toString();
+  } catch {
+    return rawUrl; // not parseable — leave untouched
+  }
+}
+
 /**
  * Normalise a website value into a valid absolute URL.
  * Prepends "https://" when no protocol is present; returns "" if the result
  * doesn't parse. Multi-URL values (e.g. "https://a, https://b") fail new URL()
  * and return "" by design — fixed by hand, not parsed here.
+ *
+ * R1.8: also strips tracking parameters (utm_*, gclid, fbclid, mc_cid, mc_eid,
+ * AI-referral source/ref) that AI Fill or copy-paste introduces.
  *
  * ⚠️ MUST STAY IDENTICAL to indianexaminfo-frontend/lib/utils.ts `normalizeUrl`.
  * The two repos don't share a package; keep both copies in sync. The DB CHECK
@@ -111,7 +147,8 @@ export function normalizeUrl(raw: string | null | undefined): string {
   if (/[\s,]/.test(trimmed) || /%20|%2c/i.test(trimmed)) return "";
   const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   try {
-    return new URL(withProto).toString();
+    const parsed = new URL(withProto).toString();
+    return stripTrackingParams(parsed);
   } catch {
     return "";
   }

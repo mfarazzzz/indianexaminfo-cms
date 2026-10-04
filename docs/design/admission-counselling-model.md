@@ -53,7 +53,7 @@ counselling admission — see §1.
 - **But AI Fill ignores that table** and hard-codes the whole category vocabulary as an
   inline enum in the prompt: `src/lib/ai/autofill.ts:168` —
   `management|engineering|medical|law|banking|…|teaching|…` (18 fixed slugs, no
-  teacher-education / D.El.Ed / B.Ed / M.Ed / Shiksha Shastri).
+  teaching-and-education / D.El.Ed / B.Ed / M.Ed / Shiksha Shastri).
 - `pillar`, `entityType`, `status` are likewise hard-coded enums in the same prompt
   (`autofill.ts:146-148`), and the `entityType` list `recruitment|exam|board|university` is
   **stale**: the DB renamed `university`→`university-admission` and added `university-exam`
@@ -65,7 +65,7 @@ counselling admission — see §1.
   `deleteCategory`), routed at `/categories` behind `P.MANAGE_CATEGORIES`
   (`src/router/index.tsx:196`) and linked in the sidebar (`src/components/layout/Sidebar.tsx:62`).
 - **The real taxonomy gaps are therefore NOT "no admin screen"** — they are: (i) AI Fill does
-  not read this table (§9); (ii) the Teacher Education rows do not exist yet; (iii) renaming a
+  not read this table (§9); (ii) the Teaching and Education rows do not exist yet; (iii) renaming a
   published category/exam `slug` orphans its URL — there is no history/redirect table (§2).
 
 **PROPOSAL**
@@ -76,8 +76,8 @@ counselling admission — see §1.
   **So S1 does NOT touch the dropdown.** S1's taxonomy work is only the breadcrumb
   (`categories.name`, §2) + the single redirect for the D.El.Ed move; AI Fill reading the DB and
   the stale-enum fix move to S2 (§9).
-- **B1 — add "Teacher Education" as ONE FLAT category row** (owner decision, 2026-10-03: "one
-  flat category under the admission pillar (slug `teacher-education`). No sub-category tree
+- **B1 — add "Teaching and Education" as ONE FLAT category row** (owner decision, 2026-10-03: "one
+  flat category under the admission pillar (slug `teaching-and-education`). No sub-category tree
   unless you show me why it's needed now." Nothing needs a tree today → **no children created**;
   `parent_id`/`subcategory_id` stay available for a future tree. The owner adds the row
   themselves via `/categories`, so it is **not** in S1's code scope. Sketch (documentation only):
@@ -464,7 +464,7 @@ the past ⇒ **closed**. The **entity** status picks the active round's stage la
   the `pillar`/`entity_type`/`selection_model`/`exam_status` enums, the `important_dates` `type`
   vocabulary). The
   model returns a value **plus a confidence score**; below a threshold or no match → **leave
-  the field empty, flag it, and suggest a missing option** (e.g. "Teacher Education not in the
+  the field empty, flag it, and suggest a missing option** (e.g. "Teaching and Education not in the
   list"). Never let AI invent an enum value.
 - **Fills every supported module**, including **counselling rounds** (§5) and **event rows
   with kinds/times/ranges** (§4), and — critically — sets **`selection_model`** from evidence
@@ -488,7 +488,7 @@ Sizes: S ≤1 day, M 2–4 days, L 1–2 weeks. Migrations are **proposed only**
 | # | Slice | Size | Migrations (proposed/) | Acceptance items |
 |---|-------|------|------------------------|------------------|
 | 0 | **F1–F4 build fix** (done) + **T1 trust hotfix** (done, this push) | S–M | — | E2 badge, false "Verified by" removed, H2 empty widgets hidden |
-| 1 | **S1 (confirmed this slice)** — breadcrumb reads `categories.name` (never slug title-case; `&` survives) at `admission/[category]/[slug]/page.tsx:49` + `university-exam/[...segments]/page.tsx:214` (add `name` to the `DETAIL_SELECT` join + `categoryName` on `ExamEntity`); **one 301 in `next.config.ts`** for the UP D.El.Ed move `research-fellowships`→`teacher-education` (needs the exact slug from the owner). Identity dropdown already reads `categories` (no change); owner adds the flat `teacher-education` row via `/categories`. | S | — | B1 (row by owner), this one redirect, breadcrumb |
+| 1 | **S1 (confirmed this slice)** — breadcrumb reads `categories.name` (never slug title-case; `&` survives) at `admission/[category]/[slug]/page.tsx:49` + `university-exam/[...segments]/page.tsx:214` (add `name` to the `DETAIL_SELECT` join + `categoryName` on `ExamEntity`); **one 301 in `next.config.ts`** for the UP D.El.Ed move `research-fellowships`→`teaching-and-education` (needs the exact slug from the owner). Identity dropdown already reads `categories` (no change); owner adds the flat `teaching-and-education` row via `/categories`. | S | — | B1 (row by owner), this one redirect, breadcrumb |
 | 2 | **A1 (S2)** — AI Fill reads DB options (`categories` + the enums) + sets `selection_model`; confidence + flag/suggest-empty; **remove hard-coded `autofill.ts:168`**; `getEntityTypeLabel` + stale `autofill.ts:169` entityType fix; `b4_slug_history` for the general auto-redirect | M | `b4_slug_history.sql`, `a1_ai_fill_options.sql` | A1, A2, B3, B4 (history) |
 | 3 | **D1 + E1 dates & status**: extend `important_dates` in place (JSONB keys `end_date`/`start_time`/`end_time`/`round_id`/`sort`, **no new table**) + `exam_computed_status` fn that **replaces** the `exam_derived_status` view (§6 cut-over) + TS/SQL parity mirrors + fixtures | L | `d1_important_dates_extension.sql`, `e1_exam_status_fn.sql` | D1, D2, E1 |
 | 4 | **A2/A3/A5 + C1/C2 rounds + model-driven modules**: `counselling_rounds` (metadata only, §5); modules ordered/gated by `(entity_type, selection_model)`; eligibility/fee/faqs as modules; reorder + toggle/badge cleanup | L | `c2_counselling_rounds.sql` | C1, C2, I1, I2, I3, A3, A5 |
@@ -506,8 +506,8 @@ Source: the owner's "new record from the UP D.El.Ed 01 Oct 2026 Phase-3 notice, 
 no manual edits". Legend: **[S#]** = covered by slice #; **[DONE]** = already satisfied by the
 T1 push; **[S#+,S#]** = needs more than one slice.
 
-- [ ] **Category = Teacher Education** (or flagged "no match", never guessed) — **[S1]**: AI
-      Fill reads `categories` (incl the new Teacher Education rows) + confidence/flag rule.
+- [ ] **Category = Teaching and Education** (or flagged "no match", never guessed) — **[S1]**: AI
+      Fill reads `categories` (incl the new Teaching and Education rows) + confidence/flag rule.
 - [ ] **Entity type = university-admission, shown publicly as "Admission / Counselling"** (never
       "University") — **[S1]**: `getEntityTypeLabel` (§1 change #1) + category-tree move kills the
       slug-derived "University" breadcrumb.
@@ -545,9 +545,9 @@ slice.** No box is a [GAP] — the field list and checklist are now the owner's 
 
 > **Owner numbering — RESOLVED (2026-10-03).** S1 is **not** A1. Because the Identity form's
 > Category dropdown already reads `categories`, **S1 = breadcrumb (`categories.name`) + the one
-> hand-written 301** for the D.El.Ed move; the owner adds the flat `teacher-education` row via
+> hand-written 301** for the D.El.Ed move; the owner adds the flat `teaching-and-education` row via
 > `/categories` themselves. **A1 (AI Fill DB-read + `selection_model` + confidence) is S2**, and it
-> *depends on* the owner's `teacher-education` row existing so "Teacher Education" is a real option
+> *depends on* the owner's `teaching-and-education` row existing so "Teaching and Education" is a real option
 > (acceptance box 1). The general `b4_slug_history` auto-redirect is deferred to S2 — S1 ships only
 > the single 301.
 
@@ -565,7 +565,7 @@ slice.** No box is a [GAP] — the field list and checklist are now the owner's 
    band, eligibility text, seat note, fee amount+label, notice resource FK); **no date columns** —
    windows live in `important_dates` keyed by `round_id` (owner change #3).
 4. `b4_slug_history.sql` — `entity_slug_history` + rename-capture trigger (redirect source).
-5. `b1_teacher_education_categories.sql` — **ONE flat Teacher Education row** (sketch; the owner
+5. `b1_teacher_education_categories.sql` — **ONE flat Teaching and Education row** (sketch; the owner
    adds it via `/categories`; no children — a tree is deferred until justified, §1 B1).
 6. `a1_ai_fill_options.sql` — DB-driven dropdown options view(s) for AI Fill (+ `ai_metadata`
    fill-source / OCR-method / quote conventions).
@@ -683,7 +683,7 @@ like "the model gave up" instead of "the pipeline dropped every row".
    shortName, conductingBody, officialWebsite, importantDates (fill-blank/append only), vacancy,
    edition status, `has_*` false→true, seoTitle/seoDescription, tags, faqs, contentModules merge
    (`EntranceExamEditorPage.tsx:645-711`). It **cannot write category, subcategory, region or
-   selection_model at all** — so "AI Fill not choosing teacher-education / merit-based" was
+   selection_model at all** — so "AI Fill not choosing teaching-and-education / merit-based" was
    structurally impossible even when extraction worked. S2 must widen this list **with
    per-field preview + approve**, and S1 item 4 made the two identity fields required-on-create
    instead of silently defaulted.
@@ -734,7 +734,7 @@ the page images can read it.
 
 **`expected.json`** — built from the owner's acceptance table. Each expected field carries
 `{ value, sourceQuote }`:
-- official name; category `teacher-education`; selection model `merit-based`;
+- official name; category `teaching-and-education`; selection model `merit-based`;
 - the five dated rows with **IST times**: choice filling + payment 05 Oct (afternoon) → 07 Oct
   18:00; allotment 08 Oct; document verification 09 Oct → 14 Oct 17:00; institution lock 15 Oct;
   original notification 07 Aug;

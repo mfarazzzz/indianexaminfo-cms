@@ -19,8 +19,8 @@ function exam(overrides: Partial<ExamIdentity> = {}): ExamIdentity {
     shortName: 'UP DLED',
     pillar: 'entrance-exam' as ExamIdentity['pillar'],
     region: 'all-india',
-    category: 'teacher-education',
-    categoryName: 'Teacher Education',
+    category: 'teaching-and-education',
+    categoryName: 'Teaching and Education',
     subcategory: '',
     categoryId: 'cat-1',
     subcategoryId: null,
@@ -60,7 +60,7 @@ describe('indefiniteArticle', () => {
 describe('generateOverviewAuto — the category sentence (S1 item 5)', () => {
   it('writes the display name with correct casing and the right article — never "a exam"', () => {
     const out = generateOverviewAuto(exam(), null) as { body: string }
-    expect(out.body).toContain('It is a Teacher Education exam.')
+    expect(out.body).toContain('It is a Teaching and Education exam.')
     expect(out.body).not.toMatch(/\ba\s+exam\b/)
   })
 
@@ -81,6 +81,6 @@ describe('generateOverviewAuto — the category sentence (S1 item 5)', () => {
 
   it('falls back to a title-cased slug for legacy rows whose join carried no name', () => {
     const out = generateOverviewAuto(exam({ categoryName: '' }), null) as { body: string }
-    expect(out.body).toContain('It is a Teacher Education exam.')
+    expect(out.body).toContain('It is a Teaching And Education exam.')
   })
 })

@@ -50,7 +50,7 @@ const baseInput: NewExamInput = {
   name: 'UP D.ElEd 2026 Phase 3',
   shortName: 'UP DLED PHASE 3',
   region: 'all-india',
-  categoryId: 'cat-teacher-education',
+  categoryId: 'cat-teaching-and-education',
   conductingBody: 'MEERUT UNIVERSITY',
   officialWebsite: 'https://example.ac.in',
   selectionModel: 'merit-based',
@@ -64,7 +64,7 @@ const examRow = {
   short_name: 'UP DLED PHASE 3',
   pillar: 'entrance-exam',
   workflow_status: 'draft',
-  cat: { slug: 'teacher-education', name: 'Teacher Education' },
+  cat: { slug: 'teaching-and-education', name: 'Teaching and Education' },
 }
 
 beforeEach(() => {
@@ -81,7 +81,7 @@ describe('createEntranceExam — no publish-on-create for the entrance pillar', 
 
   it('surfaces categories.name on the created identity (breadcrumb/template authority)', async () => {
     const result = await createEntranceExam(baseInput)
-    expect(result.exam.categoryName).toBe('Teacher Education')
+    expect(result.exam.categoryName).toBe('Teaching and Education')
   })
 })
 

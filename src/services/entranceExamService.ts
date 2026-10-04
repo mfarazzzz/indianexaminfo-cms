@@ -363,7 +363,7 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
   // Check slug uniqueness
   const { data: existing, error: existingErr } = await db
     .from("exams")
-    .select("id")
+    .select("id, name, workflow_status")
     .eq("slug", slug)
     .maybeSingle();
   // A failed uniqueness check is NOT "slug is free" — abort the create rather
@@ -374,7 +374,14 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
   }
 
   if (existing) {
-    throw new Error(`An exam with slug "${slug}" already exists.`);
+    // R1.9: friendly message with the existing record's identity so the editor
+    // can link directly to it instead of guessing which record collided.
+    const err = new Error(
+      `DUPLICATE_SLUG::${existing.id}::${existing.name}::${existing.workflow_status ?? 'draft'}`,
+    );
+    (err as any).code = 'DUPLICATE_SLUG';
+    (err as any).existingExam = { id: existing.id, name: existing.name, status: existing.workflow_status ?? 'draft' };
+    throw err;
   }
 
   // Create the exam
