@@ -1476,6 +1476,22 @@ export function computeNewEditionDefaultYear(currentEditionYear: number | null |
 }
 
 /**
+ * A5 — when an exam has NO active cycle but other editions/drafts exist, pick
+ * the edition to offer activating. Returns null when there IS a current edition
+ * or a pending in-memory draft (those cases have their own banners). Used by
+ * both the header banner and the Modules empty state so the rule lives once.
+ */
+export function pickDraftWhenNoCurrent(
+  editions: { id: string; isCurrent: boolean; editionLabel: string }[],
+  hasCurrent: boolean,
+  hasPendingDraft: boolean,
+): { id: string; editionLabel: string } | null {
+  if (hasCurrent || hasPendingDraft || editions.length === 0) return null;
+  const draft = editions.find((e) => !e.isCurrent) ?? editions[0];
+  return draft ? { id: draft.id, editionLabel: draft.editionLabel } : null;
+}
+
+/**
  * FX2 — serialize date rows for the DB write (the single chokepoint for both
  * the editor save and the AI-fill-then-save path, since AI now fills form state).
  *
