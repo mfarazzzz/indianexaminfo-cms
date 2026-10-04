@@ -150,7 +150,12 @@ export function createPillarService(pillar: Pillar) {
       return { exam, currentEdition, editions };
     },
 
-    async create(input: { name: string; shortName: string; slug?: string; region: string; categoryId?: string; conductingBody: string; officialWebsite?: string; cycleFrequency?: CycleFrequency; entityType?: string; selectionModel?: SelectionModel; firstEditionYear: number }) {
+    async create(input: { name: string; shortName: string; slug?: string; region: string; categoryId?: string; conductingBody: string; officialWebsite?: string; cycleFrequency?: CycleFrequency; entityType?: string; selectionModel: SelectionModel; firstEditionYear: number }) {
+      // R1.7: selectionModel is REQUIRED — no silent default. The editor must
+      // offer a choice (like entrance) or the pillar rule sets it explicitly.
+      if (!input.selectionModel) {
+        throw new Error("Selection model is required — choose how candidates are selected (no default).");
+      }
       const slug = input.slug || input.shortName.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 60) || input.name.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 60);
 
       // A failed uniqueness check is NOT "slug is free" — abort rather than
@@ -166,7 +171,7 @@ export function createPillarService(pillar: Pillar) {
         slug, name: input.name, short_name: input.shortName,
         pillar: pillar, region: input.region, category_id: input.categoryId || null,
         entity_type: input.entityType ?? "exam",
-        selection_model: input.selectionModel ?? "written-exam",
+        selection_model: input.selectionModel,
         conducting_body: input.conductingBody,
         official_website: normalizeUrlOrThrow(input.officialWebsite), cycle_frequency: input.cycleFrequency ?? "annual",
         // status DROPPED from exams (step 4) — set on the edition insert below.
