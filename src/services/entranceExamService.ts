@@ -809,8 +809,17 @@ export async function getEditionHistory(examId: string): Promise<ExamEdition[]> 
 // ── Delete Edition ─────────────────────────────────────────────────────────
 
 /**
- * Delete an edition. If the deleted edition was current, automatically
- * promotes the most recent remaining edition to current.
+ * Delete an edition.
+ *
+ * FX1.4 (2026-10-04): refuse to delete an edition when doing so would leave the
+ * exam without a CURRENT cycle — the state that silently drops edition-level
+ * saves (FX1). Specifically:
+ *   - the ONLY edition of an exam may never be deleted (the exam would have zero
+ *     editions; the editor then shows "Editions (0)" and every edition write is
+ *     skipped while the UI claims success);
+ *   - the CURRENT edition may not be deleted while other editions exist, unless
+ *     another edition is promoted to current first (promoteEdition).
+ * A non-current (archived/draft) edition may always be deleted.
  */
 export async function deleteEdition(editionId: string): Promise<void> {
   // Get the edition to check if it's current and get the exam_id
@@ -824,54 +833,35 @@ export async function deleteEdition(editionId: string): Promise<void> {
   const examId = (edition as any).exam_id;
   const wasCurrent = (edition as any).is_current;
 
+  // FX1.4: count the exam's editions so we can refuse the destructive cases.
+  const { count, error: countErr } = await db
+    .from("exam_editions")
+    .select("id", { count: "exact", head: true })
+    .eq("exam_id", examId);
+  // A failed count must NOT be read as "safe to delete" — abort.
+  if (countErr) {
+    console.error(`[entranceExamService] deleteEdition(${editionId}) count failed:`, countErr);
+    throw new Error(`Could not verify the edition count before deleting — ${countErr.message}`);
+  }
+  const totalEditions = count ?? 0;
+
+  if (totalEditions <= 1) {
+    throw new Error(
+      "This is the exam's only cycle — deleting it would leave the exam with no cycle to edit. Create a new cycle first, then delete the old one.",
+    );
+  }
+  if (wasCurrent) {
+    throw new Error(
+      "You cannot delete the current cycle while other cycles exist. Promote another cycle to current first, then delete this one.",
+    );
+  }
+
   // Delete the edition
   const { error: delErr } = await db
     .from("exam_editions")
     .delete()
     .eq("id", editionId);
   if (delErr) throw delErr;
-
-  // If it was the current edition, promote the most recent remaining one
-  if (wasCurrent) {
-    const { data: nextEdition, error: nextErr } = await db
-      .from("exam_editions")
-      .select("id")
-      .eq("exam_id", examId)
-      .order("year", { ascending: false })
-      .order("session")
-      .limit(1)
-      .maybeSingle();
-    // The edition is ALREADY deleted. A failed re-promotion read must never be
-    // read as "no editions left" — nulling the pointer while editions remain
-    // would strand the exam without a current cycle. Surface it loudly.
-    if (nextErr) {
-      console.error(`[entranceExamService] deleteEdition(${editionId}) promote lookup failed:`, nextErr);
-      throw new Error(`Edition deleted but the next edition could not be determined — fix this exam's current cycle manually (${nextErr.message}).`);
-    }
-
-    if (nextEdition) {
-      // Promote the most recent remaining edition
-      const { error: promoteErr } = await db
-        .from("exam_editions")
-        .update({ is_current: true })
-        .eq("id", (nextEdition as any).id);
-      if (promoteErr) {
-        console.error(`[entranceExamService] deleteEdition(${editionId}) promote update failed:`, promoteErr);
-        throw new Error(`Edition deleted but promotion of the next cycle failed — fix the current cycle manually (${promoteErr.message}).`);
-      }
-      // Trigger will update exams.current_edition_id
-    } else {
-      // No editions left — null out the pointer
-      const { error: nullErr } = await db
-        .from("exams")
-        .update({ current_edition_id: null })
-        .eq("id", examId);
-      if (nullErr) {
-        console.error(`[entranceExamService] deleteEdition(${editionId}) pointer-null failed:`, nullErr);
-        throw new Error(`Edition deleted but the exam's edition pointer could not be cleared (${nullErr.message}).`);
-      }
-    }
-  }
 }
 
 // ── Promote Edition ────────────────────────────────────────────────────────
