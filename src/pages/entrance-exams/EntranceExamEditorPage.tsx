@@ -152,6 +152,8 @@ export function EntranceExamEditorPage() {
   // A1: in-flight guard so a double-click on "Create Edition" cannot fire two
   // startNewEdition calls (the second hit the unique key and toasted an error).
   const [startingEdition, setStartingEdition] = useState(false);
+  // A5: in-flight guard for the header's "Activate it / Create <year> cycle" fix.
+  const [fixingCycle, setFixingCycle] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
@@ -696,6 +698,18 @@ export function EntranceExamEditorPage() {
     }
   };
 
+  // A5: activate an existing draft/other edition as the current cycle (used by
+  // the header banner and the Modules empty state when there is no current one).
+  const handleActivateDraft = async (editionId: string, label: string) => {
+    try {
+      await activateEdition(editionId);
+      await loadExam();
+      toast.success(`${label} is now the active cycle.`);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    }
+  };
+
   const handleDelete = async () => {
     try {
       await deleteExam(exam!.id);
@@ -1106,6 +1120,42 @@ export function EntranceExamEditorPage() {
                 ⚠️ Draft edition: {draftEdition.editionLabel} — Save to activate
               </p>
             )}
+            {/* A5: no active cycle, but other editions/drafts exist. Say so plainly
+                and offer the two ways out, instead of a bare "Editions (0)". */}
+            {!isNew && !currentEdition && !draftEdition && editions.length > 0 && (() => {
+              const draft = editions.find((e) => !e.isCurrent) ?? editions[0];
+              const thisYear = new Date().getFullYear();
+              return (
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-amber-700 font-medium">
+                    ⚠️ No active cycle. {draft.editionLabel} exists:
+                  </span>
+                  <button
+                    type="button"
+                    disabled={fixingCycle}
+                    onClick={async () => {
+                      setFixingCycle(true);
+                      try { await activateEdition(draft.id); await loadExam(); toast.success(`${draft.editionLabel} is now the active cycle.`); }
+                      catch (err) { toast.error(getErrorMessage(err)); }
+                      finally { setFixingCycle(false); }
+                    }}
+                    className="font-medium text-blue-600 hover:underline disabled:opacity-50"
+                  >Activate it</button>
+                  <span className="text-slate-400">or</span>
+                  <button
+                    type="button"
+                    disabled={fixingCycle}
+                    onClick={async () => {
+                      setFixingCycle(true);
+                      try { await createCurrentEdition(exam!.id, thisYear); await loadExam(); toast.success(`Created the ${thisYear} cycle.`); }
+                      catch (err) { toast.error(getErrorMessage(err)); }
+                      finally { setFixingCycle(false); }
+                    }}
+                    className="font-medium text-blue-600 hover:underline disabled:opacity-50"
+                  >Create {thisYear} cycle</button>
+                </div>
+              );
+            })()}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1234,7 +1284,7 @@ export function EntranceExamEditorPage() {
             }
           }}
         />}
-        {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} onDirtyChange={setModuleDirty} entityType={watchedEntityType} selectionModel={watchedSelectionModel} editionYear={watchedEditionYear} onCycleCreated={loadExam} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
+        {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} onDirtyChange={setModuleDirty} entityType={watchedEntityType} selectionModel={watchedSelectionModel} editionYear={watchedEditionYear} onCycleCreated={loadExam} existingDraftLabel={!currentEdition && !draftEdition ? (editions.find((e) => !e.isCurrent)?.editionLabel ?? null) : null} onActivateDraft={!currentEdition && !draftEdition ? (() => { const d = editions.find((e) => !e.isCurrent); return d ? handleActivateDraft(d.id, d.editionLabel) : undefined; }) : undefined} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
         {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} examId={exam?.id ?? null} editionYear={watchedEditionYear} onCycleCreated={loadExam} contentModules={currentEdition?.contentModules ?? {}} onDirtyChange={setNewsDirty} onNewsChange={(n) => { newsRef.current = n; }} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
         {activeTab === "editions" && <HistoryTab editions={editions}

@@ -122,6 +122,10 @@ interface Props {
    *  can offer "Create <year> cycle" for an EXISTING exam that lost its edition. */
   editionYear?: number;
   onCycleCreated?: () => void | Promise<void>;
+  /** A5: when there is no current cycle but a draft/other edition exists, name it
+   *  and offer to activate it from the Modules empty state too. */
+  existingDraftLabel?: string | null;
+  onActivateDraft?: () => void | Promise<void>;
   /**
    * Reports whether ANY module currently has an unsaved edit — i.e. a debounced
    * autosave is scheduled but hasn't landed yet. The editor feeds this into its
@@ -131,7 +135,7 @@ interface Props {
   onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType, selectionModel, onNavigateTab, editionYear, onCycleCreated, onDirtyChange }: Props) {
+export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType, selectionModel, onNavigateTab, editionYear, onCycleCreated, existingDraftLabel, onActivateDraft, onDirtyChange }: Props) {
   const [modules, setModules] = useState<ModuleDefinition[]>([]);
   const [contentModules, setContentModules] = useState<ContentModulesData>({});
   const [config, setConfig] = useState<ModuleConfig>({ moduleOrder: [], enabledModules: [], syncTimestamps: {} });
@@ -346,6 +350,8 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
           year={editionYear ?? new Date().getFullYear()}
           onCreated={onCycleCreated ?? (() => {})}
           context="The Modules tab"
+          existingDraftLabel={existingDraftLabel}
+          onActivateDraft={onActivateDraft}
         />
       );
     }
