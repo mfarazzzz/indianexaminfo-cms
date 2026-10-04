@@ -188,13 +188,68 @@ export function validateImageFile(file: File): string | null {
 
 
 /**
+ * A4 — map a Postgres/PostgREST SQLSTATE code to plain editor language.
+ * Returns null when the code is unknown (caller falls back to the raw message).
+ * Raw constraint names are NEVER shown to editors; the caller logs them to
+ * console.error. Recognised: 23505 unique, 23503 foreign key, 23514 check,
+ * 42501 insufficient privilege / RLS denial.
+ */
+function mapPgCodeToMessage(code: string | undefined, constraintName: string | undefined): string | null {
+  switch (code) {
+    case "23505":
+      if (constraintName && constraintName.includes("uq_exam_edition_year_session"))
+        return "That cycle already exists for this exam. Open it instead of creating a duplicate.";
+      return "This already exists — a matching record is saved. Open the existing one instead of adding a duplicate.";
+    case "23503":
+      return "A linked record is missing or was just removed. Reload the page and try again.";
+    case "23514":
+      if (constraintName && constraintName.includes("important_dates"))
+        return "One of the important dates is invalid — use a real date (YYYY-MM-DD) or leave it blank.";
+      if (constraintName && constraintName.includes("edition_year"))
+        return "The cycle year must be between 2000 and 2100.";
+      return "A value you entered isn't allowed here. Check the highlighted field.";
+    case "42501":
+      return "You don't have permission to make this change.";
+    default:
+      return null;
+  }
+}
+
+/** Extract the Postgres code + constraint name from any error shape. */
+function readPgError(err: unknown): { code?: string; constraint?: string; raw?: string } {
+  if (typeof err !== "object" || err === null) return {};
+  const obj = err as Record<string, unknown>;
+  const code = typeof obj.code === "string" ? obj.code : undefined;
+  const raw = typeof obj.message === "string" ? obj.message : undefined;
+  // PostgREST puts the constraint name in `message`/`detail`; some clients
+  // surface it directly. Pull it out of the raw text when only a message exists.
+  let constraint = typeof obj.constraint === "string" ? obj.constraint : undefined;
+  if (!constraint && raw) {
+    const m = raw.match(/constraint "([^"]+)"/);
+    if (m) constraint = m[1];
+  }
+  return { code, constraint, raw };
+}
+
+/**
  * Extract a human-readable error message from any error shape.
  * Handles: Error instances, Supabase PostgrestError, plain strings, unknown objects.
- * Never returns "[object Object]".
+ * Never returns "[object Object]". A4: well-known Postgres codes are mapped to
+ * plain language; the raw constraint message is logged to console.error instead
+ * of shown to the editor.
  */
 export function getErrorMessage(err: unknown): string {
   if (!err) return "Unknown error";
   if (typeof err === "string") return err;
+
+  // A4: map Postgres constraint codes before any raw message leaks through.
+  const { code, constraint, raw } = readPgError(err);
+  const friendly = mapPgCodeToMessage(code, constraint);
+  if (friendly) {
+    console.error(`[getErrorMessage] PG ${code}${constraint ? ` (${constraint})` : ""}: ${raw ?? ""}`, err);
+    return friendly;
+  }
+
   if (err instanceof Error) return err.message;
   // Supabase PostgrestError shape: { message: string, details?: string, hint?: string, code?: string }
   if (typeof err === "object" && err !== null) {
