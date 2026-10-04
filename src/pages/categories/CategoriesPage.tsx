@@ -39,9 +39,10 @@ export function CategoriesPage() {
   const [saving, setSaving] = useState(false);
   const [slugValue, setSlugValue] = useState("");
 
-  const { register, handleSubmit, reset, setValue } = useForm<FormData>({
+  const { register, handleSubmit, reset, setValue, watch } = useForm<FormData>({
     defaultValues: { pillar: pillarFilter, isActive: true, orderIndex: 0 },
   });
+  const watchedName = watch("name");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -230,6 +231,7 @@ export function CategoriesPage() {
                 <div className="col-span-2">
                   <label className="form-label text-xs">Slug *</label>
                   <SlugInput value={slugValue} onChange={setSlugValue}
+                    sourceValue={watchedName}
                     checkAvailable={(s) => checkSlugAvailable(s, editing?.id)}
                     previewPrefix={`/${pillarFilter}/`} />
                 </div>
