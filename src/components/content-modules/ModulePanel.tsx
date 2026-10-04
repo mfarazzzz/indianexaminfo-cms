@@ -27,6 +27,7 @@ import { isModuleApplicable, MODULE_REGISTRY } from "@/config/moduleRegistry";
 import { getErrorMessage } from "@/lib/utils";
 import { hasData, SECTION_BY_SLUG, type HasDataView } from "@/lib/sectionRegistry";
 import { EligibilityCard, ApplicationFeeCard, SelectionProcessCard, FaqsCard } from "./ColumnBackedCards";
+import { NoCurrentCycle } from "@/components/entrance-exams/NoCurrentCycle";
 import { useAuth } from "@/hooks/useAuth";
 
 /**
@@ -117,6 +118,10 @@ interface Props {
   selectionModel?: SelectionModel;
   /** Group A rows deep-link to the tab that edits them (e.g. "edition", "identity"). */
   onNavigateTab?: (tabId: string) => void;
+  /** FX1.3: the form's cycle year + a reload hook, so the no-cycle empty state
+   *  can offer "Create <year> cycle" for an EXISTING exam that lost its edition. */
+  editionYear?: number;
+  onCycleCreated?: () => void | Promise<void>;
   /**
    * Reports whether ANY module currently has an unsaved edit — i.e. a debounced
    * autosave is scheduled but hasn't landed yet. The editor feeds this into its
@@ -126,7 +131,7 @@ interface Props {
   onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType, selectionModel, onNavigateTab, onDirtyChange }: Props) {
+export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType, selectionModel, onNavigateTab, editionYear, onCycleCreated, onDirtyChange }: Props) {
   const [modules, setModules] = useState<ModuleDefinition[]>([]);
   const [contentModules, setContentModules] = useState<ContentModulesData>({});
   const [config, setConfig] = useState<ModuleConfig>({ moduleOrder: [], enabledModules: [], syncTimestamps: {} });
@@ -333,6 +338,17 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
     return <div className="flex justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" /></div>;
   }
   if (!editionId) {
+    // FX1.3: distinguish a NOT-YET-SAVED exam from an EXISTING exam that lost its cycle.
+    if (exam?.id) {
+      return (
+        <NoCurrentCycle
+          examId={exam.id}
+          year={editionYear ?? new Date().getFullYear()}
+          onCreated={onCycleCreated ?? (() => {})}
+          context="The Modules tab"
+        />
+      );
+    }
     return <div className="text-center py-8"><p className="text-sm text-slate-400">Save the exam first to enable content modules.</p></div>;
   }
 

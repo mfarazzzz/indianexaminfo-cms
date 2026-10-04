@@ -12,6 +12,7 @@ import {
   type ExamEdition, type ExamIdentity, type EditionStatus, type CycleFrequency, type CycleSession,
 } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
+import { NoCurrentCycle } from "@/components/entrance-exams/NoCurrentCycle";
 import { deleteExam, setExamWorkflowStatus } from "@/services/examService";
 import { getRegions, type Region } from "@/services/regionService";
 import { getDerivedStatus, derivedStatusLabel, type DerivedStatusRow } from "@/services/derivedStatusService";
@@ -231,6 +232,8 @@ export function EntranceExamEditorPage() {
   const watchFrequency = form.watch("cycleFrequency");
   const watchedEntityType = form.watch("entityType");
   const watchedSelectionModel = form.watch("selectionModel") as SelectionModel;
+  // FX1.3: the form's cycle year, used by the no-cycle empty states.
+  const watchedEditionYear = form.watch("editionYear") || new Date().getFullYear();
 
   useEffect(() => {
     getCategories(pillarFromUrl).then(setCategories).catch(() => {});
@@ -1207,6 +1210,7 @@ export function EntranceExamEditorPage() {
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency}
           examId={exam?.id ?? null}
           editionId={currentEdition?.id ?? null}
+          onCycleCreated={loadExam}
           syllabusResourceId={currentEdition?.syllabusResourceId ?? null}
           onLinkSyllabus={async (resourceId) => {
             if (!currentEdition) return;
@@ -1219,8 +1223,8 @@ export function EntranceExamEditorPage() {
             }
           }}
         />}
-        {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} onDirtyChange={setModuleDirty} entityType={watchedEntityType} selectionModel={watchedSelectionModel} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
-        {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} contentModules={currentEdition?.contentModules ?? {}} onDirtyChange={setNewsDirty} onNewsChange={(n) => { newsRef.current = n; }} />}
+        {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} onDirtyChange={setModuleDirty} entityType={watchedEntityType} selectionModel={watchedSelectionModel} editionYear={watchedEditionYear} onCycleCreated={loadExam} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
+        {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} examId={exam?.id ?? null} editionYear={watchedEditionYear} onCycleCreated={loadExam} contentModules={currentEdition?.contentModules ?? {}} onDirtyChange={setNewsDirty} onNewsChange={(n) => { newsRef.current = n; }} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
         {activeTab === "editions" && <HistoryTab editions={editions}
           onDelete={async (edId, label) => {
@@ -1473,7 +1477,7 @@ function mergeWithStandardDates(rawDates: unknown): DateRow[] {
   return merged;
 }
 
-function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, watchFrequency, examId, editionId, syllabusResourceId, onLinkSyllabus }: { form: any; dateFields: any[]; appendDate: (v: any) => void; removeDate: (i: number) => void; replaceDates: (v: any[]) => void; watchFrequency: CycleFrequency; examId: string | null; editionId: string | null; syllabusResourceId: string | null; onLinkSyllabus: (resourceId: string | null) => void }) {
+function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, watchFrequency, examId, editionId, syllabusResourceId, onLinkSyllabus, onCycleCreated }: { form: any; dateFields: any[]; appendDate: (v: any) => void; removeDate: (i: number) => void; replaceDates: (v: any[]) => void; watchFrequency: CycleFrequency; examId: string | null; editionId: string | null; syllabusResourceId: string | null; onLinkSyllabus: (resourceId: string | null) => void; onCycleCreated?: () => void | Promise<void> }) {
   // ── Derived status (what the SITE shows) ───────────────────────────────────
   // The public site computes status from the current edition's important_dates
   // via the exam_derived_status VIEW — NOT from the manual `status` column below.
@@ -1518,6 +1522,16 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
 
   return (
     <div className="space-y-5">
+      {/* FX1.3: an EXISTING exam that has no cycle. The form below still lets the
+          editor set the year; this banner offers a one-click create + reload. */}
+      {!editionId && examId && (
+        <NoCurrentCycle
+          examId={examId}
+          year={form.getValues("editionYear") || new Date().getFullYear()}
+          onCreated={onCycleCreated ?? (() => {})}
+          context="Dates & Status"
+        />
+      )}
       {/* Year & Session — conditional on frequency */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Field label="Year" name="editionYear" form={form} type="number" />
@@ -1654,7 +1668,7 @@ function readNewsSection(contentModules: Record<string, unknown>): any[] {
   return [];                                                   // nothing yet
 }
 
-function NewsTab({ editionId, contentModules, onNewsChange, onDirtyChange }: { editionId: string | null; contentModules: Record<string, unknown>; onNewsChange?: (news: any[] | null) => void; onDirtyChange?: (dirty: boolean) => void }) {
+function NewsTab({ editionId, examId, editionYear, onCycleCreated, contentModules, onNewsChange, onDirtyChange }: { editionId: string | null; examId?: string | null; editionYear?: number; onCycleCreated?: () => void | Promise<void>; contentModules: Record<string, unknown>; onNewsChange?: (news: any[] | null) => void; onDirtyChange?: (dirty: boolean) => void }) {
   const [news, setNews] = React.useState<any[]>(() => readNewsSection(contentModules));
   const [editingIdx, setEditingIdx] = React.useState<number | null>(null);
   const [draft, setDraft] = React.useState({ title: "", content: "", excerpt: "", tags: "", isFeatured: false, featureImage: "" });
@@ -1718,6 +1732,15 @@ function NewsTab({ editionId, contentModules, onNewsChange, onDirtyChange }: { e
     if (!confirm(`Delete "${news[idx]?.title}"?`)) return;
     setNews(news.filter((_, i) => i !== idx));
   };
+
+  // FX1.3: an EXISTING exam with no cycle — show the honest empty state, not
+  // "Save the exam first". A not-yet-saved exam (no examId) keeps the old copy.
+  if (!editionId) {
+    if (examId) {
+      return <NoCurrentCycle examId={examId} year={editionYear ?? new Date().getFullYear()} onCreated={onCycleCreated ?? (() => {})} context="News" />;
+    }
+    return <div className="text-center py-8"><p className="text-sm text-slate-400">Save the exam first to add news.</p></div>;
+  }
 
   return (
     <div className="space-y-4">
