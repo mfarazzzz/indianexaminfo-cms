@@ -149,6 +149,9 @@ export function EntranceExamEditorPage() {
   const [regions, setRegions] = useState<Region[]>([]);
   const [activeTab, setActiveTab] = useState<string>("identity");
   const [showNewEdition, setShowNewEdition] = useState(false);
+  // A1: in-flight guard so a double-click on "Create Edition" cannot fire two
+  // startNewEdition calls (the second hit the unique key and toasted an error).
+  const [startingEdition, setStartingEdition] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
@@ -660,10 +663,16 @@ export function EntranceExamEditorPage() {
   }, [formDirty, newsDirty, form, clearLocalDirty, guardProceed]);
 
   const handleStartNewEdition = async (year: number, session: CycleSession, editionLabel?: string) => {
+    if (startingEdition) return; // A1: ignore re-entrant clicks while a create is in flight
+    setStartingEdition(true);
     try {
       const draft = await startNewEdition(exam!.id, { year, session, editionLabel });
       toast.success(`New edition ${editionLabel || year} created as draft. Save to activate it.`);
       setDraftEdition(draft);
+      // A3: reflect the new draft in the editions list immediately so the
+      // "Editions (N)" tab count and the header are correct without a full
+      // reload (a reload would reset the form off the draft being edited).
+      setEditions((prev) => (prev.some((e) => e.id === draft.id) ? prev : [draft, ...prev]));
       setShowNewEdition(false);
       // Switch editor to show the draft edition fields
       form.setValue("editionYear", draft.year);
@@ -682,6 +691,8 @@ export function EntranceExamEditorPage() {
       form.setValue("hasCounselling", false);
     } catch (err) {
       toast.error(getErrorMessage(err));
+    } finally {
+      setStartingEdition(false);
     }
   };
 
@@ -1268,7 +1279,7 @@ export function EntranceExamEditorPage() {
       </div>
 
       {/* New Edition Dialog */}
-      {showNewEdition && <NewEditionDialog onConfirm={handleStartNewEdition} onCancel={() => setShowNewEdition(false)} frequency={watchFrequency} />}
+      {showNewEdition && <NewEditionDialog onConfirm={handleStartNewEdition} onCancel={() => setShowNewEdition(false)} frequency={watchFrequency} busy={startingEdition} defaultYear={computeNewEditionDefaultYear(currentEdition?.year)} />}
 
       {/* AI Generate Dialog */}
       {showAIDialog && <AIFillDialog onGenerate={handleAIGenerate} onCancel={() => setShowAIDialog(false)} examName={form.getValues("name")} />}
@@ -1403,6 +1414,16 @@ type DateRow = {
   stage_label?: string;
   [key: string]: unknown;
 };
+
+/**
+ * A2 — default year for the New Edition dialog and the "Create <year> cycle"
+ * button. When the exam has NO current edition, the cycle that should exist is
+ * the CURRENT calendar year (2026), not next year. When it already has a current
+ * edition, the new cycle defaults to the next cycle year (current + 1).
+ */
+export function computeNewEditionDefaultYear(currentEditionYear: number | null | undefined): number {
+  return currentEditionYear != null ? currentEditionYear + 1 : new Date().getFullYear();
+}
 
 /**
  * FX2 — serialize date rows for the DB write (the single chokepoint for both
@@ -1964,8 +1985,10 @@ function HistoryTab({ editions, onDelete, onPromote, onEdit }: { editions: ExamE
 
 // ── New Edition Dialog ─────────────────────────────────────────────────────
 
-function NewEditionDialog({ onConfirm, onCancel, frequency }: { onConfirm: (year: number, session: CycleSession, editionLabel?: string) => void; onCancel: () => void; frequency: CycleFrequency }) {
-  const [year, setYear] = useState(new Date().getFullYear() + 1);
+function NewEditionDialog({ onConfirm, onCancel, frequency, busy, defaultYear }: { onConfirm: (year: number, session: CycleSession, editionLabel?: string) => void; onCancel: () => void; frequency: CycleFrequency; busy?: boolean; defaultYear?: number }) {
+  // A2: default to the caller-provided year (current year when the exam has no
+  // current edition; next cycle year otherwise). Falls back to next calendar year.
+  const [year, setYear] = useState(defaultYear ?? new Date().getFullYear() + 1);
   const [session, setSession] = useState<CycleSession>("main");
   const [customLabel, setCustomLabel] = useState("");
 
@@ -2014,13 +2037,13 @@ function NewEditionDialog({ onConfirm, onCancel, frequency }: { onConfirm: (year
         </div>
         <p className="text-xs text-amber-600">⚠️ The current edition will be archived automatically.</p>
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onCancel} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 rounded">Cancel</button>
-          <button type="button" onClick={() => onConfirm(
+          <button type="button" onClick={onCancel} disabled={busy} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 rounded disabled:opacity-50">Cancel</button>
+          <button type="button" disabled={busy} onClick={() => onConfirm(
             year,
             (frequency === "biannual" || frequency === "irregular") ? session : "main",
             customLabel.trim() || undefined
           )}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded">Create Edition</button>
+            className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50">{busy ? "Creating…" : "Create Edition"}</button>
         </div>
       </div>
     </div>

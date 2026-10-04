@@ -710,7 +710,24 @@ export async function startNewEdition(
     .select("*")
     .single();
 
-  if (error) throw error;
+  if (error) {
+    // A1: idempotent. A double-click or a race can hit the unique key
+    // uq_exam_edition_year_session (exam_id, year, session). Instead of
+    // surfacing a raw "duplicate key" error on top of a success toast, return
+    // the row that already exists — the caller sees one edition for that
+    // year/session and no error. Any other error still propagates.
+    if ((error as { code?: string }).code === "23505") {
+      const { data: existingRow, error: fetchErr } = await db
+        .from("exam_editions")
+        .select("*")
+        .eq("exam_id", examId)
+        .eq("year", input.year)
+        .eq("session", session)
+        .maybeSingle();
+      if (!fetchErr && existingRow) return mapEditionRow(existingRow as Record<string, unknown>);
+    }
+    throw error;
+  }
   return mapEditionRow(data as Record<string, unknown>);
 }
 
