@@ -26,6 +26,7 @@ import type { SelectionModel } from "@/types/selection";
 import { isModuleApplicable, MODULE_REGISTRY } from "@/config/moduleRegistry";
 import { getErrorMessage } from "@/lib/utils";
 import { hasData, SECTION_BY_SLUG, type HasDataView } from "@/lib/sectionRegistry";
+import { EligibilityCard, ApplicationFeeCard, SelectionProcessCard, FaqsCard } from "./ColumnBackedCards";
 import { useAuth } from "@/hooks/useAuth";
 
 /**
@@ -52,16 +53,13 @@ const MODULE_SLUG_TO_SECTION: Record<string, string> = {
  * FIXED_SECTIONS deep-links, so the read-only card can point the editor there.
  */
 const COLUMN_BACKED_MODULE_SOURCE: Record<string, { sourceTab: string; tabId: string }> = {
-  "eligibility":        { sourceTab: "Dates & Status tab", tabId: "edition" },
+  // R1.1–R1.4: eligibility, selection-process, faqs moved to "Edited here" as
+  // dedicated column-backed cards. They are no longer read-only source rows.
   "important-dates":    { sourceTab: "Dates & Status tab", tabId: "edition" },
   "vacancy-details":    { sourceTab: "Dates & Status tab", tabId: "edition" },
-  "selection-process":  { sourceTab: "Identity tab",       tabId: "identity" },
-  "faqs":               { sourceTab: "SEO tab",            tabId: "seo" },
   "syllabus":           { sourceTab: "Syllabus tab",       tabId: "syllabus" },
   "academic-info":      { sourceTab: "Identity tab",       tabId: "identity" },
   // R0 post-review: News is edited in the dedicated News tab (buildMergedContentModules).
-  // Removing it from "Edited here" prevents the Modules card from writing content_modules.news
-  // via saveModuleContent autosave, which would conflict with the News tab.
   "news":               { sourceTab: "News tab",           tabId: "news" },
 };
 
@@ -74,15 +72,9 @@ const COLUMN_BACKED_MODULE_SOURCE: Record<string, { sourceTab: string; tabId: st
 
 /** Fixed page sections (not modules). Each links to the tab where it's edited. */
 const FIXED_SECTIONS: { key: string; label: string; sourceTab: string; tabId: string; sectionSlug?: string }[] = [
-  // Key Highlights row REMOVED (2026-09-19): the frontend intentionally does not render
-  // a Key Highlights block (SHOW_KEY_HIGHLIGHTS = false in EntityDetailPage — a deliberate
-  // design decision: each fact now renders as its own ordered section). Showing it here as
-  // a "Live" fixed section was false. If the frontend flag is ever turned back on, restore
-  // this row.
+  // R1.1–R1.4: eligibility, application-fee, selection-process rows REMOVED —
+  // they are now editable cards in "Edited here" (ColumnBackedCards.tsx).
   { key: "important-dates-t", label: "Important Dates",    sourceTab: "Dates & Status tab", tabId: "edition", sectionSlug: "important-dates" },
-  { key: "eligibility-t",     label: "Eligibility",        sourceTab: "Dates & Status tab", tabId: "edition", sectionSlug: "eligibility" },
-  { key: "application-fee-t", label: "Application Fee",     sourceTab: "Dates & Status tab", tabId: "edition", sectionSlug: "application-fee" },
-  { key: "selection-t",       label: "Selection Process",  sourceTab: "Identity tab",       tabId: "identity", sectionSlug: "selection-process" },
   { key: "syllabus-t",        label: "Syllabus Highlights", sourceTab: "Identity tab",      tabId: "identity", sectionSlug: "syllabus" },
 ];
 
@@ -358,12 +350,15 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
         Sections are grouped by how they behave on the live page. A section appears on the site when it is <span className="font-medium">enabled</span> and has <span className="font-medium">content</span>; the site renders enabled sections with content in the order stored on the record.
       </p>
 
-      {/* ── Group 1: Facts you edit here (editable modules only) ── */}
+      {/* ── Group 1: Facts you edit here (editable modules + column-backed cards) ── */}
       <GroupHeading title="Edited here" hint="Fill these in; a section with content goes live when its toggle is on." />
       <div className="mb-5 space-y-1.5">
-        {editHereModules.length === 0 ? (
-          <p className="text-xs text-slate-400 italic px-1 py-2">No editable modules.</p>
-        ) : (
+        {/* R1.1–R1.4: column-backed editable cards (write to DB columns, not content_modules) */}
+        {editionId && <EligibilityCard editionId={editionId} edition={edition ?? null} forceCollapsed={allCollapsed} onStatusChange={handleStatusChange} onPendingChange={handlePendingChange} />}
+        {editionId && <ApplicationFeeCard editionId={editionId} edition={edition ?? null} forceCollapsed={allCollapsed} onStatusChange={handleStatusChange} onPendingChange={handlePendingChange} />}
+        {exam?.id && <SelectionProcessCard examId={exam.id} exam={exam} forceCollapsed={allCollapsed} onStatusChange={handleStatusChange} onPendingChange={handlePendingChange} />}
+        {exam?.id && <FaqsCard examId={exam.id} exam={exam} forceCollapsed={allCollapsed} onStatusChange={handleStatusChange} onPendingChange={handlePendingChange} />}
+        {editHereModules.length === 0 ? null : (
           editHereModules.map((mod) => renderModuleCard(mod, {}))
         )}
       </div>
