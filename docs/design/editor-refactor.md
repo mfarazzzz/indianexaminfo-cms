@@ -212,11 +212,11 @@ Every reader-visible fact on the live exam page → its ONE CMS input, and every
 | Conducting body (`:186`) / website (`:193`) | IdentityTab | `exams.conducting_body/official_website` |
 | Important dates list (`:141-150`) | EditionTab date rows (`CMS editor:1556-1576`) | `exam_editions.important_dates` |
 | Status chip (`:196-204`) | Derived: `exam_derived_status` VIEW; editor asserts only cancelled/postponed (per-row, P9) | view + `exam_editions.status` |
-| Eligibility (`:151`; render `EntityDetailPage.tsx:734-744`) | **NO INPUT (P1)** — R1 "Who can apply". **376 editions hold live eligibility.** | `exam_editions.eligibility` |
-| Application fee (`:153`) | **NO INPUT (P1)** — R1 "Fee". **322 editions hold live fee.** | `exam_editions.application_fee` |
-| Selection process (`:154`) | **NO INPUT (P1)** — R1. **279 exams hold live selection_process.** | `exams.selection_process` |
+| Eligibility (`:151`; render `EntityDetailPage.tsx:734-744`) | **Modules tab EligibilityCard (R1.1)** — `updateEdition(eligibility)`, 2s autosave | `exam_editions.eligibility` |
+| Application fee (`:153`) | **Modules tab ApplicationFeeCard (R1.2)** — `updateEdition(applicationFee)`, 2s autosave | `exam_editions.application_fee` |
+| Selection process (`:154`) | **Modules tab SelectionProcessCard (R1.3)** — `updateExamIdentity(selectionProcess)`, 2s autosave | `exams.selection_process` |
 | Vacancy (`:152`) | EditionTab (`form.setValue("vacancy")` `:1202` region) | `exam_editions.vacancy` |
-| FAQs (`:155`; gate `sectionRegistry.ts:360-370`) | SEOTab FAQs UI (`CMS editor:2084-2099`) | `exams.faqs` (editions copy is a shadow — §6) |
+| FAQs (`:155`; gate `sectionRegistry.ts:360-370`) | **Modules tab FaqsCard (R1.4)** — `updateExamIdentity(faqs)`, 2s autosave; moved out of SEOTab | `exams.faqs` (editions copy is a shadow — §6) |
 | SEO title/description (`:236-237`) | SEOTab | `exams.seo_title/seo_description` |
 | Editorial modules (overview, admit-card, result, news…) (`EntityDetailPage.tsx:707-717`, `sectionRenderers.tsx:238+`) | ModulePanel autosave (`useModuleAutosave.ts:33`) per registry slug | `exam_editions.content_modules[slug]` |
 | Module visibility (`sectionRegistry.ts:242-247`) | `content_modules._config.enabledModules` — the ONLY `_config` key with a reader | same column |
