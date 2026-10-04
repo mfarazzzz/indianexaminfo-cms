@@ -845,34 +845,10 @@ export function EntranceExamEditorPage() {
         }
       }
 
-      // Persist EXACTLY what we filled (empty-only). Nothing here can overwrite an
-      // existing DB value because we only collected blanks above.
-      if (currentEdition) {
-        try {
-          if (Object.keys(filledEdition).length > 0 || mergedDates) {
-            await updateEdition(currentEdition.id, {
-              ...filledEdition,
-              ...(mergedDates ? { importantDates: mergedDates.filter((d) => d.date && d.date.trim() !== "") } : {}),
-            } as any);
-          }
-          if (Object.keys(filledIdentity).length > 0) {
-            await updateExamIdentity(exam!.id, filledIdentity as any);
-          }
-          if (modulesToSave) {
-            const seeded = { ...modulesToSave };
-            if (mergedDates) {
-              const validDates = mergedDates.filter((d) => d.date && d.date.trim() !== "");
-              // Only seed the important-dates module if it isn't already present.
-              if (validDates.length > 0 && !seeded["important-dates"]) {
-                seeded["important-dates"] = { dates: validDates, _meta: { updatedAt: new Date().toISOString(), updatedBy: "ai" } };
-              }
-            }
-            await updateEdition(currentEdition.id, { contentModules: seeded });
-          }
-          await loadExam();
-        } catch (saveErr) {
-          console.error("[AI Fill] Auto-save failed:", saveErr);
-        }
+      // R1.6: AI Fill is FORM-ONLY. No direct DB writes. The editor saves.
+      // Content modules go to pendingModulesRef (both new and existing records).
+      if (modulesToSave && !pendingModulesRef.current) {
+        pendingModulesRef.current = modulesToSave;
       }
 
       // Honest report: how many blank fields we actually filled, and whether we
@@ -925,12 +901,8 @@ export function EntranceExamEditorPage() {
         toast.warning("AI returned data, but Identity fields already had values — nothing was overwritten.");
         return;
       }
-      // Auto-save only the blanks we filled.
-      if (exam) {
-        await updateExamIdentity(exam.id, filled as any);
-        await loadExam();
-      }
-      toast.success(`Identity: filled ${Object.keys(filled).length} empty field${Object.keys(filled).length === 1 ? "" : "s"}. Existing values untouched.`);
+      // R1.6: form-only. No DB write. Editor saves.
+      toast.success(`Identity: filled ${Object.keys(filled).length} empty field${Object.keys(filled).length === 1 ? "" : "s"}. Existing values untouched.`, );
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setTabAiFilling(null); }
   };
@@ -989,16 +961,7 @@ export function EntranceExamEditorPage() {
         return;
       }
 
-      // Auto-save only what we filled (undefined = leave untouched).
-      if (currentEdition) {
-        await updateEdition(currentEdition.id, {
-          ...(merged ? { importantDates: merged.filter((d) => d.date && d.date.trim() !== "") } : {}),
-          status: setStatus ? (data.status as EditionStatus) : undefined,
-          vacancy: setVacancy ? data.vacancy : undefined,
-          notificationDate: setNotif ? data.notificationDate : undefined,
-        });
-        await loadExam();
-      }
+      // R1.6: form-only. No DB write. Editor saves.
       const addedDates = merged ? "dates updated" : "no date changes";
       toast.success(`Dates & Status: ${addedDates}, ${filledScalars} empty field${filledScalars === 1 ? "" : "s"} filled. Existing values untouched.`);
     } catch (err) { toast.error(getErrorMessage(err)); }
@@ -1030,11 +993,7 @@ export function EntranceExamEditorPage() {
         toast.warning("AI returned data, but SEO fields already had values — nothing was overwritten.");
         return;
       }
-      // Auto-save only the blanks we filled.
-      if (exam) {
-        await updateExamIdentity(exam.id, filled as any);
-        await loadExam();
-      }
+      // R1.6: form-only. No DB write. Editor saves.
       toast.success(`SEO: filled ${Object.keys(filled).length} empty field${Object.keys(filled).length === 1 ? "" : "s"}. Existing values untouched.`);
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setTabAiFilling(null); }
@@ -1048,8 +1007,6 @@ export function EntranceExamEditorPage() {
     try {
       const items = await aiFillNewsTab(examName, year, rawContent);
       if (items.length > 0) {
-        const { updateEdition: updateEd } = await import("@/services/entranceExamService");
-        const existing = (currentEdition.contentModules ?? {}) as Record<string, any>;
         const newsItems = items.map((item) => ({
           id: crypto.randomUUID(),
           title: item.title,
@@ -1061,12 +1018,10 @@ export function EntranceExamEditorPage() {
           publishedAt: new Date().toISOString(),
           isPublished: true,
         }));
-        // APPEND, don't replace: keep any existing news items and add the AI ones
-        // after them. Replacing the whole list would delete real news the user had.
-        const existingItems = Array.isArray(existing.news?.items) ? existing.news.items : [];
-        await updateEd(currentEdition.id, { contentModules: { ...existing, news: { ...existing.news, items: [...existingItems, ...newsItems] } } });
-        await loadExam();
-        toast.success(`AI added ${items.length} news item${items.length === 1 ? "" : "s"} to the ${existingItems.length} already there. Review in News tab.`);
+        // R1.6: form-only — append to newsRef, editor saves.
+        const currentNews = newsRef.current ?? [];
+        newsRef.current = [...currentNews, ...newsItems];
+        toast.success(`AI added ${items.length} news item${items.length === 1 ? "" : "s"}. Review in News tab, then Save.`);
       } else {
         toast.warning("AI generated no news items — no changes made.");
       }
@@ -1082,34 +1037,22 @@ export function EntranceExamEditorPage() {
     try {
       const data = await aiFillModulesTab(examName, year, rawContent);
       if (Object.keys(data.contentModules).length > 0) {
-        const { updateEdition: updateEd } = await import("@/services/entranceExamService");
-        const existing = (currentEdition.contentModules ?? {}) as Record<string, unknown>;
-        // AI first, existing second → existing module content WINS on key clash.
-        // Only modules the edition doesn't already have get filled; nothing the
-        // user authored is overwritten.
+        // R1.6: form-only — store in pendingModulesRef, editor saves.
+        const existing = (currentEdition?.contentModules ?? {}) as Record<string, unknown>;
         const filledKeys = Object.keys(data.contentModules).filter((k) => !(k in existing));
         const mergedContent = { ...data.contentModules, ...existing } as Record<string, unknown>;
-
-        // FIX (2026-09-19): the AI returns data.enabledModules — the slugs it wrote
-        // content for — but we used to discard it, writing content while leaving every
-        // module OFF (invisible on the site). Merge those slugs into _config now.
-        // UNION only; never remove a slug the editor deliberately enabled. We only add
-        // slugs that were actually NEWLY filled here (filledKeys) — an AI-claimed slug
-        // whose content already existed keeps whatever enabled state the editor chose.
         const prevConfig = (existing._config as ModuleConfig | undefined) ?? { moduleOrder: [], enabledModules: [] };
         const aiEnabled = Array.isArray(data.enabledModules) ? data.enabledModules : [];
         const slugsToEnable = filledKeys.filter((k) => aiEnabled.includes(k));
         const nextEnabled = Array.from(new Set([...(prevConfig.enabledModules ?? []), ...slugsToEnable]));
         const nextOrder = Array.from(new Set([...(prevConfig.moduleOrder ?? []), ...filledKeys]));
         mergedContent._config = { ...prevConfig, enabledModules: nextEnabled, moduleOrder: nextOrder };
-
-        await updateEd(currentEdition.id, { contentModules: mergedContent });
-        await loadExam();
+        pendingModulesRef.current = mergedContent;
         if (filledKeys.length === 0) {
           toast.warning("AI returned module content, but those modules already exist — nothing was overwritten.");
         } else {
           const newlyEnabledCount = slugsToEnable.filter((s) => !(prevConfig.enabledModules ?? []).includes(s)).length;
-          toast.success(`AI filled ${filledKeys.length} empty module${filledKeys.length === 1 ? "" : "s"}${newlyEnabledCount > 0 ? `, ${newlyEnabledCount} now visible on the site` : ""}. Existing modules untouched.`);
+          toast.success(`AI filled ${filledKeys.length} empty module${filledKeys.length === 1 ? "" : "s"}${newlyEnabledCount > 0 ? `, ${newlyEnabledCount} will be visible` : ""}. Save to persist.`);
         }
       } else {
         toast.warning("AI extracted no module content — no changes made.");
