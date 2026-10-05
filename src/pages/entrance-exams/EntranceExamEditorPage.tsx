@@ -361,6 +361,16 @@ export function EntranceExamEditorPage() {
       return;
     }
 
+    // C1: validate the time-with-date fields before any write. The DB CHECK only
+    // validates `date`, so these rules are enforced here; a violation aborts the
+    // save (form state intact) with the first clear message.
+    const dateErrors = validateDateRowsForWrite(data.importantDates);
+    if (dateErrors.length > 0) {
+      toast.error(dateErrors[0]);
+      setActiveTab("edition");
+      return;
+    }
+
     setSaving(true);
     try {
       if (isNew) {
@@ -1464,8 +1474,19 @@ type DateRow = {
   state?: string;
   verified?: boolean;
   stage_label?: string;
+  // C1 — time with dates. All optional; stored as JSONB keys on the row.
+  // end_date: YYYY-MM-DD (range end); start_time/end_time: HH:MM 24h (IST);
+  // time_text: free-text timing when no clock time is known (e.g. "afternoon").
+  end_date?: string;
+  start_time?: string;
+  end_time?: string;
+  time_text?: string;
   [key: string]: unknown;
 };
+
+// Optional date-row keys that must NEVER be persisted as an empty string — an
+// unchosen value means the key is absent (mirrors the FX2 state rule).
+const EMPTYABLE_DATE_KEYS = ["state", "end_date", "start_time", "end_time", "time_text"] as const;
 
 /**
  * A2 — default year for the New Edition dialog and the "Create <year> cycle"
@@ -1502,19 +1523,50 @@ export function pickDraftWhenNoCurrent(
  *     tentative one (expected/postponed/cancelled); the CMS never writes an
  *     empty-date row, so filtering first keeps a stray blank row from failing
  *     the whole write.
- *  2. Strip an empty `state`. The R0.4 per-row select defaults to "" ("— State —").
- *     "" is NOT in the site's state vocabulary (confirmed|expected|tba|postponed|
- *     cancelled), and "no state chosen" must mean the key is ABSENT — never
- *     state:"". A dated row with state:"" passes the CHECK today, but writing ""
- *     is semantically wrong and would be rejected on any future unfiltered path.
+ *  2. Strip empty optional keys. The R0.4 state select and the C1 time fields
+ *     default to "" when untouched. "" is not a valid value for any of them
+ *     (state vocabulary, HH:MM, YYYY-MM-DD), and "no value" must mean the key is
+ *     ABSENT — never key:"". A dated row with these empty passes the DB CHECK
+ *     today, but writing "" is semantically wrong and pollutes the JSONB.
  */
 export function serializeDateRowsForWrite(rows: DateRow[]): DateRow[] {
   return rows
     .filter((d) => d.date && d.date.trim() !== "")
     .map((d) => {
-      const { state, ...rest } = d;
-      return state && state.trim() !== "" ? { ...rest, state } : rest;
+      const out: DateRow = { ...d };
+      for (const key of EMPTYABLE_DATE_KEYS) {
+        const v = out[key];
+        if (typeof v !== "string" || v.trim() === "") delete out[key];
+      }
+      return out;
     });
+}
+
+/**
+ * C1 — validate the time-with-date fields. Returns a list of human-readable
+ * errors (empty = valid). The DB CHECK only validates `date`, so these rules
+ * live here and block the save with a clear message.
+ *  - end_date must not precede date
+ *  - end_time requires an end_date or a date (a time needs a day)
+ *  - on a single day (no end_date, or end_date === date), end_time >= start_time
+ */
+export function validateDateRowsForWrite(rows: DateRow[]): string[] {
+  const errors: string[] = [];
+  for (const raw of serializeDateRowsForWrite(rows)) {
+    const label = raw.label?.trim() || "(untitled date)";
+    const { date, end_date, start_time, end_time } = raw;
+    if (end_date && date && end_date < date) {
+      errors.push(`"${label}": end date (${end_date}) is before the start date (${date}).`);
+    }
+    if (end_time && !end_date && !date) {
+      errors.push(`"${label}": an end time needs a date.`);
+    }
+    const sameDay = !end_date || end_date === date;
+    if (sameDay && start_time && end_time && end_time < start_time) {
+      errors.push(`"${label}": end time (${end_time}) is before start time (${start_time}) on the same day.`);
+    }
+  }
+  return errors;
 }
 
 // Standard date fields that every entrance exam typically has.
@@ -1732,28 +1784,53 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
           renderItem={(field, { dragHandleProps }) => {
             const i = (field as any)._idx;
             return (
-              <div className="flex items-center gap-2 bg-slate-50 rounded px-3 py-2">
-                <input {...form.register(`importantDates.${i}.label`)} placeholder="Date label"
-                  className="flex-1 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
-                <input {...form.register(`importantDates.${i}.date`)} type="date"
-                  className="w-40 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
-                {/* R0.4: state is the field the site reads to determine cancelled / postponed. */}
-                <select {...form.register(`importantDates.${i}.state`)}
-                  className="w-28 rounded border border-slate-200 px-2 py-1.5 text-xs bg-white text-slate-700"
-                  title="Set this date event's confirmation state. Cancelled or Postponed on a key date changes the status shown on the site.">
-                  <option value="">— State —</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="expected">Expected</option>
-                  <option value="tba">TBA</option>
-                  <option value="postponed">Postponed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-                <label className="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap">
-                  <input type="checkbox" {...form.register(`importantDates.${i}.isUrgent`)} className="rounded" /> Urgent
-                </label>
-                <button type="button" onClick={() => removeDate(i)} className="text-red-400 hover:text-red-600 p-1">
-                  <Trash2 size={14} />
-                </button>
+              <div className="bg-slate-50 rounded px-3 py-2 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <input {...form.register(`importantDates.${i}.label`)} placeholder="Date label"
+                    className="flex-1 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
+                  <input {...form.register(`importantDates.${i}.date`)} type="date"
+                    className="w-40 rounded border border-slate-200 px-2 py-1.5 text-sm bg-white" />
+                  {/* R0.4: state is the field the site reads to determine cancelled / postponed. */}
+                  <select {...form.register(`importantDates.${i}.state`)}
+                    className="w-28 rounded border border-slate-200 px-2 py-1.5 text-xs bg-white text-slate-700"
+                    title="Set this date event's confirmation state. Cancelled or Postponed on a key date changes the status shown on the site.">
+                    <option value="">— State —</option>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="expected">Expected</option>
+                    <option value="tba">TBA</option>
+                    <option value="postponed">Postponed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                  <label className="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap">
+                    <input type="checkbox" {...form.register(`importantDates.${i}.isUrgent`)} className="rounded" /> Urgent
+                  </label>
+                  <button type="button" onClick={() => removeDate(i)} className="text-red-400 hover:text-red-600 p-1">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                {/* C1: optional end date + IST clock times + a free-text time note.
+                    Stored as JSONB keys end_date / start_time / end_time / time_text. */}
+                <div className="flex flex-wrap items-center gap-2 pl-1 text-xs">
+                  <label className="flex items-center gap-1 text-slate-500">
+                    to
+                    <input {...form.register(`importantDates.${i}.end_date`)} type="date"
+                      className="w-36 rounded border border-slate-200 px-1.5 py-1 text-xs bg-white" title="End date (optional) — makes this a range" />
+                  </label>
+                  <label className="flex items-center gap-1 text-slate-500">
+                    from
+                    <input {...form.register(`importantDates.${i}.start_time`)} type="time"
+                      className="w-28 rounded border border-slate-200 px-1.5 py-1 text-xs bg-white" title="Start time (IST, optional)" />
+                  </label>
+                  <label className="flex items-center gap-1 text-slate-500">
+                    to
+                    <input {...form.register(`importantDates.${i}.end_time`)} type="time"
+                      className="w-28 rounded border border-slate-200 px-1.5 py-1 text-xs bg-white" title="End time (IST, optional)" />
+                  </label>
+                  <input {...form.register(`importantDates.${i}.time_text`)}
+                    placeholder="or a time note, e.g. afternoon / अपराह्न"
+                    className="flex-1 min-w-[160px] rounded border border-slate-200 px-1.5 py-1 text-xs bg-white"
+                    title="Free-text timing shown when no clock time is known" />
+                </div>
               </div>
             );
           }}

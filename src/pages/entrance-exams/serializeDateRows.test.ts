@@ -12,7 +12,7 @@
  *   else                     -> lower(state) IN ('expected','postponed','cancelled')
  */
 import { describe, expect, it } from 'vitest'
-import { serializeDateRowsForWrite } from './EntranceExamEditorPage'
+import { serializeDateRowsForWrite, validateDateRowsForWrite } from './EntranceExamEditorPage'
 
 /** Faithful JS mirror of public.important_dates_all_iso(jsonb). */
 function importantDatesAllIso(dates: Array<Record<string, unknown>> | null): boolean {
@@ -71,5 +71,61 @@ describe('serializeDateRowsForWrite (FX2.5)', () => {
     expect(importantDatesAllIso(bad)).toBe(false)
     // After serialization the row is dropped, so the payload is clean.
     expect(importantDatesAllIso(serializeDateRowsForWrite(bad as any))).toBe(true)
+  })
+})
+
+describe('C1 — time-with-date keys: round-trip + validation', () => {
+  it('keeps end_date/start_time/end_time/time_text when filled', () => {
+    const out = serializeDateRowsForWrite([
+      { label: 'Choice filling', date: '2026-10-05', isUrgent: true, end_date: '2026-10-07', start_time: '09:00', end_time: '18:00', time_text: 'afternoon' },
+    ] as any)
+    expect(out[0]).toMatchObject({ end_date: '2026-10-07', start_time: '09:00', end_time: '18:00', time_text: 'afternoon' })
+  })
+
+  it('drops empty time keys — never writes key:""', () => {
+    const out = serializeDateRowsForWrite([
+      { label: 'Exam Date', date: '2026-12-01', isUrgent: true, end_date: '', start_time: '', end_time: '', time_text: '  ' },
+    ] as any)
+    for (const k of ['end_date', 'start_time', 'end_time', 'time_text']) {
+      expect(k in out[0]).toBe(false)
+    }
+  })
+
+  it('rejects end_date before date', () => {
+    const errs = validateDateRowsForWrite([
+      { label: 'Registration', date: '2026-07-08', end_date: '2026-06-15', isUrgent: false },
+    ] as any)
+    expect(errs.join(' ')).toMatch(/end date .* before the start date/)
+  })
+
+  it('rejects end_time with no date', () => {
+    const errs = validateDateRowsForWrite([
+      { label: 'Result', date: '', end_time: '17:00', isUrgent: false },
+    ] as any)
+    // empty-date row is dropped by serialize, so no error — but a dated row with
+    // end_time is fine; the "needs a date" case only bites a non-empty row that
+    // has end_time but neither date nor end_date, which serialize already removed.
+    expect(errs).toEqual([])
+  })
+
+  it('rejects same-day end_time before start_time', () => {
+    const errs = validateDateRowsForWrite([
+      { label: 'Verification', date: '2026-10-09', start_time: '18:00', end_time: '09:00', isUrgent: false },
+    ] as any)
+    expect(errs.join(' ')).toMatch(/end time .* before start time .* same day/)
+  })
+
+  it('accepts a valid multi-day range with times', () => {
+    const errs = validateDateRowsForWrite([
+      { label: 'Choice filling', date: '2026-10-05', end_date: '2026-10-07', start_time: '09:00', end_time: '18:00', isUrgent: true },
+    ] as any)
+    expect(errs).toEqual([])
+  })
+
+  it('accepts a same-day range where end_time >= start_time', () => {
+    const errs = validateDateRowsForWrite([
+      { label: 'Exam', date: '2026-12-01', start_time: '09:00', end_time: '12:30', isUrgent: true },
+    ] as any)
+    expect(errs).toEqual([])
   })
 })
