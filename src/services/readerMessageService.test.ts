@@ -47,4 +47,29 @@ describe("buildCsv — reader messages export (S0-5 Part 3)", () => {
   it("empty input yields only the header", () => {
     expect(buildCsv([]).split("\r\n")).toHaveLength(1);
   });
+
+  // FX3 B4 — Email and Mobile must be SEPARATE, present columns in the export
+  // (they are separate columns in the grid and separate in the search too).
+  it("emits sender_email and sender_phone as separate columns (B4)", () => {
+    const csv = buildCsv([msg({ senderEmail: "a@b.com", senderPhone: "+919876543210" })]);
+    const header = csv.split("\r\n")[0];
+    expect(header).toContain("sender_email");
+    expect(header).toContain("sender_phone");
+    // both values appear, in their own fields (not merged into one column)
+    expect(csv).toContain("a@b.com");
+    expect(csv).toContain("+919876543210");
+  });
+
+  it("a message with only one contact still emits the other as an empty column (B4)", () => {
+    const csv = buildCsv([msg({ senderEmail: "only@email.com", senderPhone: null })]);
+    const [header, row] = csv.split("\r\n");
+    const cols = header.split(",");
+    const emailCol = cols.indexOf("sender_email");
+    const phoneCol = cols.indexOf("sender_phone");
+    expect(emailCol).toBeGreaterThanOrEqual(0);
+    expect(phoneCol).toBeGreaterThanOrEqual(0);
+    const cells = row.split(",");
+    expect(cells[emailCol]).toBe("only@email.com");
+    expect(cells[phoneCol]).toBe(""); // empty, not the string 'null'
+  });
 });
