@@ -190,7 +190,9 @@ describe.skipIf(process.env.LIVE !== "1")("golden: live model run (LIVE=1, after
       res = await call(fresh.access_token);
     }
     if (!res.ok) throw new Error(`live call failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
-    const wire = await res.json() as { content: { fields: Record<string, unknown>; dates: Record<string, unknown>[]; references?: unknown[] }; issues?: unknown[] };
+    const wire = await res.json() as { content: { fields: Record<string, unknown>; dates: Record<string, unknown>[]; references?: unknown[] }; issues?: unknown[]; provider?: string; model?: string };
+    // Exactly which provider/model answered this run (D reporting).
+    console.log(`LIVE ANSWERED BY: ${wire.provider ?? "?"} / ${wire.model ?? "?"}`);
     const liveRaw = JSON.stringify({ fields: wire.content.fields, dates: wire.content.dates, references: wire.content.references ?? [] });
     // Second recording — kept for the report's live-vs-expected comparison.
     writeFileSync(FIX("model.responses.live.json"), liveRaw + "\n");
@@ -221,6 +223,7 @@ describe.skipIf(process.env.LIVE !== "1")("golden: live model run (LIVE=1, after
     }
     // eslint-disable-next-line no-console
     console.table(table)
+    if (live.mergedWindows.length) { console.log("LIVE PAIRINGS (S2.9 net):") ; live.mergedWindows.forEach((m) => console.log("  -", m)) }
     if (flags.length) { console.log("LIVE FLAGS:"); flags.forEach((f) => console.log("  -", f)) }
     expect(failures).toEqual([])
     // Core acceptance on live data (failures per the rule):

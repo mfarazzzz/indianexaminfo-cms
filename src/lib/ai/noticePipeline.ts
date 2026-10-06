@@ -63,6 +63,8 @@ export interface PipelineResult {
   references: { label: string; date: string; sourceQuote: string }[];
   rejected: { label: string; reason: string }[];
   warnings: string[];
+  /** S2.9: "kind: labelA + labelB" for each window pair the net merged. */
+  mergedWindows: string[];
 }
 
 /** The structural marker for addressing metadata on UP-style notices. */
@@ -107,6 +109,89 @@ function feeKindFlag(value: string): string | undefined {
     return "counselling fee — no field yet";
   }
   return undefined;
+}
+
+/**
+ * S2.9 window pairing — the deterministic safety net under the DATE RULES,
+ * independent of the model: a window must be ONE row. Two rows merge only
+ * when ALL hold:
+ *  • same kind, or one is `<base>_start` and the other `<base>_end`;
+ *  • they are neighbours — at most one row apart in the model's own array;
+ *  • same phase (both stated equal), or, with no phase, their source quotes
+ *    sit at most 3 lines apart in the source text ("same section").
+ * The earlier row opens; the later row's date becomes end_date and its clock
+ * end_time. Different kinds NEVER merge — an allotment following a registration
+ * window is a separate event, and rows from different phases are different
+ * windows even when adjacent.
+ */
+const DEADLINE_HINT = /last\s*(?:date|time)|deadline|final|closing|close[sd]?\b|upto|अंतिम|तक/i;
+
+function rowHasTime(r: PipelineDateRow): boolean {
+  return Boolean(r.end_time || r.start_time);
+}
+
+function pairWindowRows(rows: PipelineDateRow[], sourceText: string, selectionModel: string | null): { rows: PipelineDateRow[]; merged: string[] } {
+  const srcLines = sourceText.replace(/\r\n/g, "\n").split("\n").map((l) => l.replace(/\s+/g, " ").trim());
+  const lineOf = (quote: string): number => {
+    const q = quote.replace(/\s+/g, " ").trim();
+    if (!q) return -1;
+    return srcLines.findIndex((l) => l.includes(q));
+  };
+  const out: PipelineDateRow[] = [];
+  const used = new Set<number>();
+  const merged: string[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    if (used.has(i)) continue;
+    let keep = rows[i];
+    for (let j = i + 1; j <= Math.min(i + 2, rows.length - 1); j++) {
+      if (used.has(j)) continue;
+      const cand = rows[j];
+      const phA = (keep.phase ?? "").trim().toLowerCase();
+      const phB = (cand.phase ?? "").trim().toLowerCase();
+      if (phA !== phB) continue; // different phases (or one stated) → different windows
+      if (phA === "") {
+        const la = lineOf(keep.source_quote);
+        const lb = lineOf(cand.source_quote);
+        if (la < 0 || lb < 0 || Math.abs(la - lb) > 3) continue; // not the same section
+      }
+      const base = keep.kind.endsWith("_start") ? keep.kind.slice(0, -"_start".length) : "";
+      const isEndPair = base !== "" && cand.kind === `${base}_end`;
+      const isSameKindDeadline = cand.kind === keep.kind && (DEADLINE_HINT.test(cand.label) || (rowHasTime(cand) && !rowHasTime(keep)));
+      if (!isEndPair && !isSameKindDeadline) continue;
+      const open = cand.date >= keep.date ? keep : cand;
+      const close = cand.date >= keep.date ? cand : keep;
+      if (keep.end_date && close.date <= (keep.end_date || keep.date)) continue; // window already closed later
+      const win: PipelineDateRow = {
+        label: open.label,
+        date: open.date,
+        end_date: close.date > (open.end_date ?? "") ? close.date : open.end_date!,
+        type: typeForKind(open.kind, selectionModel),
+        kind: open.kind,
+        isUrgent: open.isUrgent || close.isUrgent,
+        state: open.state === "expected" || close.state === "expected" ? "expected" : "confirmed",
+        verified: false,
+        source_quote: `${open.source_quote}${close.source_quote && close.source_quote !== open.source_quote ? ` | ${close.source_quote}` : ""}`,
+        confidence: Math.min(open.confidence, close.confidence),
+      };
+      if (open.start_time) win.start_time = open.start_time;
+      const et = close.end_time || close.start_time || open.end_time;
+      if (et) win.end_time = et;
+      const tt = open.time_text || close.time_text;
+      if (tt) win.time_text = tt;
+      const ph = open.phase || close.phase;
+      if (ph) win.phase = ph;
+      const rb = open.rank_batch || close.rank_batch;
+      if (rb) win.rank_batch = rb;
+      const au = open.audience || close.audience;
+      if (au) win.audience = au;
+      merged.push(`${open.kind}: ${open.label} + ${close.label}`);
+      used.add(j);
+      keep = win;
+    }
+    out.push(keep);
+  }
+  return { rows: out, merged };
 }
 
 /**
@@ -252,5 +337,9 @@ export function runNoticePipeline(
     references.push({ label, date, sourceQuote: String(r?.sourceQuote ?? "") });
   }
 
-  return { fields, rows, references, rejected, warnings };
+  // S2.9: pair split windows (start+end / start+same-kind deadline in the same
+  // section) into one row — the model-independent backstop under the rules.
+  const paired = pairWindowRows(rows, sourceText, effectiveSelectionModel);
+
+  return { fields, rows: paired.rows, references, rejected, warnings, mergedWindows: paired.merged };
 }
