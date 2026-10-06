@@ -2,8 +2,8 @@
  * normalizeLabel.ts — THE single source for label → date-type/kind/state inference.
  *
  * Pure, dependency-free. Shared by AI Fill, Excel import, and the import preview
- * WITHOUT dragging the Gemini SDK into those bundles. entranceExamAI.ts
- * re-exports from here; do not fork the logic.
+ * WITHOUT dragging the Gemini SDK into those bundles. (S2.8 removed
+ * entranceExamAI.ts — this file is now the only home of the mapping.)
  *
  * S2.2 — TWO-VOCABULARY CONTRACT (owner-approved, 2026-10-06):
  *  • `type` is the VIEW's vocabulary. exam_derived_status reads d->>'type' and

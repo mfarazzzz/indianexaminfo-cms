@@ -9,7 +9,7 @@
  * - validateAndFixDate(): validates an AI-returned date and fixes if possible
  * - INDIAN_DATE_PROMPT_RULES: standard instructions to include in AI prompts
  *
- * Used by: entranceExamAI.ts, tabAI.ts, autofill.ts, moduleAI.ts
+ * Used by: autofill.ts, moduleAI.ts, noticeReview/noticePipeline (S2)
  *
  * S2.2 additions (UP notices are Hindi-first):
  * - Devanagari month names ("5 अक्टूबर 2026")

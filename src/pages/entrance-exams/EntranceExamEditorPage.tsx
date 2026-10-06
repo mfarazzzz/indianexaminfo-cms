@@ -36,8 +36,6 @@ import {
   buildReviewRows, summarizeFill,
   type ReviewRow, type ReviewCurrentValues, type ProposedDateRow, type FillReport,
 } from "@/components/entrance-exams/noticeReview";
-import { aiFillIdentityTab, aiFillDatesTab, aiFillSEOTab, aiFillNewsTab, aiFillModulesTab } from "@/lib/gemini/tabAI";
-import { AIFillButton } from "@/components/shared/AIFillButton";
 import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { ResourcesTab } from "@/components/entrance-exams/ResourcesTab";
 import { SyllabusResourcePicker } from "@/components/entrance-exams/SyllabusResourcePicker";
@@ -171,7 +169,8 @@ export function EntranceExamEditorPage() {
   const [reviewState, setReviewState] = useState<
     { rows: ReviewRow[]; report: FillReport; providerNote: string; match: LikelyMatch | null; sourceText: string } | null
   >(null);
-  const [tabAiFilling, setTabAiFilling] = useState<string | null>(null);
+  // S2.8: the per-tab AI fill state is gone — one entry point now ("Update
+  // from a notice" → review drawer), so nothing tracks per-tab fills.
   // S2.6: the last extraction's provenance + the metadata staged by an Apply,
   // written into exams.ai_metadata by the EDITOR's next save — never before.
   const extractionMetaRef = React.useRef<{
@@ -765,15 +764,11 @@ export function EntranceExamEditorPage() {
   // drawer shows every proposal with its source quote and confidence, and only
   // the editor's Accepted rows touch the FORM (R1.6 holds: the editor saves).
   const handleAIGenerate = async (rawContent?: string) => {
-    const examName = form.getValues("name");
     const year = form.getValues("editionYear") || new Date().getFullYear();
-    if (!examName) {
-      toast.error("Enter the exam name first, then generate.");
-      return;
-    }
     if (!rawContent || rawContent.trim().length < 50) {
       // YMYL: the old knowledge-only mode fabricated dates. The notice IS the
-      // source now — no paste, no extraction.
+      // source now — no paste, no extraction. The NAME also comes from the
+      // notice (S2.8): a brand-new record no longer needs one typed first.
       toast.error("Paste the official notice text first — nothing is generated from memory.");
       return;
     }
@@ -921,196 +916,6 @@ export function EntranceExamEditorPage() {
   }, [isNew, loading]);
 
 
-  // ── Tab-Level AI Handlers ─────────────────────────────────────────────────
-  //
-  // These used to read the provider key out of `settings` and pass it down. The
-  // key now lives only as an Edge Function secret, so nothing is read here.
-
-  const handleAIFillIdentity = async (rawContent: string) => {
-    const examName = form.getValues("name");
-    if (!examName) { toast.error("Enter exam name first."); return; }
-    setTabAiFilling("identity");
-    try {
-      const data = await aiFillIdentityTab(examName, rawContent);
-      // No-op on empty: if the AI extracted nothing usable, change NOTHING and say so.
-      const gotAnything = !!data.shortName || !!data.conductingBody || !!data.officialWebsite;
-      if (!gotAnything) {
-        toast.warning("AI extracted nothing for Identity — no changes made.");
-        return;
-      }
-      // EMPTY-ONLY FILL: only populate blank fields. The AI can hallucinate a
-      // plausible-but-wrong value (e.g. Short Name "CAT" on a Bihar Board record),
-      // so it must never replace a value that already exists. `filled` carries only
-      // the blanks we actually wrote, so the DB save can't echo an AI value over an
-      // existing one.
-      const cur = form.getValues();
-      const filled: Record<string, unknown> = {};
-      if (data.shortName && isBlank(cur.shortName)) { form.setValue("shortName", data.shortName, { shouldDirty: true }); filled.shortName = data.shortName; }
-      if (data.conductingBody && isBlank(cur.conductingBody)) { form.setValue("conductingBody", data.conductingBody, { shouldDirty: true }); filled.conductingBody = data.conductingBody; }
-      if (data.officialWebsite && isBlank(cur.officialWebsite)) { form.setValue("officialWebsite", data.officialWebsite, { shouldDirty: true }); filled.officialWebsite = data.officialWebsite; }
-      if (Object.keys(filled).length === 0) {
-        toast.warning("AI returned data, but Identity fields already had values — nothing was overwritten.");
-        return;
-      }
-      // R1.6: form-only. No DB write. Editor saves.
-      toast.success(`Identity: filled ${Object.keys(filled).length} empty field${Object.keys(filled).length === 1 ? "" : "s"}. Existing values untouched.`, );
-    } catch (err) { toast.error(getErrorMessage(err)); }
-    finally { setTabAiFilling(null); }
-  };
-
-  const handleAIFillDates = async (rawContent: string) => {
-    const examName = form.getValues("name");
-    const year = form.getValues("editionYear") || new Date().getFullYear();
-    if (!examName) { toast.error("Enter exam name first."); return; }
-    setTabAiFilling("edition");
-    try {
-      const data = await aiFillDatesTab(examName, year, rawContent);
-
-      // No-op on empty: only count a field as extracted when it carries a real value.
-      // Historically this handler always toasted "filled and saved" and unconditionally
-      // wrote status/vacancy/notificationDate — so an empty AI result reported success
-      // while overwriting a real Notification Date. Change NOTHING when nothing was found.
-      const extractedDates = data.importantDates.filter((d) => d.date && d.date.trim() !== "" && d.label).length;
-      const gotStatus  = !!data.status;
-      const gotVacancy = data.vacancy != null && data.vacancy !== 0;
-      const gotNotif   = !!data.notificationDate && data.notificationDate.trim() !== "";
-      if (extractedDates === 0 && !gotStatus && !gotVacancy && !gotNotif) {
-        toast.warning("AI extracted no dates or status — no changes made.");
-        return;
-      }
-
-      // EMPTY-ONLY FILL. Dates: fill BLANK rows or append new labels only — never
-      // overwrite a row that already carries a date. Scalars (status/vacancy/
-      // notificationDate): fill only when currently blank. This is what stops AI
-      // from clobbering a correct Notification Date.
-      const cur = form.getValues();
-      let merged: DateRow[] | null = null;
-      if (extractedDates > 0) {
-        const current = form.getValues("importantDates") as DateRow[];
-        const next = [...current];
-        let changed = false;
-        for (const ai of data.importantDates) {
-          if (!ai.date || !ai.label) continue;
-          const idx = next.findIndex((d) => d.label.toLowerCase().replace(/[^a-z]/g, "").includes(ai.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8)));
-          if (idx >= 0 && isBlank(next[idx].date)) { next[idx] = { ...next[idx], date: ai.date, isUrgent: ai.isUrgent }; changed = true; }
-          else if (idx < 0) { next.push(ai); changed = true; }
-          // idx >= 0 with an existing date → LEAVE IT.
-        }
-        if (changed) { replaceDates(next); merged = next; }
-      }
-
-      const setStatus  = gotStatus && cur.editionStatus === "upcoming" && data.status !== "upcoming";
-      const setVacancy = gotVacancy && isBlank(cur.vacancy);
-      const setNotif   = gotNotif && isBlank(cur.notificationDate);
-      if (setStatus)  form.setValue("editionStatus", data.status as EditionStatus, { shouldDirty: true });
-      if (setVacancy) form.setValue("vacancy", String(data.vacancy), { shouldDirty: true });
-      if (setNotif)   form.setValue("notificationDate", data.notificationDate, { shouldDirty: true });
-
-      const filledScalars = (setStatus ? 1 : 0) + (setVacancy ? 1 : 0) + (setNotif ? 1 : 0);
-      if (!merged && filledScalars === 0) {
-        toast.warning("AI returned data, but Dates & Status fields already had values — nothing was overwritten.");
-        return;
-      }
-
-      // R1.6: form-only. No DB write. Editor saves.
-      const addedDates = merged ? "dates updated" : "no date changes";
-      toast.success(`Dates & Status: ${addedDates}, ${filledScalars} empty field${filledScalars === 1 ? "" : "s"} filled. Existing values untouched.`);
-    } catch (err) { toast.error(getErrorMessage(err)); }
-    finally { setTabAiFilling(null); }
-  };
-
-  const handleAIFillSEO = async (rawContent: string) => {
-    const examName = form.getValues("name");
-    const year = form.getValues("editionYear") || new Date().getFullYear();
-    if (!examName) { toast.error("Enter exam name first."); return; }
-    setTabAiFilling("seo");
-    try {
-      const data = await aiFillSEOTab(examName, year, rawContent);
-      // No-op on empty: change nothing (no form.setValue, no DB write) when the AI
-      // returned nothing usable, and report it honestly instead of a false success.
-      const gotAnything = !!data.seoTitle || !!data.seoDescription || data.tags.length > 0 || data.faqs.length > 0;
-      if (!gotAnything) {
-        toast.warning("AI extracted nothing for SEO — no changes made.");
-        return;
-      }
-      // EMPTY-ONLY FILL: only populate blank SEO fields; never replace existing.
-      const cur = form.getValues();
-      const filled: Record<string, unknown> = {};
-      if (data.seoTitle && isBlank(cur.seoTitle)) { form.setValue("seoTitle", data.seoTitle, { shouldDirty: true }); filled.seoTitle = data.seoTitle; }
-      if (data.seoDescription && isBlank(cur.seoDescription)) { form.setValue("seoDescription", data.seoDescription, { shouldDirty: true }); filled.seoDescription = data.seoDescription; }
-      if (data.tags.length > 0 && isBlank(cur.tags)) { form.setValue("tags", data.tags.join(", "), { shouldDirty: true }); filled.tags = data.tags; }
-      if (data.faqs.length > 0 && (cur.faqs?.length ?? 0) === 0) { replaceFaqs(data.faqs); filled.faqs = data.faqs; }
-      if (Object.keys(filled).length === 0) {
-        toast.warning("AI returned data, but SEO fields already had values — nothing was overwritten.");
-        return;
-      }
-      // R1.6: form-only. No DB write. Editor saves.
-      toast.success(`SEO: filled ${Object.keys(filled).length} empty field${Object.keys(filled).length === 1 ? "" : "s"}. Existing values untouched.`);
-    } catch (err) { toast.error(getErrorMessage(err)); }
-    finally { setTabAiFilling(null); }
-  };
-
-  const handleAIFillNews = async (rawContent: string) => {
-    if (!currentEdition) { toast.error("Save the exam first to generate news."); return; }
-    const examName = form.getValues("name");
-    const year = form.getValues("editionYear") || new Date().getFullYear();
-    setTabAiFilling("news");
-    try {
-      const items = await aiFillNewsTab(examName, year, rawContent);
-      if (items.length > 0) {
-        const newsItems = items.map((item) => ({
-          id: crypto.randomUUID(),
-          title: item.title,
-          content: item.content,
-          excerpt: item.excerpt,
-          tags: item.tags,
-          isFeatured: item.isFeatured,
-          author: "AI Generated",
-          publishedAt: new Date().toISOString(),
-          isPublished: true,
-        }));
-        // R1.6: form-only — append to newsRef, editor saves.
-        const currentNews = newsRef.current ?? [];
-        newsRef.current = [...currentNews, ...newsItems];
-        toast.success(`AI added ${items.length} news item${items.length === 1 ? "" : "s"}. Review in News tab, then Save.`);
-      } else {
-        toast.warning("AI generated no news items — no changes made.");
-      }
-    } catch (err) { toast.error(getErrorMessage(err)); }
-    finally { setTabAiFilling(null); }
-  };
-
-  const handleAIFillModules = async (rawContent: string) => {
-    if (!currentEdition) { toast.error("Save the exam first to generate modules."); return; }
-    const examName = form.getValues("name");
-    const year = form.getValues("editionYear") || new Date().getFullYear();
-    setTabAiFilling("modules");
-    try {
-      const data = await aiFillModulesTab(examName, year, rawContent);
-      if (Object.keys(data.contentModules).length > 0) {
-        // R1.6: form-only — store in pendingModulesRef, editor saves.
-        const existing = (currentEdition?.contentModules ?? {}) as Record<string, unknown>;
-        const filledKeys = Object.keys(data.contentModules).filter((k) => !(k in existing));
-        const mergedContent = { ...data.contentModules, ...existing } as Record<string, unknown>;
-        const prevConfig = (existing._config as ModuleConfig | undefined) ?? { moduleOrder: [], enabledModules: [] };
-        const aiEnabled = Array.isArray(data.enabledModules) ? data.enabledModules : [];
-        const slugsToEnable = filledKeys.filter((k) => aiEnabled.includes(k));
-        const nextEnabled = Array.from(new Set([...(prevConfig.enabledModules ?? []), ...slugsToEnable]));
-        const nextOrder = Array.from(new Set([...(prevConfig.moduleOrder ?? []), ...filledKeys]));
-        mergedContent._config = { ...prevConfig, enabledModules: nextEnabled, moduleOrder: nextOrder };
-        pendingModulesRef.current = mergedContent;
-        if (filledKeys.length === 0) {
-          toast.warning("AI returned module content, but those modules already exist — nothing was overwritten.");
-        } else {
-          const newlyEnabledCount = slugsToEnable.filter((s) => !(prevConfig.enabledModules ?? []).includes(s)).length;
-          toast.success(`AI filled ${filledKeys.length} empty module${filledKeys.length === 1 ? "" : "s"}${newlyEnabledCount > 0 ? `, ${newlyEnabledCount} will be visible` : ""}. Save to persist.`);
-        }
-      } else {
-        toast.warning("AI extracted no module content — no changes made.");
-      }
-    } catch (err) { toast.error(getErrorMessage(err)); }
-    finally { setTabAiFilling(null); }
-  };
 
   if (loading) {
     return (
@@ -1246,10 +1051,10 @@ export function EntranceExamEditorPage() {
                 />
               )}
               <button type="button" onClick={() => setShowAIDialog(true)} disabled={aiGenerating}
-                title="Generates content for the WHOLE exam (identity, dates, SEO, modules) in one pass. Per-tab AI buttons fill only that tab."
+                title="Paste an official notice — the AI proposes changes with source quotes; you review and accept before anything touches the form."
                 className="flex items-center gap-1.5 rounded border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50">
                 {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                {aiGenerating ? "Filling entire exam..." : "🤖 AI: Fill Entire Exam"}
+                {aiGenerating ? "Reading the notice..." : "🤖 Update from a notice"}
               </button>
               <button type="button" onClick={() => setShowNewEdition(true)}
                 className="flex items-center gap-1.5 rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
@@ -1263,10 +1068,10 @@ export function EntranceExamEditorPage() {
           )}
           {isNew && (
             <button type="button" onClick={() => setShowAIDialog(true)} disabled={aiGenerating}
-              title="Generates content for the WHOLE exam (identity, dates, SEO, modules) in one pass. Per-tab AI buttons fill only that tab."
+              title="Paste an official notice — the AI proposes changes with source quotes; you review and accept before anything touches the form."
               className="flex items-center gap-1.5 rounded border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50">
               {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-              {aiGenerating ? "Filling entire exam..." : "🤖 AI: Fill Entire Exam"}
+              {aiGenerating ? "Reading the notice..." : "🤖 Update from a notice"}
             </button>
           )}
           <button type="submit" disabled={saving}
@@ -1290,16 +1095,8 @@ export function EntranceExamEditorPage() {
 
       {/* Tab Content */}
       <div className="bg-white rounded-b-lg border border-slate-200 border-t-0 p-5">
-        {/* Tab-level AI Fill bar */}
-        {!isNew && activeTab !== "editions" && (
-          <div className="flex items-center justify-end mb-4 pb-3 border-b border-slate-100">
-            {activeTab === "identity" && <AIFillButton variant="icon" scope="Identity Tab" loading={tabAiFilling === "identity"} onFill={handleAIFillIdentity} />}
-            {activeTab === "edition" && <AIFillButton variant="icon" scope="Dates & Status Tab" loading={tabAiFilling === "edition"} onFill={handleAIFillDates} />}
-            {activeTab === "modules" && <AIFillButton variant="icon" scope="All Modules" loading={tabAiFilling === "modules"} onFill={handleAIFillModules} />}
-            {activeTab === "news" && <AIFillButton variant="icon" scope="News Tab" loading={tabAiFilling === "news"} onFill={handleAIFillNews} />}
-            {activeTab === "seo" && <AIFillButton variant="icon" scope="SEO Tab" loading={tabAiFilling === "seo"} onFill={handleAIFillSEO} />}
-          </div>
-        )}
+        {/* S2.8: the per-tab AI buttons are gone. One entry point — "Update from
+            a notice" in the header — feeds the review drawer for every tab. */}
 
         {activeTab === "identity" && <IdentityTab form={form} categories={categories} regions={regions} watchFrequency={watchFrequency} watchedSelectionModel={watchedSelectionModel} isNew={isNew} pillar={pillarFromUrl} />}
         {activeTab === "resources" && <ResourcesTab examId={exam?.id ?? null} />}
@@ -1367,8 +1164,8 @@ export function EntranceExamEditorPage() {
       {/* New Edition Dialog */}
       {showNewEdition && <NewEditionDialog onConfirm={handleStartNewEdition} onCancel={() => setShowNewEdition(false)} frequency={watchFrequency} busy={startingEdition} defaultYear={computeNewEditionDefaultYear(currentEdition?.year)} />}
 
-      {/* AI Generate Dialog */}
-      {showAIDialog && <AIFillDialog onGenerate={handleAIGenerate} onCancel={() => setShowAIDialog(false)} examName={form.getValues("name")} />}
+      {/* Notice-based extraction (S2.8: the single AI entry point) */}
+      {showAIDialog && <AIFillDialog onGenerate={handleAIGenerate} onCancel={() => setShowAIDialog(false)} />}
 
       {/* S2.4 Review drawer — every proposed change with its quote + confidence.
           Apply accepted writes to the FORM only; the editor saves (R1.6). */}
@@ -2241,7 +2038,7 @@ function NewEditionDialog({ onConfirm, onCancel, frequency, busy, defaultYear }:
 
 // ── AI Fill Dialog ─────────────────────────────────────────────────────────
 
-function AIFillDialog({ onGenerate, onCancel, examName }: { onGenerate: (rawContent?: string) => void; onCancel: () => void; examName: string }) {
+function AIFillDialog({ onGenerate, onCancel }: { onGenerate: (rawContent?: string) => void; onCancel: () => void }) {
   const [rawContent, setRawContent] = useState("");
 
   return (
@@ -2249,29 +2046,29 @@ function AIFillDialog({ onGenerate, onCancel, examName }: { onGenerate: (rawCont
       <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-5 space-y-4 max-h-[80vh] overflow-y-auto">
         <div className="flex items-center gap-2">
           <Sparkles size={18} className="text-purple-600" />
-          <h3 className="font-semibold text-slate-900">AI Generate All Fields</h3>
+          <h3 className="font-semibold text-slate-900">Update from a notice</h3>
         </div>
 
         <p className="text-sm text-slate-600">
-          Paste any raw data below — official notification text, website content, PDF text, dates, or any unstructured information about <strong>{examName || "this exam"}</strong>. The AI will extract and fill all fields automatically.
+          Paste the official notice text below. The AI proposes structured changes — name, category, selection, dates with times, eligibility, fees — each with the exact words it read them from. <strong>Nothing is applied until you review it</strong>, and nothing is saved until you press Save.
         </p>
 
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">
-            Raw Data / Content <span className="text-slate-400">(optional — leave empty to auto-generate from exam name)</span>
+            Official notice text <span className="text-rose-500">*</span>
           </label>
           <textarea
             value={rawContent}
             onChange={(e) => setRawContent(e.target.value)}
             rows={10}
-            placeholder={`Paste notification text, official dates, eligibility details, or any raw content here...\n\nExample:\nCAT 2026 Notification Released\nRegistration: 1 Aug - 15 Sep 2026\nExam Date: 29 Nov 2026\nEligibility: Graduate with 50% marks\nFee: ₹2400 (General), ₹1200 (SC/ST)\nConducting Body: IIM Bangalore\n...`}
+            placeholder={`Paste the notification / press-note text here — Hindi is fine.\n\nExample:\nUP D.El.Ed Phase-3 Counselling 2026\nChoice filling: 05.10.2026 (अपराह्न) से 07.10.2026 सायं 06:00 बजे\nSeat Allotment: 08.10.2026\n...`}
             className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-mono leading-relaxed focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-y"
           />
         </div>
 
         <div className="bg-purple-50 border border-purple-100 rounded p-3">
           <p className="text-xs text-purple-700">
-            <strong>What AI will generate:</strong> Important dates, status, eligibility, fees, vacancy, module flags, SEO title &amp; description, tags, and FAQs. The AI fills blank fields only — it never overwrites a value you already set.
+            <strong>How it works:</strong> the notice is the only source — dates, kinds (choice filling, allotment, lock…), times, fee, eligibility each come back with a verbatim quote and a confidence. Review every change in the drawer, accept what is right, then Apply. PDF/OCR input arrives with S5; paste the text for scanned notices.
           </p>
         </div>
 
@@ -2279,10 +2076,10 @@ function AIFillDialog({ onGenerate, onCancel, examName }: { onGenerate: (rawCont
           <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded">
             Cancel
           </button>
-          <button type="button" onClick={() => onGenerate(rawContent || undefined)}
-            className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-1.5">
+          <button type="button" onClick={() => onGenerate(rawContent || undefined)} disabled={!rawContent.trim()}
+            className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-1.5 disabled:opacity-50">
             <Sparkles size={14} />
-            Generate All Fields
+            Read the notice
           </button>
         </div>
       </div>
