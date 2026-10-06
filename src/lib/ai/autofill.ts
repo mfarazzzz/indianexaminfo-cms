@@ -12,6 +12,8 @@
  */
 import { validateAndFixDate, INDIAN_DATE_PROMPT_RULES } from "@/lib/utils/indianDateParser";
 import { generateText } from "@/lib/ai/aiFillClient";
+import { loadAllowedOptions, formatOptionsForPrompt } from "@/lib/ai/allowedOptions";
+import { enforceOptionsOnDraft } from "@/lib/ai/extractionContract";
 
 // ── Try to parse input as JSON directly (no API call needed) ─────────────────
 
@@ -133,19 +135,30 @@ function postProcessDates(data: Record<string, unknown>): Record<string, unknown
 
 export interface ExamAutoFillResult { [key: string]: unknown }
 
-export async function autoFillExam(rawText: string): Promise<ExamAutoFillResult> {
-  // If user pasted JSON directly (from ChatGPT/Perplexity), use it without API call
+export async function autoFillExam(rawText: string, opts?: { pillar?: string }): Promise<ExamAutoFillResult> {
+  // S2.1: the dropdown vocabulary is READ AT CALL TIME (categories by pillar,
+  // regions, entity types, selection models) — no hard-coded lists in prompts.
+  const allowed = await loadAllowedOptions(opts?.pillar);
+
+  // If user pasted JSON directly (from ChatGPT/Perplexity), use it without API call.
+  // S2.1: even pasted JSON is validated against the live option lists — a slug
+  // the CMS does not have is dropped and reported, never saved.
   const direct = tryDirectParse(rawText);
-  if (direct) return postProcessDates(direct);
+  if (direct) {
+    const { draft, flags } = enforceOptionsOnDraft(postProcessDates(direct), allowed);
+    return flags.length > 0 ? { ...draft, _optionFlags: flags } : draft;
+  }
 
   // Otherwise call AI to extract from raw text with comprehensive prompt
   const result = await callAI(`You are an expert at extracting structured data from Indian exam/recruitment notifications. Extract ALL possible information from the given text and return comprehensive JSON.
 
+ALLOWED OPTIONS (read from the CMS at call time — choose ONLY from these lists):
+${formatOptionsForPrompt(allowed)}
+
 CRITICAL RULES:
 1. Dates must be in YYYY-MM-DD format
 2. pillar MUST be one of: "sarkari-naukri" | "entrance-exam" | "board-university"
-3. entityType MUST be one of: "recruitment" | "exam" | "board" | "university"
-4. status MUST be one of: "upcoming" | "active" | "registration-open" | "registration-closed" | "result-declared" | "completed" | "ongoing"
+3. status MUST be one of: "upcoming" | "active" | "registration-open" | "registration-closed" | "result-declared" | "completed" | "ongoing"
 5. Generate 6-8 high-quality FAQs — each answer MUST contain specific verifiable data (exact numbers, dates, fees, percentages). Do NOT write generic answers like "check official website".
 6. Set ALL boolean flags (hasNotification, hasApplication, etc.) to true if the exam logically has those resources
 7. Fill ALL type-specific fields based on the exam type (entrance exam fields for entrance exams, recruitment fields for jobs, etc.)
@@ -165,8 +178,11 @@ COMPLETE JSON SCHEMA (fill every field possible):
   "shortName": "ABBREVIATION YEAR",
   "slug": "exam-name-year",
   "pillar": "entrance-exam|sarkari-naukri|board-university",
-  "categorySlug": "management|engineering|medical|law|banking|railways|defence|teaching|central-government-jobs|state-government-jobs|cbse|state-boards|university-exams|defence-entrance|design|agriculture|research-fellowships|university-entrance",
-  "entityType": "exam|recruitment|board|university",
+  "categorySlug": "MUST be one of the ALLOWED OPTIONS above — never invent a slug",
+  "entityType": "MUST be one of the ALLOWED OPTIONS above",
+  "selectionModel": "MUST be one of the ALLOWED OPTIONS above",
+  "selectionModelReason": "one plain line: WHY this model fits (e.g. 'no written test; admission by state merit rank')",
+  "entityTypeReason": "one plain line: WHY this entity type fits the notice",
   "conductingBody": "Organization that conducts",
   "officialWebsite": "https://...",
   "status": "upcoming|active|registration-open|...",
@@ -237,7 +253,10 @@ IMPORTANT: Generate 6-8 high-quality FAQs. Each FAQ answer must be 2-3 sentences
 Text to extract from:
 ${rawText}`, "autofill-exam");
 
-  return postProcessDates(result);
+  // S2.1: the model's dropdown values are enforced against the same live lists
+  // the prompt was built from — an out-of-list value is dropped and flagged.
+  const { draft, flags } = enforceOptionsOnDraft(postProcessDates(result), allowed);
+  return flags.length > 0 ? { ...draft, _optionFlags: flags } : draft;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
