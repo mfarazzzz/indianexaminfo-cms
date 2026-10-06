@@ -12,6 +12,7 @@
  */
 import React, { useMemo, useState } from "react";
 import type { ReviewRow, FillReport } from "./noticeReview";
+import type { LikelyMatch } from "@/lib/ai/noticeMatch";
 
 interface Props {
   open: boolean;
@@ -19,6 +20,10 @@ interface Props {
   report: FillReport;
   /** What the extraction ran on — shown so the editor sees the source scope. */
   providerNote: string;
+  /** S2.5: a likely existing record this notice belongs to (new records only). */
+  match?: LikelyMatch | null;
+  /** Open that record and review there — the extraction rides with it. */
+  onOpenMatch?: (match: LikelyMatch) => void;
   onClose: () => void;
   /** Apply the accepted rows to the FORM (no DB write — the editor saves). */
   onApply: (accepted: ReviewRow[]) => void;
@@ -30,8 +35,10 @@ const ConfidenceTag: React.FC<{ value: number }> = ({ value }) => {
   return <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${cls}`}>{pct}%</span>;
 };
 
-export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, providerNote, onClose, onApply }) => {
+export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, providerNote, match, onOpenMatch, onClose, onApply }) => {
   const [accepted, setAccepted] = useState<Record<string, boolean>>({});
+  // S2.5: "Review here anyway" hides the match banner without losing the rows.
+  const [matchDismissed, setMatchDismissed] = useState(false);
   // Seed per-open from the row defaults (Accept only where empty + confident).
   const seed = useMemo(() => {
     const s: Record<string, boolean> = {};
@@ -42,6 +49,7 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, provid
   if (initialisedFor !== rows) {
     setInitialisedFor(rows);
     setAccepted(seed);
+    setMatchDismissed(false);
   }
 
   if (!open) return null;
@@ -69,6 +77,35 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, provid
             )}
           </div>
         </header>
+
+        {/* S2.5: one record per cycle — offer to review on the record it belongs to */}
+        {match && onOpenMatch && !matchDismissed && (
+          <div className="px-4 py-3 border-b border-blue-200 bg-blue-50" data-testid="drawer-match-notice">
+            <p className="text-xs text-blue-900">
+              This notice looks like it belongs to{" "}
+              <strong>{match.exam.name}</strong>
+              {match.exam.workflowStatus ? ` (${match.exam.workflowStatus})` : ""}.
+              Open it and review the changes there?
+            </p>
+            <p className="text-[11px] text-blue-700 mt-0.5">Why: {match.reasons.join(", ")} — match {Math.round(match.score * 100)}%</p>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => onOpenMatch(match)}
+                className="px-2.5 py-1 rounded bg-blue-600 text-white text-xs font-semibold"
+                data-testid="drawer-open-match"
+              >
+                Open {match.exam.name}
+              </button>
+              <button
+                onClick={() => setMatchDismissed(true)}
+                className="px-2.5 py-1 rounded border border-blue-300 text-blue-700 text-xs"
+                data-testid="drawer-review-anyway"
+              >
+                Review here anyway (new record)
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Flagged summary at the top — reasons first, rows below */}
         {(report.lowConfidence.length > 0 || report.missingOptions.length > 0) && (

@@ -28,6 +28,8 @@ import { validateField } from "@/lib/fields/fieldTypes";
 import { ALL_SELECTION_MODELS, SELECTION_MODEL_LABELS, SELECTION_MODEL_HINTS, type SelectionModel } from "@/types/selection";
 import { getModulesForEntityType, entityTypeForPillar, resolveEntityType, ENTRANCE_EXAM_ENTITY_CHOICES } from "@/config/moduleRegistry";
 import { generateStructured } from "@/lib/ai/aiFillClient";
+import { findLikelyExamMatch, NOTICE_HANDOFF_KEY, type LikelyMatch } from "@/lib/ai/noticeMatch";
+import { mergeAcceptedDateRows } from "@/lib/dates/dateRowMerge";
 import { NoticeReviewDrawer } from "@/components/entrance-exams/NoticeReviewDrawer";
 import {
   buildReviewRows, summarizeFill,
@@ -166,7 +168,7 @@ export function EntranceExamEditorPage() {
   // S2.4: the review drawer's state — set only after an extraction, cleared on
   // apply/close. Nothing reaches the form without an explicit Accept.
   const [reviewState, setReviewState] = useState<
-    { rows: ReviewRow[]; report: FillReport; providerNote: string } | null
+    { rows: ReviewRow[]; report: FillReport; providerNote: string; match: LikelyMatch | null; sourceText: string } | null
   >(null);
   const [tabAiFilling, setTabAiFilling] = useState<string | null>(null);
   const [isPublished, setIsPublished] = useState(true);
@@ -772,10 +774,30 @@ export function EntranceExamEditorPage() {
         categories.map((c) => ({ slug: c.slug, id: c.id })),
         year,
       );
+
+      // S2.5: on a NEW record, check whether the notice belongs to an exam
+      // that already exists — one record per cycle, many notices. The drawer
+      // then offers to carry the extraction THERE instead of duplicating.
+      let match: LikelyMatch | null = null;
+      if (isNew) {
+        const f = ext.content.fields as Record<string, { value?: string } | undefined>;
+        match = await findLikelyExamMatch(
+          {
+            name: typeof f.name?.value === "string" ? f.name.value : undefined,
+            shortName: typeof f.shortName?.value === "string" ? f.shortName.value : undefined,
+            conductingBody: typeof f.conductingBody?.value === "string" ? f.conductingBody.value : undefined,
+            year,
+          },
+          pillarFromUrl || "entrance-exam",
+        ).catch(() => null); // a failed read must not block the review — it just means "no suggestion"
+      }
+
       setReviewState({
         rows,
         report: summarizeFill(rows, ext.issues),
         providerNote: `${ext.provider} · ${ext.model} · template ${ext.template}`,
+        match,
+        sourceText: rawContent,
       });
       if (rows.length === 0) {
         toast.warning("The model read the notice but proposed no usable changes. Check the pasted text.");
@@ -789,30 +811,30 @@ export function EntranceExamEditorPage() {
     }
   };
 
-  /** Merge ACCEPTED date rows into the form: fill blank slots or append —
-   *  a row that already carries a date is never clobbered (S2.5 adds the
-   *  match-and-update + supersedes rules on top of this merge). */
+  /** Merge ACCEPTED date rows into the form — S2.5 rules: match and update,
+   *  never duplicate; an extension appends with a supersedes link; a blank
+   *  standard slot fills; a dated row is never clobbered. */
   const mergeProposedDates = (proposed: ProposedDateRow[]): boolean => {
     const currentDates = form.getValues("importantDates") as DateRow[];
-    const merged = [...currentDates];
-    let changed = false;
-    const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
-    for (const row of proposed) {
-      const { source_quote: _q, confidence: _c, ...payload } = row;
-      const idx = merged.findIndex((d) => norm(d.label ?? "") === norm(row.label));
-      if (idx >= 0) {
-        if (isBlank(merged[idx].date)) {
-          merged[idx] = { ...merged[idx], ...payload, type: merged[idx].type ?? row.type, kind: merged[idx].kind ?? row.kind };
-          changed = true;
-        }
-        // dated + matched → LEAVE IT (S2.5 decides append-vs-supersede).
-        continue;
-      }
-      merged.push({ ...payload });
-      changed = true;
+    const res = mergeAcceptedDateRows(currentDates, proposed as unknown as DateRow[]);
+    if (res.filled + res.added > 0) replaceDates(res.rows);
+    if (res.duplicatesIgnored > 0) {
+      toast.info(`${res.duplicatesIgnored} date(s) already on the timeline were left as-is.`);
     }
-    if (changed) replaceDates(merged);
-    return changed;
+    return res.filled + res.added > 0;
+  };
+
+  /** S2.5: carry the extraction to the existing record it belongs to. The
+   *  notice text rides through sessionStorage; the target editor re-runs the
+   *  extraction against ITS form so the review compares real current values. */
+  const handleOpenMatch = (match: LikelyMatch) => {
+    if (!reviewState) return;
+    try {
+      sessionStorage.setItem(NOTICE_HANDOFF_KEY, JSON.stringify({ text: reviewState.sourceText, at: Date.now() }));
+    } catch { /* storage full/blocked — the click still navigates */ }
+    setReviewState(null);
+    const basePath = window.location.pathname.split("/")[1] || "entrance-exams";
+    navigate(`/${basePath}/${match.exam.id}`);
   };
 
   /** The drawer's one callback: writes ONLY to the form, never the DB. */
@@ -830,6 +852,26 @@ export function EntranceExamEditorPage() {
     setReviewState(null);
     toast.success(`${applied} change(s) applied to the form. Review them, then Save.`);
   };
+
+  // S2.5: consume a carried-over notice ("Open it and review the changes
+  // there") once — and only once — per record, and only while it is fresh.
+  const handoffDone = React.useRef(false);
+  useEffect(() => {
+    if (isNew || loading || handoffDone.current) return;
+    let raw: string | null = null;
+    try {
+      raw = sessionStorage.getItem(NOTICE_HANDOFF_KEY);
+      if (raw) sessionStorage.removeItem(NOTICE_HANDOFF_KEY);
+    } catch { return; }
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as { text?: string; at?: number };
+      if (!parsed.text || !parsed.at || Date.now() - parsed.at > 15 * 60 * 1000) return; // stale — drop silently
+      handoffDone.current = true;
+      void handleAIGenerate(parsed.text);
+    } catch { /* malformed handoff — ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNew, loading]);
 
 
   // ── Tab-Level AI Handlers ─────────────────────────────────────────────────
@@ -1288,6 +1330,8 @@ export function EntranceExamEditorPage() {
         rows={reviewState?.rows ?? []}
         report={reviewState?.report ?? { proposed: 0, defaultAccepted: 0, flagged: 0, noFieldYet: 0, lowConfidence: [], missingOptions: [] }}
         providerNote={reviewState?.providerNote ?? ""}
+        match={reviewState?.match ?? null}
+        onOpenMatch={handleOpenMatch}
         onClose={() => setReviewState(null)}
         onApply={handleApplyAccepted}
       />
