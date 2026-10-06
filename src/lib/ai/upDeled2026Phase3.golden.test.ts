@@ -147,20 +147,84 @@ describe("golden: provenance rows and rejections (S2.7)", () => {
 
 describe.skipIf(process.env.LIVE !== "1")("golden: live model run (LIVE=1, after S2.3 deploy approval)", () => {
   it("calls the deployed NOTICE_EXTRACT_V1 and records the answer beside the fixtures", async () => {
-    const { generateStructured } = await import("./aiFillClient");
-    const ext = await generateStructured("NOTICE_EXTRACT_V1", pastedText, {
-      pillar: "entrance-exam",
-      consumer: "golden-live",
-    });
-    const liveRaw = JSON.stringify({ fields: ext.content.fields, dates: ext.content.dates, references: ext.content.references ?? [] });
-    // Second recording — kept for the report's live-vs-expected comparison.
-    const { writeFileSync } = await import("node:fs");
-    writeFileSync(FIX("model.responses.live.json"), liveRaw + "\n");
-    // The same post-processing must satisfy the same acceptance table.
-    const live = runNoticePipeline(liveRaw, allowed, pastedText, 2026);
-    expect(live.rows.map((r) => [r.kind, r.date, r.end_date ?? null])).toEqual(
-      expected.dates.map((r: { kind: string; date: string; end_date?: string }) => [r.kind, r.date, r.end_date ?? null]),
+    // Transport: direct fetch to the deployed function, authenticated with the
+    // owner's saved CMS session (.auth/cms.json) — used ONLY for ai-fill calls.
+    // No token is ever printed. vitest runs from the repo root.
+    const { readFileSync, writeFileSync } = await import("node:fs");
+    const env = Object.fromEntries(
+      readFileSync(".env", "utf8").split(/\r?\n/).filter((l) => /^[A-Z_]+=/i.test(l)).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()]),
     );
-    expect(live.fields.categorySlug.value).toBe(expected.categorySlug.value);
-  }, 60_000);
+    const state = JSON.parse(readFileSync(".auth/cms.json", "utf8")) as { origins?: { localStorage?: { name: string; value: string }[] }[] };
+    let sess: { access_token?: string; refresh_token?: string } = {};
+    for (const o of state.origins ?? []) for (const e of o.localStorage ?? []) {
+      if (e.name.startsWith("sb-")) { try { const v = JSON.parse(e.value); sess = v.current ?? v } catch {} }
+    }
+    if (!sess.access_token) throw new Error("no session in .auth/cms.json — run npm run cms:login first");
+
+    const call = async (tok: string) => fetch(`${env.VITE_SUPABASE_URL}/functions/v1/ai-fill`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ template: "NOTICE_EXTRACT_V1", pillar: "entrance-exam", consumer: "golden-live", sourceText: pastedText.replace(/\r\n/g, "\n") }),
+    });
+    let res = await call(sess.access_token);
+    if (res.status === 401 && sess.refresh_token) {
+      // The saved token ages out hourly like any browser session — refresh and
+      // retry once (same endpoint the SPA client uses; token never printed).
+      const rf = await fetch(`${env.VITE_SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ refresh_token: sess.refresh_token }),
+      });
+      if (!rf.ok) throw new Error(`live call 401 and refresh failed (${rf.status}) — re-run npm run cms:login`);
+      const fresh = await rf.json() as { access_token?: string };
+      if (!fresh.access_token) throw new Error("refresh returned no access token")
+      // Persist the rotated session back into the (gitignored) storageState so
+      // the next run — or the browser — starts from the current tokens.
+      try {
+        for (const o of state.origins ?? []) for (const e of o.localStorage ?? []) {
+          if (!e.name.startsWith("sb-")) continue
+          try { const v = JSON.parse(e.value); const cur = v.current ?? v; Object.assign(cur, fresh); e.value = JSON.stringify(v) } catch {}
+        }
+        writeFileSync(".auth/cms.json", JSON.stringify(state))
+      } catch { /* non-fatal: the run itself already succeeded */ }
+      res = await call(fresh.access_token);
+    }
+    if (!res.ok) throw new Error(`live call failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+    const wire = await res.json() as { content: { fields: Record<string, unknown>; dates: Record<string, unknown>[]; references?: unknown[] }; issues?: unknown[] };
+    const liveRaw = JSON.stringify({ fields: wire.content.fields, dates: wire.content.dates, references: wire.content.references ?? [] });
+    // Second recording — kept for the report's live-vs-expected comparison.
+    writeFileSync(FIX("model.responses.live.json"), liveRaw + "\n");
+
+    const live = runNoticePipeline(liveRaw, allowed, pastedText.replace(/\r\n/g, "\n"), 2026);
+
+    // Classification per the owner's rule: a wrong date, a wrong kind or a
+    // missing row is a FAILURE; wording (labels, values, confidence, quotes)
+    // and extra rows are FLAGS.
+    const failures: string[] = [];
+    const flags: string[] = [];
+    const table: { row: string; expected: string; live: string; status: string }[] = [];
+    const matched = new Set<number>();
+    expected.dates.forEach((e: { label: string; kind: string; date: string; end_date?: string; end_time?: string }, i: number) => {
+      const sameKind = live.rows.filter((r) => r.kind === e.kind);
+      if (sameKind.length === 0) { failures.push(`missing row: kind ${e.kind} (expected ${e.label} ${e.date})`); table.push({ row: e.kind, expected: `${e.label} ${e.date}`, live: "—", status: "FAIL" }); return }
+      const exact = sameKind.find((r) => r.date === e.date);
+      if (!exact) { failures.push(`wrong date: kind ${e.kind} live=${sameKind.map((r) => r.date).join(",")} expected=${e.date}`); table.push({ row: e.kind, expected: e.date, live: sameKind.map((r) => r.date).join(","), status: "FAIL" }); return }
+      matched.add(live.rows.indexOf(exact));
+      if (e.end_date && (exact.end_date ?? "") !== e.end_date) failures.push(`wrong end_date: ${e.kind} live=${exact.end_date ?? ""} expected=${e.end_date}`);
+      else if (!e.end_date && exact.end_date) failures.push(`extra end_date on ${e.kind}: ${exact.end_date}`);
+      table.push({ row: e.kind, expected: `${e.date}${e.end_date ? "→" + e.end_date : ""}${e.end_time ? " " + e.end_time : ""}`, live: `${exact.date}${exact.end_date ? "→" + exact.end_date : ""}${exact.end_time ? " " + exact.end_time : ""}`, status: "ok" })
+    })
+    live.rows.forEach((r, i) => { if (!matched.has(i)) flags.push(`extra live row: ${r.kind} ${r.label} ${r.date} (wording/scope difference — not a failure by itself)`) })
+    for (const [f, exp] of Object.entries({ categorySlug: expected.categorySlug.value, selectionModel: expected.selectionModel.value }) as [string, string][]) {
+      const got = live.fields[f]?.value ?? ""
+      if (got !== exp) flags.push(`${f}: live="${got}" expected="${exp}" (field wording/choice — flag)`)
+    }
+    // eslint-disable-next-line no-console
+    console.table(table)
+    if (flags.length) { console.log("LIVE FLAGS:"); flags.forEach((f) => console.log("  -", f)) }
+    expect(failures).toEqual([])
+    // Core acceptance on live data (failures per the rule):
+    expect(live.rows.some((r) => r.kind === "choice_filling" && r.date === "2026-10-05")).toBe(true)
+    expect(live.rows.some((r) => r.kind === "institute_lock" && r.date === "2026-10-15")).toBe(true)
+  }, 90_000)
 });
