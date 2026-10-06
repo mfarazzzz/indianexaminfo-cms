@@ -41,7 +41,8 @@ export interface ReviewRow {
   id: string;
   /** Human field name shown in the drawer. */
   label: string;
-  kind: "field" | "date";
+  /** "proposal" = goes to provenance (ai_metadata), never to the form (S2.6). */
+  kind: "field" | "date" | "proposal";
   current: string;
   proposed: string;
   sourceQuote: string;
@@ -56,6 +57,8 @@ export interface ReviewRow {
   formValue?: unknown;
   /** For kind === "date": the row to merge into importantDates. */
   row?: ProposedDateRow;
+  /** For kind === "proposal": the document reference being recorded. */
+  documentReference?: { label: string; date: string; sourceQuote: string };
 }
 
 export interface ReviewCurrentValues {
@@ -217,6 +220,25 @@ export function buildReviewRows(
       defaultAccept: conf >= OPTION_CONFIDENCE_FLOOR,
       noFieldYet: false,
       row,
+    });
+  });
+
+  // S2.6: notices the source only REFERS TO become document-reference
+  // proposals — provenance, never a "Notification Release" date row.
+  const references = extraction.content.references ?? [];
+  references.forEach((ref, i) => {
+    const parsed = parseDateWindow(ref.dateText ?? "", year);
+    rows.push({
+      id: `reference:${i}:${ref.label}`,
+      label: `Document reference — ${ref.label}`,
+      kind: "proposal",
+      current: "",
+      proposed: parsed.date ? `recorded as a reference (dated ${parsed.date}), NOT a timeline row` : "recorded as a reference, NOT a timeline row",
+      sourceQuote: ref.sourceQuote ?? "",
+      confidence: typeof ref.confidence === "number" ? ref.confidence : 0,
+      defaultAccept: true, // recording a reference loses nothing — safe by default
+      noFieldYet: false,
+      documentReference: { label: ref.label, date: parsed.date, sourceQuote: ref.sourceQuote ?? "" },
     });
   });
 

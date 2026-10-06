@@ -29,6 +29,7 @@ import { ALL_SELECTION_MODELS, SELECTION_MODEL_LABELS, SELECTION_MODEL_HINTS, ty
 import { getModulesForEntityType, entityTypeForPillar, resolveEntityType, ENTRANCE_EXAM_ENTITY_CHOICES } from "@/config/moduleRegistry";
 import { generateStructured } from "@/lib/ai/aiFillClient";
 import { findLikelyExamMatch, NOTICE_HANDOFF_KEY, type LikelyMatch } from "@/lib/ai/noticeMatch";
+import { buildNoticeAiMetadata } from "@/lib/ai/noticeProvenance";
 import { mergeAcceptedDateRows } from "@/lib/dates/dateRowMerge";
 import { NoticeReviewDrawer } from "@/components/entrance-exams/NoticeReviewDrawer";
 import {
@@ -171,6 +172,13 @@ export function EntranceExamEditorPage() {
     { rows: ReviewRow[]; report: FillReport; providerNote: string; match: LikelyMatch | null; sourceText: string } | null
   >(null);
   const [tabAiFilling, setTabAiFilling] = useState<string | null>(null);
+  // S2.6: the last extraction's provenance + the metadata staged by an Apply,
+  // written into exams.ai_metadata by the EDITOR's next save — never before.
+  const extractionMetaRef = React.useRef<{
+    provider: string; model: string; template: string; issues: import("@/lib/ai/aiFillClient").ExtractionIssue[];
+    noticeReference?: string; sourceText: string;
+  } | null>(null);
+  const pendingProvenanceRef = React.useRef<Record<string, unknown> | null>(null);
   const [isPublished, setIsPublished] = useState(true);
   const [workflowStatus, setWorkflowStatus] = useState<ExamWorkflowStatus>("published");
   const [publishing, setPublishing] = useState(false);
@@ -403,6 +411,8 @@ export function EntranceExamEditorPage() {
           entityType: resolveEntityType(pillarFromUrl, data.entityType),
           selectionModel: data.selectionModel as SelectionModel,
           firstEditionYear: data.editionYear,
+          // S2.6: a record born from a notice records the notice.
+          ...(pendingProvenanceRef.current ? { aiMetadata: pendingProvenanceRef.current } : {}),
         });
 
         // Identity fields that createEntranceExam does not accept (SEO, FAQs, tags,
@@ -455,6 +465,9 @@ export function EntranceExamEditorPage() {
 
         // Clear the pending modules now that they've been persisted.
         pendingModulesRef.current = null;
+        // S2.6: create already carried the provenance through the insert — drop the
+        // staged copy so the post-create navigation cannot re-apply it.
+        pendingProvenanceRef.current = null;
 
         toast.success(`"${data.name}" created as Draft.`);
         // Navigate to the freshly saved record (all form state is now on disk).
@@ -483,7 +496,11 @@ export function EntranceExamEditorPage() {
         seoDescription: data.seoDescription || undefined,
         tags: data.tags ? data.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
         faqs: data.faqs,
+        // S2.6: persist the staged provenance ONLY when an Apply staged it, and
+        // clear it after the save succeeds so a later save cannot re-write it.
+        ...(pendingProvenanceRef.current ? { aiMetadata: pendingProvenanceRef.current } : {}),
       });
+      pendingProvenanceRef.current = null; // identity write landed — one-shot provenance
 
       // Item 3 — build ONE merged content_modules from the live News child state
       // (ref), overlaying the target edition's existing modules. Written in the
@@ -799,6 +816,17 @@ export function EntranceExamEditorPage() {
         match,
         sourceText: rawContent,
       });
+      // S2.6: remember WHO produced this answer and the notice's own reference —
+      // Apply stages it into ai_metadata; the save persists it.
+      const refField = (ext.content.fields as Record<string, { value?: unknown } | undefined>).noticeReference;
+      extractionMetaRef.current = {
+        provider: ext.provider,
+        model: ext.model,
+        template: ext.template,
+        issues: ext.issues,
+        noticeReference: typeof refField?.value === "string" && refField.value.trim() ? refField.value.trim() : undefined,
+        sourceText: rawContent,
+      };
       if (rows.length === 0) {
         toast.warning("The model read the notice but proposed no usable changes. Check the pasted text.");
       }
@@ -849,6 +877,25 @@ export function EntranceExamEditorPage() {
     }
     const dateRows = accepted.filter((r) => r.kind === "date" && r.row).map((r) => r.row!);
     if (dateRows.length > 0 && mergeProposedDates(dateRows)) applied += dateRows.length;
+
+    // S2.6: stage the provenance run (metadata + document references). It only
+    // reaches the database when the editor SAVES — Apply alone touches the form.
+    const meta = extractionMetaRef.current;
+    if (meta) {
+      const proposalRows = accepted.filter((r) => r.kind === "proposal" && r.documentReference);
+      pendingProvenanceRef.current = buildNoticeAiMetadata(exam?.aiMetadata, {
+        sourceType: "pasted_text",
+        noticeReference: meta.noticeReference,
+        provider: meta.provider,
+        model: meta.model,
+        template: meta.template,
+        report: reviewState?.report ?? { proposed: 0, defaultAccepted: 0, flagged: 0, noFieldYet: 0, lowConfidence: [], missingOptions: [] },
+        issues: meta.issues,
+        acceptedRows: accepted,
+        documentReferences: proposalRows.map((r) => r.documentReference!),
+      }, new Date().toISOString());
+    }
+
     setReviewState(null);
     toast.success(`${applied} change(s) applied to the form. Review them, then Save.`);
   };

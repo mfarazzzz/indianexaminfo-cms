@@ -98,6 +98,11 @@ export interface ExamIdentity {
   workflowStatus: ExamWorkflowStatus;
   isPublished: boolean;
   isVerified: boolean;
+  /** S2.6 provenance (jsonb convention in supabase/proposed/a1_ai_fill_options.sql):
+   *  fill_source, notice {reference,date}, extracted_at, template, report,
+   *  field_quotes, pending_documents, verified:false, published_by_ai:false.
+   *  Optional: mappers outside this service (pillarService) predate the column. */
+  aiMetadata?: Record<string, unknown>;
   faqs: { question: string; answer: string }[];
   currentEditionId: string | null;
   createdAt: string;
@@ -156,6 +161,8 @@ export interface NewExamInput {
    *  the editor starts on "— Select —" and blocks save on a blank, like region. */
   selectionModel: SelectionModel;
   firstEditionYear: number;
+  /** S2.6: AI provenance to seed the record with ("update from a notice"). */
+  aiMetadata?: Record<string, unknown>;
 }
 
 // ── Row Mappers ────────────────────────────────────────────────────────────
@@ -225,6 +232,7 @@ function mapExamIdentityRow(row: Record<string, unknown>): ExamIdentity {
     workflowStatus: (row.workflow_status as ExamWorkflowStatus) ?? "draft", // fail-closed: an unknown state reads as DRAFT, never as live
     isPublished: (row.is_published as boolean) ?? false,
     isVerified: (row.is_verified as boolean) ?? false,
+    aiMetadata: (row.ai_metadata as Record<string, unknown>) ?? {},
     faqs: (row.faqs as { question: string; answer: string }[]) ?? [],
     currentEditionId: (row.current_edition_id as string) ?? null,
     createdAt: row.created_at as string,
@@ -408,6 +416,9 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
       // pillar, not only entrance"). The old branch left non-entrance records live on
       // the site immediately after creation.
       workflow_status: "draft",
+      // S2.6: provenance rides the create itself — a record born from a notice
+      // records that fact even if the editor never touches identity again.
+      ...(input.aiMetadata ? { ai_metadata: input.aiMetadata } : {}),
     })
     .select(DETAIL_SELECT)
     .single();
@@ -491,6 +502,9 @@ export async function updateExamIdentity(
     faqs: { question: string; answer: string }[];
     selectionModel: SelectionModel;
     entityType: string;
+    /** S2.6: full replacement of the ai_metadata jsonb — the CALLER merges the
+     *  existing object (exam.aiMetadata) with the new run's keys. */
+    aiMetadata: Record<string, unknown>;
   }>
 ): Promise<ExamIdentity> {
   const updates: Record<string, unknown> = {};
@@ -524,6 +538,7 @@ export async function updateExamIdentity(
   if (input.faqs !== undefined) updates.faqs = input.faqs;
   if (input.selectionModel !== undefined) updates.selection_model = input.selectionModel;
   if (input.entityType !== undefined) updates.entity_type = input.entityType;
+  if (input.aiMetadata !== undefined) updates.ai_metadata = input.aiMetadata;
 
   const { data, error } = await db
     .from("exams")

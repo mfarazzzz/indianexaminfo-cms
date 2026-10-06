@@ -86,7 +86,12 @@ export interface ExtractionIssue {
 
 /** Cleaned, server-validated extraction answer (see the function's templates.ts). */
 export interface StructuredExtraction {
-  content: { fields: Record<string, unknown>; dates: Record<string, unknown>[] };
+  content: {
+    fields: Record<string, unknown>;
+    dates: Record<string, unknown>[];
+    /** S2.6: earlier notices this one merely REFERENCES — document refs, never date rows. */
+    references?: { label: string; dateText: string; confidence: number; sourceQuote: string }[];
+  };
   issues: ExtractionIssue[];
   provider: string;
   model: string;

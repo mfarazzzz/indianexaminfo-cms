@@ -128,6 +128,14 @@ Return ONLY one valid JSON object, exactly this shape:
       "confidence": 0-1,
       "sourceQuote": "verbatim line(s) the date came from"
     }
+  ],
+  "references": [
+    {
+      "label": "the EARLIER notice being referred to, as written (e.g. the counselling notice dated 07.08.2026)",
+      "dateText": "its date exactly as written",
+      "confidence": 0-1,
+      "sourceQuote": "the verbatim referring line"
+    }
   ]
 }
 
@@ -135,7 +143,7 @@ DATE RULES (two-vocabulary contract — the site computes status from "type"):
 - "type" is COARSE and fixed: registration opening → application_start; closing → application_end; choice filling / seat allotment / document verification / admission / institute lock → counselling; rank or merit list → merit_list; cut-off → cutoff (NOT result); fee/print/correction/session dates → other; exam-day rows → exam_written; admit_card / answer_key / result / notification keep their own type. Anything the list cannot express → "other".
 - "kind" is the FINE-GRAINED event; put the specific name there (choice_filling, allotment, institute_lock, fee_last_date, …). Never invent a new "type".
 - Every date in the notice gets a row — INCLUDE events you have no vocabulary for: use type "other", kind "other", and KEEP the label as written. Dropping a date is the worst failure.
-- A date referenced only as background ("पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026") is NOT an event of THIS notice — leave it out of "dates".
+- A date the notice only REFERS TO as background ("पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026", "vide notice No. … dated …") is NOT an event of THIS notice: put it in "references" (a document reference), NEVER in "dates", never as a "Notification Release" row.
 - An extension of an earlier deadline: kind "extension", keep its label, one row.
 
 NON-CONTENT: distribution lists ("प्रतिलिपि … District Magistrate / banks / DIET …"), salutations and letterhead are ADDRESSING metadata — never extract them into any field.
@@ -221,5 +229,15 @@ export function validateAnswer(parsed: unknown, opts: AllowedOptionsServer): { c
     return row;
   }).filter((r: any) => r.label && r.dateText);
 
-  return { content: { fields, dates }, issues };
+  // S2.6: referenced earlier notices — document references, kept OUT of the
+  // date timeline by design. Absent/invalid is fine (empty array).
+  const rawRefs = Array.isArray(root.references) ? root.references : [];
+  const references = rawRefs.map((r: any) => ({
+    label: typeof r?.label === "string" ? r.label.trim() : "",
+    dateText: typeof r?.dateText === "string" ? r.dateText.trim() : "",
+    confidence: clamp01(r?.confidence),
+    sourceQuote: typeof r?.sourceQuote === "string" ? r.sourceQuote : "",
+  })).filter((r: any) => r.label && (r.dateText || r.sourceQuote));
+
+  return { content: { fields, dates, references }, issues };
 }
