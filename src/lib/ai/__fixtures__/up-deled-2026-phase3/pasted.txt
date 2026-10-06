@@ -1,29 +1,320 @@
-UP D.El.Ed Admission 2026 — Phase-3 (मॉप-अप / अंतिम) चयन विज्ञप्ति सारांश
-Source: updeled.gov.in?utm_source=chatgpt.com
-Reference: डीएलएड 2026 / 530-5603 / 2026-27, दिनांक 01.10.2026
-(पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026 के संदर्भ में)
+I extracted the document page-by-page, including the information contained in the tables and the scanned portions.
 
-उत्तर प्रदेश डीएलएड (D.El.Ed / BTC) प्रशिक्षण संस्थाओं में प्रवेश हेतु राज्य रैंक के आधार पर चयन। कोई प्रवेश परीक्षा नहीं।
+## D.El.Ed. (BTC) Training 2026 — Complete Details
 
-Phase-3 चयन पूर्णकरण / Choice Filling:
-05.10.2026 (अपराह्न) से 07.10.2026 सायं 06:00 बजे तक
-Phase-3 चयन पूर्णकरण हेतु समस्त आवंटित अभ्यर्थी (राज्य रैंक क्रमांक 1 से 1,52,202)।
-Choice filling fee: ₹5,000 (पाँच हजार रुपये) — non-refundable
+**Issuing authority:**  
+कार्यालय : सचिव परीक्षा नियामक प्राधिकारी, उत्तर प्रदेश  
+23 एलनगंज, प्रयागराज, पिन कोड – **211002**
 
-Seat Allotment: 08.10.2026
-Document Verification / Admission: 09.10.2026 से 14.10.2026 (सायं 05:00 बजे)
-Institution Locking / FREEZE: 15.10.2026
+**Website:** [updeled.gov.in](https://updeled.gov.in?utm_source=chatgpt.com)  
+**Emails:**  
+- secretarypnp.up@gmail.com
+- updeled@gmail.com
 
-⚠ सावधानी: संस्था लॉक (Institution Lock / FREEZE) के बाद कोई भी admission मान्य नहीं होगा।
-
-Contact: secretarypnp.up@gmail.com, updeled@gmail.com
-Website: updeled.gov.in?utm_source=chatgpt.com
+The document is a **विज्ञप्ति (official notice)** concerning the **D.El.Ed. (BTC) Training 2026** admission process. Press_Release_01102026
 
 ---
-(पृष्ठ 2)
-प्रतिलिपि:
-1. जिलाधिकारी / District Magistrate — समस्त जनपद
-2. संविभागीय सहायक आयुक्त
-3. निदेशक, डी.आइ.ई.टी. — समस्त
-4. State Bank of India, Allahabad Bank, Bank of Baroda — शाखा प्रबंधक
-Meeting of District Magistrate on 20.10.2026 for seat matrix review.
+
+# 1. Purpose of the notice
+
+### Title
+**डीएलएड (बीटीसी) प्रशिक्षण 2026 प्रशिक्षण संस्थान का विकल्प भरने तथा आवंटित संस्थान में अभिलेखीय जाँच / प्रवेश की कार्यवाही पूर्ण किये जाने हेतु अंतिम अवसर**
+
+In simple terms:
+
+> **Final opportunity to fill the choice of D.El.Ed. (BTC) training institution and complete document verification/admission formalities at the allotted institution.**
+
+The notice refers to the earlier advertisement dated **07.08.2026**, issued regarding the D.El.Ed. Training 2026 admission process.
+
+Candidates who had applied online were being given the opportunity to submit training-institution choices in stages along with the merit process.
+
+The notice states that the admission process at the allotted training institution following the earlier phase had been completed on **25.09.2026**.
+
+After considering representations received from some candidates and private institutions, the authority has decided to provide **one final opportunity** in **Phase-3** for eligible candidates to fill their institution choice according to merit and subsequently complete the admission process. Press_Release_01102026
+
+---
+
+# 2. Who gets this opportunity?
+
+The notice specifically covers:
+
+### Candidates up to State Rank 1,52,202
+
+It says:
+
+> **स्टेट रैंक 01 से 1,52,202 तक के समस्त आवंटित अभ्यर्थी**
+
+That is, candidates falling within **State Rank 1 to 1,52,202** who **have not yet been allotted a training institution** are covered for this opportunity.
+
+They can fill their choice of training institution.
+
+### Choice fee
+
+The candidate has to pay:
+
+**₹5,000/-**
+
+i.e. **₹5,000 (पाँच हजार रुपये मात्र)** as the online payment for submitting the training-institution choice.
+
+### Payment window
+
+| Activity | Date |
+|---|---|
+| Online payment for institution choice | **05 October 2026 afternoon onwards** |
+| Last date/time | **07 October 2026, 6:00 PM** |
+
+So the stated payment window is:
+
+**05 October 2026 afternoon → 07 October 2026, 6:00 PM**
+
+Press_Release_01102026
+
+---
+
+# 3. PHASE-3 schedule
+
+The notice explicitly labels this section:
+
+## PHASE-3
+
+| क्रम | Activity | Date |
+|---|---|---|
+| 01 | Institution choice filling | **05.10.2026 afternoon to 07.10.2026** |
+|  | State Rank considered | **1 to 1,52,202** |
+| 02 | Online report/lock by allotted training institution | **Final date: 15 October 2026** |
+
+---
+
+# 4. Choice filling period
+
+### Institution choice filling
+
+Candidates have to fill their institution choices:
+
+**05 October 2026 (afternoon) से 07 October 2026 तक**
+
+The notice indicates that the choice-filling process is to be done through:
+
+[UP D.El.Ed official website](https://updeled.gov.in?utm_source=chatgpt.com)
+
+Press_Release_01102026
+
+---
+
+# 5. Which candidates are considered in Phase-3?
+
+The Phase-3 table says that candidates with:
+
+### State Rank 01 to 1,52,202
+
+who **have not been allotted a training institution** are eligible.
+
+It further explains that an opportunity will be provided to such candidates to obtain admission.
+
+There is also a specific provision regarding reserved-category candidates.
+
+The notice mentions candidates belonging to:
+
+- पिछड़ी जाति — **OBC**
+- अनुसूचित जाति — **SC**
+- अनुसूचित जनजाति — **ST**
+- विशेष आरक्षित श्रेणी
+
+where the relevant candidates were not available / seats were not filled, and the concerned reserved seats have already been **converted to unreserved seats**.
+
+So the Phase-3 process includes these converted seats as well. Press_Release_01102026
+
+---
+
+# 6. Institution allotment date
+
+After candidates submit their choices, the date given for publication of institution allotment is:
+
+### **08 October 2026**
+
+So the sequence is:
+
+**Choice/payment → 5–7 October → Allotment → 8 October**
+
+---
+
+# 7. Admission / document verification at allotted institution
+
+For candidates who receive an institution allotment:
+
+### Document verification / admission process
+
+**09 October 2026 to 14 October 2026**
+
+The notice specifies:
+
+### Final deadline:
+**14 October 2026, 5:00 PM**
+
+So candidates must complete the admission process at their allotted institution by:
+
+> **14 October 2026, 5:00 PM**
+
+Press_Release_01102026
+
+---
+
+# 8. Very important: Online report / lock by institution
+
+There is a separate requirement for the **training institution**.
+
+The allotted training institution has to complete the candidate's:
+
+**ऑनलाइन रिपोर्ट / लॉक**
+
+i.e. online reporting/locking process.
+
+### Final deadline:
+
+**15 October 2026**
+
+The notice states that if the allotted candidate's institution does not complete the online report/lock on the official website:
+
+[updeled.gov.in](https://updeled.gov.in?utm_source=chatgpt.com)
+
+then the admission taken will **not be considered valid**.
+
+This is an important distinction:
+
+**Candidate completing admission at the college is not the end of the process — the allotted institution also has to complete its online reporting/locking.**
+
+Press_Release_01102026
+
+---
+
+# 9. Complete timeline
+
+Here is the entire process in chronological order:
+
+| Date | What happens |
+|---|---|
+| **05 Oct 2026 afternoon** | Phase-3 institution-choice process/payment begins |
+| **05–07 Oct 2026** | Eligible candidates fill institution choices |
+| **07 Oct 2026, 6:00 PM** | **Last time for ₹5,000 online payment/choice process** |
+| **08 Oct 2026** | Institution allotment published |
+| **09 Oct 2026** | Admission/document verification begins |
+| **09–14 Oct 2026** | Candidate completes document verification/admission at allotted institution |
+| **14 Oct 2026, 5:00 PM** | **Final deadline for candidate admission** |
+| **15 Oct 2026** | **Final deadline for institution's online report/lock** |
+
+Press_Release_01102026
+
+---
+
+# 10. What candidates are instructed to do
+
+The notice advises candidates to carefully study the:
+
+- instructions,
+- guidelines,
+- government orders,
+
+available on the official website **before completing the online choice process / document verification / admission process**.
+
+It also states that the online counselling and admission process will be governed according to the **instructions, rules and conditions published in the previously issued advertisement**. Press_Release_01102026
+
+---
+
+# 11. Issuing officer
+
+The notice is signed by:
+
+**राजेन्द्र प्रताप (Rajendra Pratap)**  
+**सचिव (Secretary)**  
+**परीक्षा नियामक प्राधिकारी**  
+**उत्तर प्रदेश, प्रयागराज**
+
+The document carries a handwritten/signature date around **01-10-2026**. Press_Release_01102026
+
+---
+
+# 12. Page 2 — Distribution / copies sent to
+
+The second page contains the distribution list for information and necessary action.
+
+The notice is marked approximately:
+
+**पृ0सं0 / डीएलएड 2026 / 530-5603 / 2026-27**  
+**दिनांक 01 अक्टूबर 2026**
+
+Copies/information are sent to:
+
+### 1.
+**विशेष सचिव, बेसिक शिक्षा, शिक्षा अनुभाग-4, उ0प्र0 शासन, लखनऊ।**
+
+Special Secretary, Basic Education, Education Section-4, Uttar Pradesh Government, Lucknow.
+
+### 2.
+**महानिदेशक, स्कूल शिक्षा, उ0प्र0 लखनऊ।**
+
+Director General, School Education, Uttar Pradesh, Lucknow.
+
+### 3.
+**निदेशक, राज्य शैक्षिक अनुसंधान एवं प्रशिक्षण परिषद, उ0प्र0 लखनऊ।**
+
+Director, State Council of Educational Research and Training (SCERT), Uttar Pradesh, Lucknow.
+
+### 4.
+**श्री राजेन्द्र गुप्ता, वरिष्ठ तकनीकी निदेशक, एनआईसी, योजना भवन, लखनऊ**
+
+He is requested to ensure appropriate action relating to the online application according to the published notice.
+
+### 5.
+**क्षेत्रीय प्रबन्धक / शाखा प्रबन्धक**
+
+- ICICI Bank, Tagore Town, Prayagraj
+- Indian State Bank, Triveni Branch, Prayagraj
+
+The copy is sent for necessary action concerning the online payment/application process.
+
+### 6.
+**समस्त प्राचार्य जिला शिक्षा एवं प्रशिक्षण संस्थान, उ0प्र0**
+
+All Principals of District Institutes of Education and Training (DIETs) in Uttar Pradesh.
+
+### 7.
+**समस्त प्राचार्य जिला शिक्षा एवं प्रशिक्षण संस्थान, प्राचार्य, सीटीईटीओ वाराणसी एवं प्रबन्धक/प्राचार्य निजी डीएलएड प्रशिक्षण संस्थान, उ0प्र0**
+
+All concerned DIET principals, the principal of the concerned Varanasi institution mentioned in the notice, and managers/principals of private D.El.Ed. training institutions in Uttar Pradesh.
+
+Press_Release_01102026
+
+---
+
+## The most important points for a candidate
+
+If you're looking at this from a **candidate's perspective**, the critical information is:
+
+**Eligibility mentioned:**  
+➡️ State Rank **1–1,52,202**  
+➡️ Particularly candidates who **have not yet been allotted a training institution**
+
+**Choice fee:**  
+➡️ **₹5,000**
+
+**Choice/payment:**  
+➡️ **05 Oct 2026 afternoon – 07 Oct 2026, 6:00 PM**
+
+**Allotment:**  
+➡️ **08 Oct 2026**
+
+**Document verification/admission:**  
+➡️ **09–14 Oct 2026**
+
+**Candidate's absolute admission deadline:**  
+➡️ **14 Oct 2026, 5:00 PM**
+
+**Institution's online report/lock deadline:**  
+➡️ **15 Oct 2026**
+
+**Official portal:**  
+[https://updeled.gov.in](https://updeled.gov.in?utm_source=chatgpt.com)
+
+### One important distinction
+
+The notice does **not** say that every candidate up to rank 1,52,202 automatically gets a seat. It says an opportunity is being provided to eligible candidates in that rank range who have not been allotted an institution, subject to the choice/allotment process and available seats described in the notice. Press_Release_01102026

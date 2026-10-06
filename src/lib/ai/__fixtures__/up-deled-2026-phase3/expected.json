@@ -1,13 +1,13 @@
 {
-  "name": { "value": "UP D.El.Ed Admission 2026", "sourceQuote": "UP D.El.Ed Admission 2026 — Phase-3 (मॉप-अप / अंतिम) चयन विज्ञप्ति सारांश", "mustNotContain": "Entrance" },
+  "name": { "value": "UP D.El.Ed. (BTC) Training 2026", "sourceQuote": "## D.El.Ed. (BTC) Training 2026 — Complete Details", "mustNotContain": "Entrance" },
   "categorySlug": { "value": "teaching-and-education" },
-  "selectionModel": { "value": "merit-based", "reason": "no written test; admission by state merit rank" },
+  "selectionModel": { "value": "merit-based", "reason": "no written test mentioned; Phase-3 choice filling by state rank bands" },
   "entityType": { "value": "university-admission" },
   "region": { "value": "up" },
   "officialWebsite": { "host": "updeled.gov.in", "mustNotContainTrackingParams": true },
   "dates": [
     {
-      "label": "Phase-3 चयन पूर्णकरण / Choice Filling",
+      "label": "Institution choice filling",
       "date": "2026-10-05",
       "end_date": "2026-10-07",
       "end_time": "18:00",
@@ -15,29 +15,28 @@
       "type": "counselling",
       "kind": "choice_filling",
       "phase": "Phase-3",
-      "rank_batch": "1–1,52,202",
+      "rank_batch": "1 to 1,52,202",
       "audience": "candidate",
       "isUrgent": true,
       "state": "confirmed",
       "verified": false,
-      "source_quote": "05.10.2026 (अपराह्न) से 07.10.2026 सायं 06:00 बजे तक",
+      "source_quote": "05 Oct 2026 afternoon – 07 Oct 2026, 6:00 PM",
       "confidence": 0.9
     },
     {
-      "label": "Seat Allotment",
+      "label": "Institution allotment published",
       "date": "2026-10-08",
       "type": "counselling",
       "kind": "allotment",
       "phase": "Phase-3",
-      "audience": "candidate",
       "isUrgent": false,
       "state": "confirmed",
       "verified": false,
-      "source_quote": "Seat Allotment: 08.10.2026",
+      "source_quote": "Institution allotment published",
       "confidence": 0.95
     },
     {
-      "label": "Document Verification / Admission",
+      "label": "Document verification/admission",
       "date": "2026-10-09",
       "end_date": "2026-10-14",
       "end_time": "17:00",
@@ -48,11 +47,11 @@
       "isUrgent": false,
       "state": "confirmed",
       "verified": false,
-      "source_quote": "Document Verification / Admission: 09.10.2026 से 14.10.2026 (सायं 05:00 बजे)",
+      "source_quote": "09 October 2026 to 14 October 2026",
       "confidence": 0.9
     },
     {
-      "label": "Institution Locking / FREEZE",
+      "label": "Online report/lock by allotted training institution",
       "date": "2026-10-15",
       "type": "counselling",
       "kind": "institute_lock",
@@ -61,39 +60,41 @@
       "isUrgent": true,
       "state": "confirmed",
       "verified": false,
-      "source_quote": "Institution Locking / FREEZE: 15.10.2026",
+      "source_quote": "Final deadline for institution's online report/lock",
       "confidence": 0.95
     }
   ],
   "eligibility": {
-    "value": "State rank 1 to 1,52,202 and candidates not yet allotted an institution",
-    "sourceQuote": "Phase-3 चयन पूर्णकरण हेतु समस्त आवंटित अभ्यर्थी (राज्य रैंक क्रमांक 1 से 1,52,202)।",
+    "value": "State Rank 01 to 1,52,202 — candidates not yet allotted a training institution",
+    "sourceQuote": "स्टेट रैंक 01 से 1,52,202 तक के समस्त आवंटित अभ्यर्थी",
     "flagPattern": "^source quote reads"
   },
   "fee": {
-    "value": "₹5,000 choice-filling (counselling) fee, non-refundable",
+    "value": "₹5,000 (पाँच हजार रुपये मात्र) — online payment for submitting the training-institution choice",
     "flag": "counselling fee — no field yet",
     "notWrittenTo": "application_fee"
   },
-  "warnings": { "value": "No admission is valid after the Institution Lock / FREEZE" },
+  "warnings": { "value": "No admission valid unless the allotted institution completes the online report/lock" },
   "contacts": { "value": "secretarypnp.up@gmail.com, updeled@gmail.com" },
-  "noticeReference": { "value": "डीएलएड 2026 / 530-5603 / 2026-27" },
+  "noticeReference": { "value": "पृ0सं0 / डीएलएड 2026 / 530-5603 / 2026-27, दिनांक 01 अक्टूबर 2026" },
   "references": [
     {
-      "label": "Counselling Notice",
+      "label": "Earlier advertisement",
       "date": "2026-08-07",
-      "sourceQuote": "(पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026 के संदर्भ में)"
+      "sourceQuote": "The notice refers to the earlier advertisement dated"
     }
   ],
   "rejected": [
-    { "label": "DM Seat Matrix Meeting", "reasonPattern": "distribution" }
+    { "label": "Principals notification (all DIETs)", "reasonPattern": "distribution" }
   ],
   "typeInventedOverrides": [
-    { "labelContains": "Choice Filling", "from": "counselling_round3", "to": "counselling" },
-    { "labelContains": "Seat Allotment", "from": "result", "to": "counselling" }
+    { "labelContains": "Institution choice filling", "from": "counselling_round3", "to": "counselling" },
+    { "labelContains": "Institution allotment published", "from": "result", "to": "counselling" }
   ],
   "forbiddenAnywhere": [
-    "District Magistrate", "जिलाधिकारी", "State Bank", "Allahabad Bank",
-    "Bank of Baroda", "डी.आइ.ई.टी", "संविभागीय", "Seat Matrix Meeting"
+    "District Magistrate", "जिलाधिकारी", "ICICI Bank", "Tagore Town", "Triveni Branch",
+    "Special Secretary", "महानिदेशक", "State Council of Educational Research",
+    "राजेन्द्र गुप्ता", "वरिष्ठ तकनीकी निदेशक", "क्षेत्रीय प्रबन्धक", "शाखा प्रबन्धक",
+    "प्राचार्य", "विशेष सचिव", "बेसिक शिक्षा", "लखनऊ", "Lucknow", "SCERT", "उ0प्र0"
   ]
 }

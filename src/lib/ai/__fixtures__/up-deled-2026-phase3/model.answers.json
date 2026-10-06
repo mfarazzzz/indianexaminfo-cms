@@ -1,76 +1,75 @@
 {
   "fields": {
-    "name": { "value": "UP D.El.Ed Admission 2026", "confidence": 0.9, "sourceQuote": "UP D.El.Ed Admission 2026 — Phase-3 (मॉप-अप / अंतिम) चयन विज्ञप्ति सारांश" },
-    "shortName": { "value": "UP D.El.Ed", "confidence": 0.85, "sourceQuote": "उत्तर प्रदेश डीएलएड (D.El.Ed / BTC)" },
-    "categorySlug": { "value": "teaching-and-education", "confidence": 0.95, "sourceQuote": "डीएलएड (D.El.Ed / BTC) प्रशिक्षण संस्थाओं" },
-    "region": { "value": "up", "confidence": 0.95, "sourceQuote": "उत्तर प्रदेश डीएलएड" },
-    "entityType": { "value": "university-admission", "confidence": 0.8, "sourceQuote": "प्रशिक्षण संस्थाओं में प्रवेश हेतु राज्य रैंक के आधार पर चयन", "reason": "state counselling admission to DIET/training institutes, not a national entrance test" },
-    "selectionModel": { "value": "merit-based", "confidence": 0.92, "sourceQuote": "कोई प्रवेश परीक्षा नहीं।", "reason": "no written test; admission by state merit rank" },
-    "conductingBody": { "value": "Directorate of Elementary Education, Uttar Pradesh", "confidence": 0.6, "sourceQuote": "उत्तर प्रदेश डीएलएड" },
-    "officialWebsite": { "value": "https://updeled.gov.in/?utm_source=chatgpt.com", "confidence": 0.95, "sourceQuote": "Website: updeled.gov.in?utm_source=chatgpt.com" },
-    "eligibility": { "value": "State rank 1 to 1,52,202 and candidates not yet allotted an institution", "confidence": 0.75, "sourceQuote": "Phase-3 चयन पूर्णकरण हेतु समस्त आवंटित अभ्यर्थी (राज्य रैंक क्रमांक 1 से 1,52,202)।" },
-    "fee": { "value": "₹5,000 choice-filling (counselling) fee, non-refundable", "confidence": 0.95, "sourceQuote": "Choice filling fee: ₹5,000 (पाँच हजार रुपये) — non-refundable" },
-    "warnings": { "value": "No admission is valid after the Institution Lock / FREEZE", "confidence": 0.9, "sourceQuote": "⚠ सावधानी: संस्था लॉक (Institution Lock / FREEZE) के बाद कोई भी admission मान्य नहीं होगा।" },
-    "contacts": { "value": "secretarypnp.up@gmail.com, updeled@gmail.com", "confidence": 0.95, "sourceQuote": "Contact: secretarypnp.up@gmail.com, updeled@gmail.com" },
-    "noticeReference": { "value": "डीएलएड 2026 / 530-5603 / 2026-27", "confidence": 0.98, "sourceQuote": "Reference: डीएलएड 2026 / 530-5603 / 2026-27, दिनांक 01.10.2026" }
+    "name": { "value": "UP D.El.Ed. (BTC) Training 2026", "confidence": 0.9, "sourceQuote": "## D.El.Ed. (BTC) Training 2026 — Complete Details" },
+    "shortName": { "value": "D.El.Ed. (BTC)", "confidence": 0.85, "sourceQuote": "Training 2026 admission process" },
+    "categorySlug": { "value": "teaching-and-education", "confidence": 0.95, "sourceQuote": "D.El.Ed. (BTC) Training 2026" },
+    "region": { "value": "up", "confidence": 0.95, "sourceQuote": "कार्यालय : सचिव परीक्षा नियामक प्राधिकारी, उत्तर प्रदेश" },
+    "entityType": { "value": "university-admission", "confidence": 0.8, "sourceQuote": "Final opportunity to fill the choice of D.El.Ed. (BTC) training institution", "reason": "state counselling admission to training institutes, not a national entrance test" },
+    "selectionModel": { "value": "merit-based", "confidence": 0.92, "sourceQuote": "along with the merit process", "reason": "no written test mentioned; Phase-3 choice filling by state rank bands" },
+    "conductingBody": { "value": "सचिव परीक्षा नियामक प्राधिकारी, उत्तर प्रदेश", "confidence": 0.6, "sourceQuote": "सचिव परीक्षा नियामक प्राधिकारी, उत्तर प्रदेश" },
+    "officialWebsite": { "value": "https://updeled.gov.in?utm_source=chatgpt.com", "confidence": 0.95, "sourceQuote": "https://updeled.gov.in?utm_source=chatgpt.com" },
+    "eligibility": { "value": "State Rank 01 to 1,52,202 — candidates not yet allotted a training institution", "confidence": 0.75, "sourceQuote": "स्टेट रैंक 01 से 1,52,202 तक के समस्त आवंटित अभ्यर्थी" },
+    "fee": { "value": "₹5,000 (पाँच हजार रुपये मात्र) — online payment for submitting the training-institution choice", "confidence": 0.95, "sourceQuote": "₹5,000 (पाँच हजार रुपये मात्र)" },
+    "warnings": { "value": "No admission valid unless the allotted institution completes the online report/lock", "confidence": 0.9, "sourceQuote": "if the allotted candidate's institution does not complete the online report/lock on the official website" },
+    "contacts": { "value": "secretarypnp.up@gmail.com, updeled@gmail.com", "confidence": 0.95, "sourceQuote": "- secretarypnp.up@gmail.com\n- updeled@gmail.com" },
+    "noticeReference": { "value": "पृ0सं0 / डीएलएड 2026 / 530-5603 / 2026-27, दिनांक 01 अक्टूबर 2026", "confidence": 0.95, "sourceQuote": "पृ0सं0 / डीएलएड 2026 / 530-5603 / 2026-27" }
   },
   "dates": [
     {
-      "label": "Phase-3 चयन पूर्णकरण / Choice Filling",
-      "dateText": "05.10.2026 (अपराह्न) से 07.10.2026 सायं 06:00 बजे",
+      "label": "Institution choice filling",
+      "dateText": "05 Oct 2026 afternoon – 07 Oct 2026, 6:00 PM",
       "type": "counselling_round3",
       "kind": "choice_filling",
       "phase": "Phase-3",
-      "rank_batch": "1–1,52,202",
+      "rank_batch": "1 to 1,52,202",
       "audience": "candidate",
       "confidence": 0.9,
-      "sourceQuote": "05.10.2026 (अपराह्न) से 07.10.2026 सायं 06:00 बजे तक"
+      "sourceQuote": "05 Oct 2026 afternoon – 07 Oct 2026, 6:00 PM"
     },
     {
-      "label": "Seat Allotment",
-      "dateText": "08.10.2026",
+      "label": "Institution allotment published",
+      "dateText": "08 Oct 2026",
       "type": "result",
       "kind": "allotment",
       "phase": "Phase-3",
-      "audience": "candidate",
       "confidence": 0.95,
-      "sourceQuote": "Seat Allotment: 08.10.2026"
+      "sourceQuote": "Institution allotment published"
     },
     {
-      "label": "Document Verification / Admission",
-      "dateText": "09.10.2026 से 14.10.2026 (सायं 05:00 बजे)",
+      "label": "Document verification/admission",
+      "dateText": "09 October 2026 to 14 October 2026, 5:00 PM",
       "type": "counselling",
       "kind": "document_verification",
       "phase": "Phase-3",
       "audience": "candidate",
       "confidence": 0.9,
-      "sourceQuote": "Document Verification / Admission: 09.10.2026 से 14.10.2026 (सायं 05:00 बजे)"
+      "sourceQuote": "09 October 2026 to 14 October 2026"
     },
     {
-      "label": "Institution Locking / FREEZE",
-      "dateText": "15.10.2026",
+      "label": "Online report/lock by allotted training institution",
+      "dateText": "15 October 2026",
       "type": "other",
       "kind": "institute_lock",
       "phase": "Phase-3",
       "audience": "institute",
       "confidence": 0.95,
-      "sourceQuote": "Institution Locking / FREEZE: 15.10.2026"
+      "sourceQuote": "Final deadline for institution's online report/lock"
     },
     {
-      "label": "DM Seat Matrix Meeting",
-      "dateText": "20.10.2026",
-      "type": "meeting",
+      "label": "Principals notification (all DIETs)",
+      "dateText": "01 October 2026",
+      "type": "other",
       "kind": "other",
       "confidence": 0.8,
-      "sourceQuote": "Meeting of District Magistrate on 20.10.2026 for seat matrix review."
+      "sourceQuote": "All Principals of District Institutes of Education and Training (DIETs) in Uttar Pradesh."
     }
   ],
   "references": [
     {
-      "label": "Counselling Notice",
+      "label": "Earlier advertisement",
       "dateText": "07.08.2026",
       "confidence": 0.9,
-      "sourceQuote": "(पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026 के संदर्भ में)"
+      "sourceQuote": "The notice refers to the earlier advertisement dated"
     }
   ]
 }

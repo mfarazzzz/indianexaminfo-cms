@@ -2,18 +2,17 @@
  * S2.7 golden test — the UP D.El.Ed 2026 Phase-3 notice.
  *
  * FIXTURES (src/lib/ai/__fixtures__/up-deled-2026-phase3/):
- *   pasted.txt            — the owner's structured extraction of the notice.
- *                           ⚠ THE OWNER'S ATTACHMENT DID NOT REACH THIS SESSION:
- *                           the file is RECONSTRUCTED from the documented facts
- *                           (design doc §15 + the acceptance table) and keeps
- *                           BOTH required test cases — the utm_source tracking
- *                           URL and the "समस्त आवंटित अभ्यर्थी" mistranscription.
- *                           Replace with the verbatim paste when supplied; the
- *                           recorded answer quotes these lines, so quotes move
- *                           with it.
+ *   pasted.txt            — the owner's ORIGINAL pasted summary, saved verbatim
+ *                           (sha256 ff6babb2…d271, 11,753 bytes, CRLF — replaced
+ *                           the earlier reconstruction on 2026-10-06). It
+ *                           contains both required test cases: the
+ *                           "updeled.gov.in?utm_source=chatgpt.com" tracking URL
+ *                           and the "समस्त आवंटित अभ्यर्थी" mistranscription.
  *   model.responses.json  — the RECORDED raw model output for that text
- *                           (invented types, a distribution-list stray, utm
- *                           URL — realistic, not a copy of expected.json);
+ *                           (invented types, a distribution-list stray quoting
+ *                           the page-2 DIET block, utm URL — realistic, not a
+ *                           copy of expected.json); every sourceQuote/dateText
+ *                           is a verbatim line of pasted.txt;
  *   expected.json         — the owner's acceptance table.
  *
  * DETERMINISTIC CI PATH: runNoticePipeline() — OUR post-processing (option
@@ -132,8 +131,8 @@ describe("golden: provenance rows and rejections (S2.7)", () => {
   });
 
   it("the page-2 distribution stray is REJECTED, with the reason recorded", () => {
-    expect(result.rows.some((r) => r.label === "DM Seat Matrix Meeting")).toBe(false);
-    const rej = result.rejected.find((r) => r.label === "DM Seat Matrix Meeting");
+    expect(result.rows.some((r) => r.label === "Principals notification (all DIETs)")).toBe(false);
+    const rej = result.rejected.find((r) => r.label === "Principals notification (all DIETs)");
     expect(rej).toBeTruthy();
     expect(rej!.reason).toMatch(new RegExp(expected.rejected[0].reasonPattern));
   });
