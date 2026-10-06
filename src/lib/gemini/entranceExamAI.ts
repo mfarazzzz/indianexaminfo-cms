@@ -9,13 +9,28 @@
  * content generation gets full creative freedom.
  */
 import { generateText } from "@/lib/ai/aiFillClient";
-import { parseDateText, INDIAN_DATE_PROMPT_RULES } from "@/lib/utils/indianDateParser";
+import { parseDateWindow, INDIAN_DATE_PROMPT_RULES } from "@/lib/utils/indianDateParser";
 
 export interface AIExamData {
   shortName: string;
   conductingBody: string;
   officialWebsite: string;
-  importantDates: { label: string; date: string; isUrgent: boolean }[];
+  // S2.2: rows carry the full date-row contract — VIEW `type` plus fine-grained
+  // `kind` and the FX3 C1 window keys. Optional so single-prompt/legacy shapes
+  // still satisfy it.
+  importantDates: {
+    label: string;
+    date: string;
+    isUrgent: boolean;
+    type?: string;
+    kind?: string;
+    state?: string;
+    verified?: boolean;
+    end_date?: string;
+    start_time?: string;
+    end_time?: string;
+    time_text?: string;
+  }[];
   vacancy: number | null;
   status: string;
   // R0.6: stage-1 eligibility and fee flow through to the form and R0.5 save.
@@ -120,27 +135,44 @@ export { normalizeLabel, TENTATIVE_SIGNALS, type NormalizedDate };
 function processStage1Dates(
   stage1Dates: { label: string; dateText: string }[],
   year: number
-): { label: string; date: string; isUrgent: boolean; type: string; stage_label: string; state: string; verified: boolean }[] {
-  const results: { label: string; date: string; isUrgent: boolean; type: string; stage_label: string; state: string; verified: boolean }[] = [];
+): { label: string; date: string; end_date: string; start_time: string; end_time: string; time_text: string; isUrgent: boolean; type: string; kind: string; stage_label: string; state: string; verified: boolean }[] {
+  const results: { label: string; date: string; end_date: string; start_time: string; end_time: string; time_text: string; isUrgent: boolean; type: string; kind: string; stage_label: string; state: string; verified: boolean }[] = [];
+  const seen = new Set<string>();
 
   for (const { label, dateText } of stage1Dates) {
+    // S2.2: normalizeLabel NEVER drops. An unknown label becomes a custom row
+    // (type "other", kind "other") carrying the source label verbatim — the
+    // drop-on-unknown behaviour is what discarded the whole Phase-3 timeline.
     const normalized = normalizeLabel(label);
-    if (!normalized) continue;
 
-    const date = parseDateText(dateText, year);
-    if (!date) continue;
+    // Parse the WHOLE expression: single date, DD.MM range, Hindi "से" range,
+    // clock times ("सायं 06:00 बजे" → 18:00) and day-part words ("अपराह्न" →
+    // time_text "afternoon") — the FX3 C1 keys fill when the text carries them.
+    const win = parseDateWindow(dateText, year);
+    if (!win.date) continue; // genuinely dateless row — nothing to write
 
-    if (!results.find((r) => r.label === normalized.label)) {
-      results.push({
-        label:       normalized.label,
-        date,
-        isUrgent:    normalized.isUrgent,
-        type:        normalized.type,
-        stage_label: normalized.stage_label,
-        state:       normalized.state,
-        verified:    false,           // AI-extracted dates are never pre-verified
-      });
-    }
+    // Custom rows dedupe by their source label; canonical rows dedupe by the
+    // standard slot (one "Registration Closes" row per edition).
+    const dupeKey = normalized.custom
+      ? `custom:${normalized.label.toLowerCase()}`
+      : `type:${normalized.type}:${normalized.kind}`;
+    if (seen.has(dupeKey)) continue;
+    seen.add(dupeKey);
+
+    results.push({
+      label:       normalized.label,
+      date:        win.date,
+      end_date:    win.end_date,
+      start_time:  win.start_time,
+      end_time:    win.end_time,
+      time_text:   win.time_text,
+      isUrgent:    normalized.isUrgent,
+      type:        normalized.type,
+      kind:        normalized.kind,
+      stage_label: normalized.stage_label,
+      state:       normalized.state,
+      verified:    false,           // AI-extracted dates are never pre-verified
+    });
   }
 
   return results;

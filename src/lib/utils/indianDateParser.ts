@@ -10,6 +10,14 @@
  * - INDIAN_DATE_PROMPT_RULES: standard instructions to include in AI prompts
  *
  * Used by: entranceExamAI.ts, tabAI.ts, autofill.ts, moduleAI.ts
+ *
+ * S2.2 additions (UP notices are Hindi-first):
+ * - Devanagari month names ("5 अक्टूबर 2026")
+ * - range separators beyond "to" ("05.10.2026 से 07.10.2026", "से … तक")
+ * - clock times with day-part qualifiers ("सायं 06:00 बजे" → 18:00)
+ * - time-of-day words → canonical time_text ("अपराह्न" → "afternoon")
+ * - parseDateWindow(): a whole date-expression → {date, end_date,
+ *   start_time, end_time, time_text} for the FX3 C1 row keys.
  */
 
 // ── Month name lookup ─────────────────────────────────────────────────────────
@@ -29,6 +37,145 @@ const MONTH_MAP: Record<string, string> = {
   dec: "12", december: "12",
 };
 
+/** Devanagari month names as printed on UP/state notices (both spellings). */
+const HINDI_MONTH_MAP: Record<string, string> = {
+  "जनवरी": "01", "जनो": "01",
+  "फरवरी": "02", "फ़रवरी": "02", "फरबरी": "02",
+  "मार्च": "03",
+  "अप्रैल": "04", "एप्रिल": "04",
+  "मई": "05",
+  "जून": "06", "जुन": "06",
+  "जुलाई": "07", "जुला": "07",
+  "अगस्त": "08",
+  "सितम्बर": "09", "सितंबर": "09", "सितं": "09",
+  "अक्तूबर": "10", "अक्टूबर": "10", "अक्टोबर": "10",
+  "नवम्बर": "11", "नवंबर": "11",
+  "दिसम्बर": "12", "दिसंबर": "12", "दिसा": "12",
+};
+
+const HINDI_MONTH_ALT = Object.keys(HINDI_MONTH_MAP).join("|");
+
+/** Day-part words → canonical English time_text (stored value) / 24h bias. */
+const DAYPART: { words: RegExp; text: string; bias: "am" | "pm" | "noon" }[] = [
+  { words: /सुबह|प्रातः|प्रातःकालीन|\bmorning\b|\bam\b/i, text: "morning", bias: "am" },
+  { words: /अपराह्न|दोपहर|दופहर|noon|afternoon/i, text: "afternoon", bias: "pm" },
+  { words: /सायं|शाम|सायंकाल|\bevening\b|\bpm\b/i, text: "evening", bias: "pm" },
+  { words: /रात्रि|रात|\bnight\b/i, text: "night", bias: "pm" },
+];
+
+// ── Range + time helpers (S2.2) ──────────────────────────────────────────────
+
+/**
+ * Split a date RANGE expression into [start, end] parts. Handles the English
+ * "to"/"until" plus the Hindi "से"/"तक" and spaced dashes used on notices:
+ * "05.10.2026 से 07.10.2026", "05 Oct – 07 Oct", "05.10.2026 to 07.10.2026".
+ * "तक" is a suffix marker ("… से 07.10.2026 तक"), stripped before splitting.
+ * Returns the whole text as the single part when it is not a range.
+ */
+export function splitDateRange(text: string): [string, string?] {
+  let t = text.trim().replace(/\s+/g, " ");
+  // NB: no \b around तक — JS \b is ASCII-only and Devanagari is non-\w.
+  t = t.replace(/(?:\s+|^)(?:तक|upto|up\s*to)\s*$/i, "").trim();
+  const sep = /\s+(?:to|until|से|-|–|—)\s+/i;
+  const parts = t.split(sep).map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 2) return [parts[0], parts[1]];
+  if (parts.length > 2) {
+    // Reformat like "5 to 7 to 9" — first stays start, LAST becomes end.
+    return [parts[0], parts[parts.length - 1]];
+  }
+  return [t.length ? t : text.trim()];
+}
+
+/** Remove complete date numbers (DD.MM.YYYY / DD/MM/YYYY / DD-MM-YYYY / ISO)
+ *  so a clock lookup never mistakes the "05.10" of "05.10.2026" for 05:10. */
+function withoutDates(side: string): string {
+  return side
+    .replace(/\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/g, " ")
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, " ");
+}
+
+/** Extract a 24h HH:MM clock from one side of a range, honouring the day-part
+ *  qualifier ("सायं 06:00 बजे" → "18:00", "सुबह 11:00" → "11:00", bare "18:00"
+ *  kept). Returns null when the side carries no clock time. */
+function extractClock(side: string): string | null {
+  const m = withoutDates(side).match(/\b(\d{1,2})[:.](\d{2})(?::\d{2})?(?:\s*(?:baje|बजे))?\b/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h > 23 || min > 59) return null;
+  if (h <= 12) {
+    const pm = /सायं|शाम|रात्रि|रात|\b(?:evening|night|pm)\b/i.test(side);
+    const am = /सुबह|प्रातः|\b(?:morning|am)\b/i.test(side);
+    if (pm && h < 12) h += 12;
+    else if (pm && h === 12) h = 12; // "दोपहर/noon 12" stays 12
+    else if (am && h === 12) h = 0;
+  }
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+/** The canonical time_text for a side, when it carries a day-part WORD but no
+ *  usable clock ("05.10.2026 (अपराह्न)" → "afternoon"). */
+function extractTimeText(side: string): string {
+  if (extractClock(side)) return "";
+  for (const part of DAYPART) {
+    if (part.words.test(side)) return part.text;
+  }
+  return "";
+}
+
+/** Remove clock/qualifier noise from a side so only the date remains. Colon
+ *  clocks always; dotted clocks ONLY when बजे/baje marks them as a time — a
+ *  bare "05.10" must survive as part of the date. */
+function stripTime(side: string): string {
+  return side
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*baje|\s*बजे)?/g, " ")
+    .replace(/\b\d{1,2}\.\d{2}(?:\s*baje|\s*बजे)/g, " ")
+    .replace(/(?:baje|बजे)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Parse a full date expression into the FX3 C1 row keys. Fills ONLY what the
+ * text carries; empty strings mean "not present" (serializeDateRowsForWrite
+ * drops them). Never invents an end_date below the start date.
+ *
+ *  "05.10.2026 (अपराह्न) से 07.10.2026 सायं 06:00 बजे"
+ *    → { date: "2026-10-05", end_date: "2026-10-07",
+ *        start_time: "", end_time: "18:00", time_text: "afternoon" }
+ *  "07.10.2026, 5:00 PM"   → { date: "2026-10-07", end_time: "17:00" }
+ *  "5 अक्टूबर 2026"         → { date: "2026-10-05" }
+ */
+export function parseDateWindow(text: string, defaultYear?: number): {
+  date: string; end_date: string; start_time: string; end_time: string; time_text: string;
+} {
+  const out = { date: "", end_date: "", start_time: "", end_time: "", time_text: "" };
+  if (!text || !text.trim()) return out;
+
+  const [startSide, endSide] = splitDateRange(text);
+
+  out.date = parseDateText(stripTime(startSide), defaultYear);
+  out.start_time = extractClock(startSide) ?? "";
+  out.time_text = extractTimeText(startSide);
+
+  if (endSide) {
+    out.end_date = parseDateText(stripTime(endSide), defaultYear);
+    const endClock = extractClock(endSide);
+    if (endClock) out.end_time = endClock;
+    else if (!out.time_text) out.time_text = extractTimeText(endSide);
+    // A range whose start carries no clock but whose END has one keeps the
+    // clock on the end (deadline) — done above. A single-side row that
+    // carries its own time uses end_time (deadline semantics: "by 6 PM").
+  } else {
+    const clock = extractClock(startSide);
+    if (clock) out.end_time = clock;
+  }
+
+  // Guard: never keep an end_date that cannot belong to this window.
+  if (out.end_date && out.date && out.end_date < out.date) out.end_date = out.date;
+  return out;
+}
+
 // ── Core parser ───────────────────────────────────────────────────────────────
 
 /**
@@ -39,19 +186,20 @@ const MONTH_MAP: Record<string, string> = {
  * - "2026-08-03" (ISO)
  * - "Aug 3, 2026" / "August 3, 2026"
  * - "3 Aug 2026" / "03 August 2026" / "6th September, 2026"
+ * - "5 अक्टूबर 2026" (Devanagari month names)
  * - "11.05.2026" (DD.MM.YYYY Indian dot format)
  * - "03-08-2026" / "03/08/2026" (DD-MM-YYYY / DD/MM/YYYY)
  * - "First week of January 2027"
  * - "End of October, 2026"
  * - "January 2027" (month + year only)
- * - Date ranges: takes first date from "15.06.2026 to 18.06.2026"
+ * - Date ranges: takes first date from "15.06.2026 to 18.06.2026" and
+ *   "05.10.2026 से 07.10.2026" (use parseDateWindow for the whole window)
  */
 export function parseDateText(text: string, defaultYear?: number): string {
   if (!text) return "";
 
   // Handle date ranges — take the first date
-  const rangeParts = text.split(/\s+to\s+/i);
-  const t = rangeParts[0].trim();
+  const t = splitDateRange(text)[0].trim();
 
   // "2026-08-03" (already ISO) — check first to avoid misinterpretation
   let m = t.match(/(\d{4})-(\d{2})-(\d{2})/);
@@ -67,6 +215,18 @@ export function parseDateText(text: string, defaultYear?: number): string {
   m = t.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+),?\s*(\d{4})/);
   if (m && MONTH_MAP[m[2].toLowerCase()]) {
     return `${m[3]}-${MONTH_MAP[m[2].toLowerCase()]}-${m[1].padStart(2, "0")}`;
+  }
+
+  // "5 अक्टूबर 2026" / "05 अगस्त 2026" (Hindi month between day and year)
+  m = t.match(new RegExp(`(\\d{1,2})\\s*(?:वां|वीं|ठ)?\\s+(${HINDI_MONTH_ALT}),?\\s*(\\d{4})`));
+  if (m && HINDI_MONTH_MAP[m[2]]) {
+    return `${m[3]}-${HINDI_MONTH_MAP[m[2]]}-${m[1].padStart(2, "0")}`;
+  }
+
+  // "अक्टूबर 5, 2026" (Hindi month first)
+  m = t.match(new RegExp(`(${HINDI_MONTH_ALT})\\s+(\\d{1,2}),?\\s*(\\d{4})`));
+  if (m && HINDI_MONTH_MAP[m[1]]) {
+    return `${m[3]}-${HINDI_MONTH_MAP[m[1]]}-${m[2].padStart(2, "0")}`;
   }
 
   // DD.MM.YYYY (Indian format with dots) — e.g., "11.05.2026"

@@ -786,6 +786,8 @@ export function EntranceExamEditorPage() {
       // Important dates — fill ONLY existing blank rows or append genuinely new
       // labels. Never overwrite a row that already has a date (that was the
       // original clobber path). Only append/fill; if nothing changed, don't touch.
+      // S2.2: appended rows carry the FULL AI row (type/kind/window keys) — an
+      // object literal here previously dropped everything but label/date/isUrgent.
       let mergedDates: DateRow[] | null = null;
       if (data.importantDates.length > 0) {
         const currentDates = form.getValues("importantDates") as DateRow[];
@@ -798,12 +800,34 @@ export function EntranceExamEditorPage() {
             aiDate.label.toLowerCase().replace(/[^a-z]/g, "").includes(d.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8))
           );
           if (matchIdx >= 0 && isBlank(merged[matchIdx].date)) {
-            // Fill an existing BLANK row only.
-            merged[matchIdx] = { ...merged[matchIdx], date: aiDate.date, isUrgent: aiDate.isUrgent };
+            // Fill an existing BLANK row only — overlay, never rebuild.
+            merged[matchIdx] = {
+              ...merged[matchIdx],
+              date: aiDate.date,
+              isUrgent: aiDate.isUrgent,
+              type: merged[matchIdx].type ?? aiDate.type,
+              kind: merged[matchIdx].kind ?? aiDate.kind,
+              end_date: merged[matchIdx].end_date ?? aiDate.end_date,
+              start_time: merged[matchIdx].start_time ?? aiDate.start_time,
+              end_time: merged[matchIdx].end_time ?? aiDate.end_time,
+              time_text: merged[matchIdx].time_text ?? aiDate.time_text,
+            };
             changed = true;
           } else if (matchIdx < 0) {
-            // No matching row — append as a new custom date.
-            merged.push({ label: aiDate.label, date: aiDate.date, isUrgent: aiDate.isUrgent });
+            // No matching row — append as a new custom date, AI metadata intact.
+            merged.push({
+              label: aiDate.label,
+              date: aiDate.date,
+              isUrgent: aiDate.isUrgent,
+              type: aiDate.type,
+              kind: aiDate.kind,
+              state: aiDate.state,
+              verified: false,
+              end_date: aiDate.end_date,
+              start_time: aiDate.start_time,
+              end_time: aiDate.end_time,
+              time_text: aiDate.time_text,
+            });
             changed = true;
           }
           // matchIdx >= 0 with an existing date → LEAVE IT. Never overwrite.
@@ -1471,6 +1495,10 @@ type DateRow = {
   date: string;
   isUrgent: boolean;
   type?: string;
+  // S2.2 — fine-grained event (registration_end, choice_filling, allotment, …).
+  // Additive: the site ignores it until S3 renders it; `type` stays the
+  // exam_derived_status VIEW's vocabulary. Never persisted as an empty string.
+  kind?: string;
   state?: string;
   verified?: boolean;
   stage_label?: string;
@@ -1481,12 +1509,15 @@ type DateRow = {
   start_time?: string;
   end_time?: string;
   time_text?: string;
+  // S2.2 pass-through keys (ride the spread contract; rendered in S3):
+  // phase ("Phase-3"), rank_batch ("1–1,52,202"), audience ("candidate" |
+  // "institute"), supersedes (extension rows link the row they replace).
   [key: string]: unknown;
 };
 
 // Optional date-row keys that must NEVER be persisted as an empty string — an
 // unchosen value means the key is absent (mirrors the FX2 state rule).
-const EMPTYABLE_DATE_KEYS = ["state", "end_date", "start_time", "end_time", "time_text"] as const;
+const EMPTYABLE_DATE_KEYS = ["state", "end_date", "start_time", "end_time", "time_text", "kind"] as const;
 
 /**
  * A2 — default year for the New Edition dialog and the "Create <year> cycle"
