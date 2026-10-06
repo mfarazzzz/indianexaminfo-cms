@@ -27,7 +27,12 @@ import { getErrorMessage } from "@/lib/utils";
 import { validateField } from "@/lib/fields/fieldTypes";
 import { ALL_SELECTION_MODELS, SELECTION_MODEL_LABELS, SELECTION_MODEL_HINTS, type SelectionModel } from "@/types/selection";
 import { getModulesForEntityType, entityTypeForPillar, resolveEntityType, ENTRANCE_EXAM_ENTITY_CHOICES } from "@/config/moduleRegistry";
-import { generateExamDataWithAI } from "@/lib/gemini/entranceExamAI";
+import { generateStructured } from "@/lib/ai/aiFillClient";
+import { NoticeReviewDrawer } from "@/components/entrance-exams/NoticeReviewDrawer";
+import {
+  buildReviewRows, summarizeFill,
+  type ReviewRow, type ReviewCurrentValues, type ProposedDateRow, type FillReport,
+} from "@/components/entrance-exams/noticeReview";
 import { aiFillIdentityTab, aiFillDatesTab, aiFillSEOTab, aiFillNewsTab, aiFillModulesTab } from "@/lib/gemini/tabAI";
 import { AIFillButton } from "@/components/shared/AIFillButton";
 import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
@@ -158,6 +163,11 @@ export function EntranceExamEditorPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [showAIDialog, setShowAIDialog] = useState(false);
+  // S2.4: the review drawer's state — set only after an extraction, cleared on
+  // apply/close. Nothing reaches the form without an explicit Accept.
+  const [reviewState, setReviewState] = useState<
+    { rows: ReviewRow[]; report: FillReport; providerNote: string } | null
+  >(null);
   const [tabAiFilling, setTabAiFilling] = useState<string | null>(null);
   const [isPublished, setIsPublished] = useState(true);
   const [workflowStatus, setWorkflowStatus] = useState<ExamWorkflowStatus>("published");
@@ -730,6 +740,11 @@ export function EntranceExamEditorPage() {
     }
   };
 
+  // ── S2.4: extraction → review drawer. NOTHING applies directly. ──────────
+  // The old path ran generateExamDataWithAI and silently filled blank fields.
+  // Now the server-side NOTICE_EXTRACT_V1 template produces flagged rows, the
+  // drawer shows every proposal with its source quote and confidence, and only
+  // the editor's Accepted rows touch the FORM (R1.6 holds: the editor saves).
   const handleAIGenerate = async (rawContent?: string) => {
     const examName = form.getValues("name");
     const year = form.getValues("editionYear") || new Date().getFullYear();
@@ -737,189 +752,85 @@ export function EntranceExamEditorPage() {
       toast.error("Enter the exam name first, then generate.");
       return;
     }
+    if (!rawContent || rawContent.trim().length < 50) {
+      // YMYL: the old knowledge-only mode fabricated dates. The notice IS the
+      // source now — no paste, no extraction.
+      toast.error("Paste the official notice text first — nothing is generated from memory.");
+      return;
+    }
 
-    // No key and no model here: the ai-fill Edge Function picks the provider
-    // server-side, so the browser never holds or reads a credential.
     setAiGenerating(true);
     setShowAIDialog(false);
     try {
-      const data = await generateExamDataWithAI(examName, year, rawContent);
-
-      // No-op on empty — computed BEFORE any write. This is the "Fill Entire Exam"
-      // header button: the one that once overwrote a real Notification Date and
-      // reported "0 dates extracted" as success. If the AI returned nothing usable,
-      // change NOTHING — no form.setValue, no updateEdition/updateExamIdentity — and
-      // report it honestly. The module boolean flags (hasNotification etc.) are only
-      // written on the success path below, so an empty result can't flip real flags
-      // to false. `extractedDates` is reused by the success toast.
-      const extractedDates = data.importantDates.filter((d) => d.date && d.date.trim() !== "").length;
-      const gotAnything =
-        extractedDates > 0 ||
-        !!data.shortName || !!data.conductingBody || !!data.officialWebsite ||
-        !!data.seoTitle || !!data.seoDescription ||
-        (data.tags?.length ?? 0) > 0 || (data.faqs?.length ?? 0) > 0 ||
-        (data.vacancy != null && data.vacancy !== 0) ||
-        (data.contentModules && Object.keys(data.contentModules).length > 0);
-      if (!gotAnything) {
-        toast.warning("AI found nothing to fill — no changes were made.");
-        return;
-      }
-
-      // ── EMPTY-ONLY FILL ──────────────────────────────────────────────────
-      // AI must NEVER replace a value that already exists. The AI can hallucinate
-      // (it returned Short Name "CAT" on a Bihar Board record from junk input) and
-      // a non-empty hallucination previously passed the "gotAnything" gate and
-      // overwrote a correct value. Until a per-field preview/approve diff exists,
-      // the safety floor is: only fill fields that are currently blank. Existing
-      // values are left untouched. `filled` collects only the fields we actually
-      // wrote, so the DB auto-save below persists EXACTLY those — never echoing an
-      // AI value back over a field we chose not to touch.
-      const cur = form.getValues();
-      const filledIdentity: Record<string, unknown> = {};
-      const filledEdition: Record<string, unknown> = {};
-
-      // Identity scalars — fill only when blank.
-      if (data.shortName && isBlank(cur.shortName)) { form.setValue("shortName", data.shortName); filledIdentity.shortName = data.shortName; }
-      if (data.conductingBody && isBlank(cur.conductingBody)) { form.setValue("conductingBody", data.conductingBody); filledIdentity.conductingBody = data.conductingBody; }
-      if (data.officialWebsite && isBlank(cur.officialWebsite)) { form.setValue("officialWebsite", data.officialWebsite); filledIdentity.officialWebsite = data.officialWebsite; }
-
-      // Important dates — fill ONLY existing blank rows or append genuinely new
-      // labels. Never overwrite a row that already has a date (that was the
-      // original clobber path). Only append/fill; if nothing changed, don't touch.
-      // S2.2: appended rows carry the FULL AI row (type/kind/window keys) — an
-      // object literal here previously dropped everything but label/date/isUrgent.
-      let mergedDates: DateRow[] | null = null;
-      if (data.importantDates.length > 0) {
-        const currentDates = form.getValues("importantDates") as DateRow[];
-        const merged = [...currentDates];
-        let changed = false;
-        for (const aiDate of data.importantDates) {
-          if (!aiDate.date || !aiDate.label) continue;
-          const matchIdx = merged.findIndex((d) =>
-            d.label.toLowerCase().replace(/[^a-z]/g, "").includes(aiDate.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8)) ||
-            aiDate.label.toLowerCase().replace(/[^a-z]/g, "").includes(d.label.toLowerCase().replace(/[^a-z]/g, "").slice(0, 8))
-          );
-          if (matchIdx >= 0 && isBlank(merged[matchIdx].date)) {
-            // Fill an existing BLANK row only — overlay, never rebuild.
-            merged[matchIdx] = {
-              ...merged[matchIdx],
-              date: aiDate.date,
-              isUrgent: aiDate.isUrgent,
-              type: merged[matchIdx].type ?? aiDate.type,
-              kind: merged[matchIdx].kind ?? aiDate.kind,
-              end_date: merged[matchIdx].end_date ?? aiDate.end_date,
-              start_time: merged[matchIdx].start_time ?? aiDate.start_time,
-              end_time: merged[matchIdx].end_time ?? aiDate.end_time,
-              time_text: merged[matchIdx].time_text ?? aiDate.time_text,
-            };
-            changed = true;
-          } else if (matchIdx < 0) {
-            // No matching row — append as a new custom date, AI metadata intact.
-            merged.push({
-              label: aiDate.label,
-              date: aiDate.date,
-              isUrgent: aiDate.isUrgent,
-              type: aiDate.type,
-              kind: aiDate.kind,
-              state: aiDate.state,
-              verified: false,
-              end_date: aiDate.end_date,
-              start_time: aiDate.start_time,
-              end_time: aiDate.end_time,
-              time_text: aiDate.time_text,
-            });
-            changed = true;
-          }
-          // matchIdx >= 0 with an existing date → LEAVE IT. Never overwrite.
-        }
-        if (changed) { replaceDates(merged); mergedDates = merged; }
-      }
-
-      // Edition scalars — fill only when blank.
-      if (data.vacancy != null && data.vacancy !== 0 && isBlank(cur.vacancy)) { form.setValue("vacancy", String(data.vacancy)); filledEdition.vacancy = data.vacancy; }
-      // editionStatus always has a value (defaults to "upcoming"); treat the
-      // default as fillable so AI can advance a brand-new record, but don't
-      // clobber a status the user has already moved off the default.
-      if (data.status && cur.editionStatus === "upcoming" && data.status !== "upcoming") {
-        form.setValue("editionStatus", data.status as EditionStatus);
-        filledEdition.status = data.status;
-      }
-
-      // Module boolean flags — only flip a flag from false→true (enabling a
-      // section AI found evidence for). Never flip true→false: that would hide a
-      // section the user turned on. Each flag written independently.
-      const flagKeys = ["hasNotification","hasApplication","hasAdmitCard","hasSyllabus","hasAnswerKey","hasResult","hasCutoff","hasCounselling"] as const;
-      for (const k of flagKeys) {
-        if (data[k] === true && cur[k] !== true) {
-          form.setValue(k, true);
-          filledEdition[k] = true;
-        }
-      }
-
-      // R0.6: eligibility and application fee — fill only when the form holds no value.
-      // Populated from Stage-1 structured extraction; carried in form state for the
-      // R0.5 single-save (new records) and written by the existing-record save path.
-      if (data.eligibility && Object.keys(data.eligibility).length > 0) {
-        const curElig = cur.eligibility;
-        if (!curElig || Object.keys(curElig).length === 0) {
-          form.setValue("eligibility", data.eligibility);
-          filledEdition.eligibility = data.eligibility;
-        }
-      }
-      if (data.applicationFee && Object.keys(data.applicationFee).length > 0) {
-        const curFee = cur.applicationFee;
-        if (!curFee || Object.keys(curFee).length === 0) {
-          form.setValue("applicationFee", data.applicationFee);
-          filledEdition.applicationFee = data.applicationFee;
-        }
-      }
-
-      // SEO — fill only when blank.
-      if (data.seoTitle && isBlank(cur.seoTitle)) { form.setValue("seoTitle", data.seoTitle); filledIdentity.seoTitle = data.seoTitle; }
-      if (data.seoDescription && isBlank(cur.seoDescription)) { form.setValue("seoDescription", data.seoDescription); filledIdentity.seoDescription = data.seoDescription; }
-      if (data.tags.length > 0 && isBlank(cur.tags)) { form.setValue("tags", data.tags.join(", ")); filledIdentity.tags = data.tags; }
-      if (data.faqs.length > 0 && (cur.faqs?.length ?? 0) === 0) { replaceFaqs(data.faqs); filledIdentity.faqs = data.faqs; }
-
-      // Content modules — merge onto existing (fills gaps, existing keys win via
-      // spread order: AI first then existing so existing values are preserved).
-      // R0.5: on a NEW record (no currentEdition), store in pendingModulesRef so
-      // handleSave's single-save persists them after create.
-      let modulesToSave: Record<string, unknown> | null = null;
-      if (data.contentModules && Object.keys(data.contentModules).length > 0) {
-        if (currentEdition) {
-          const existing = (currentEdition.contentModules ?? {}) as Record<string, unknown>;
-          modulesToSave = { ...data.contentModules, ...existing };
-        } else {
-          // New record — defer the write to handleSave.
-          pendingModulesRef.current = { ...data.contentModules };
-          modulesToSave = pendingModulesRef.current;
-        }
-      }
-
-      // R1.6: AI Fill is FORM-ONLY. No direct DB writes. The editor saves.
-      // Content modules go to pendingModulesRef (both new and existing records).
-      if (modulesToSave && !pendingModulesRef.current) {
-        pendingModulesRef.current = modulesToSave;
-      }
-
-      // Honest report: how many blank fields we actually filled, and whether we
-      // skipped fields because they already had values.
-      const filledCount =
-        Object.keys(filledIdentity).length +
-        Object.keys(filledEdition).length +
-        (mergedDates ? 1 : 0) +
-        (modulesToSave ? 1 : 0);
-      if (filledCount === 0) {
-        toast.warning("AI returned data, but every matching field already had a value — nothing was overwritten.");
-      } else {
-        toast.success(`AI filled ${filledCount} empty field${filledCount === 1 ? "" : "s"}. Existing values were left untouched.`);
+      const ext = await generateStructured("NOTICE_EXTRACT_V1", rawContent, {
+        pillar: pillarFromUrl || "entrance-exam",
+        consumer: "update-from-notice",
+      });
+      const rows = buildReviewRows(
+        ext,
+        form.getValues() as ReviewCurrentValues,
+        categories.map((c) => ({ slug: c.slug, id: c.id })),
+        year,
+      );
+      setReviewState({
+        rows,
+        report: summarizeFill(rows, ext.issues),
+        providerNote: `${ext.provider} · ${ext.model} · template ${ext.template}`,
+      });
+      if (rows.length === 0) {
+        toast.warning("The model read the notice but proposed no usable changes. Check the pasted text.");
       }
     } catch (err) {
-      toast.error("AI generation failed: " + getErrorMessage(err));
+      // A JSON/schema failure surfaces HERE in plain words — never silently
+      // empty (§15.1 item 5: the old stage-2 catch hid every parse failure).
+      toast.error(err instanceof Error ? err.message : getErrorMessage(err));
     } finally {
       setAiGenerating(false);
     }
   };
+
+  /** Merge ACCEPTED date rows into the form: fill blank slots or append —
+   *  a row that already carries a date is never clobbered (S2.5 adds the
+   *  match-and-update + supersedes rules on top of this merge). */
+  const mergeProposedDates = (proposed: ProposedDateRow[]): boolean => {
+    const currentDates = form.getValues("importantDates") as DateRow[];
+    const merged = [...currentDates];
+    let changed = false;
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+    for (const row of proposed) {
+      const { source_quote: _q, confidence: _c, ...payload } = row;
+      const idx = merged.findIndex((d) => norm(d.label ?? "") === norm(row.label));
+      if (idx >= 0) {
+        if (isBlank(merged[idx].date)) {
+          merged[idx] = { ...merged[idx], ...payload, type: merged[idx].type ?? row.type, kind: merged[idx].kind ?? row.kind };
+          changed = true;
+        }
+        // dated + matched → LEAVE IT (S2.5 decides append-vs-supersede).
+        continue;
+      }
+      merged.push({ ...payload });
+      changed = true;
+    }
+    if (changed) replaceDates(merged);
+    return changed;
+  };
+
+  /** The drawer's one callback: writes ONLY to the form, never the DB. */
+  const handleApplyAccepted = (accepted: ReviewRow[]) => {
+    if (accepted.length === 0) return;
+    let applied = 0;
+    for (const r of accepted) {
+      if (r.kind === "field" && r.formPath && !isBlank(r.formValue)) {
+        form.setValue(r.formPath as keyof FormData, r.formValue as never, { shouldDirty: true });
+        applied++;
+      }
+    }
+    const dateRows = accepted.filter((r) => r.kind === "date" && r.row).map((r) => r.row!);
+    if (dateRows.length > 0 && mergeProposedDates(dateRows)) applied += dateRows.length;
+    setReviewState(null);
+    toast.success(`${applied} change(s) applied to the form. Review them, then Save.`);
+  };
+
 
   // ── Tab-Level AI Handlers ─────────────────────────────────────────────────
   //
@@ -1369,6 +1280,17 @@ export function EntranceExamEditorPage() {
 
       {/* AI Generate Dialog */}
       {showAIDialog && <AIFillDialog onGenerate={handleAIGenerate} onCancel={() => setShowAIDialog(false)} examName={form.getValues("name")} />}
+
+      {/* S2.4 Review drawer — every proposed change with its quote + confidence.
+          Apply accepted writes to the FORM only; the editor saves (R1.6). */}
+      <NoticeReviewDrawer
+        open={!!reviewState}
+        rows={reviewState?.rows ?? []}
+        report={reviewState?.report ?? { proposed: 0, defaultAccepted: 0, flagged: 0, noFieldYet: 0, lowConfidence: [], missingOptions: [] }}
+        providerNote={reviewState?.providerNote ?? ""}
+        onClose={() => setReviewState(null)}
+        onApply={handleApplyAccepted}
+      />
 
       {/* Delete Dialog */}
       <ConfirmDialog open={showDelete} onOpenChange={setShowDelete} title="Delete Exam"
