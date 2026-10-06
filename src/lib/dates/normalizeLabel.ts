@@ -54,6 +54,46 @@ export interface NormalizedDate {
 /** Words in a raw label that signal the date is tentative, not officially confirmed. */
 export const TENTATIVE_SIGNALS = /tentative|expected|approximate|provisional|likely|tba|to be announced|probable/i;
 
+/**
+ * S2.2 owner table — the authoritative fine kind → coarse VIEW type mapping.
+ * When a model (or importer) supplies a kind, the TYPE is DERIVED from it, so
+ * nobody can hand-pair e.g. choice_filling with type "result". Extension is
+ * context-dependent and defaults to "other" (the merge step refines it).
+ */
+export const KIND_TO_VIEW_TYPE: Record<DateEventKind, string> = {
+  registration_start: "application_start",
+  registration_end: "application_end",
+  fee_last_date: "other",
+  print_last_date: "other",
+  correction_window: "other",
+  notification: "notification",
+  extension: "other",
+  rank_release: "merit_list",
+  merit_list: "merit_list",
+  choice_filling: "counselling",
+  allotment: "counselling",
+  document_verification: "counselling",
+  admission: "counselling",
+  institute_lock: "counselling",
+  session_start: "other",
+  counselling: "counselling",
+  cutoff: "cutoff",
+  admit_card: "admit_card",
+  answer_key: "answer_key",
+  result: "result",
+  exam_written: "exam_written",
+  exam_practical: "exam_practical",
+  exam_physical: "exam_physical",
+  exam_city_intimation: "exam_city_intimation",
+  interview: "interview",
+  walkin: "walkin",
+  other: "other",
+};
+
+export function typeForKind(kind: string): string {
+  return KIND_TO_VIEW_TYPE[kind as DateEventKind] ?? "other";
+}
+
 /** One pattern → (kind, VIEW type, canonical label, urgency). Order in the
  *  table below is the match order: most specific first. */
 interface KindRule {

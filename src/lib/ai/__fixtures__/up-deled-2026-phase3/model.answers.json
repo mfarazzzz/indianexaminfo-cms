@@ -1,0 +1,76 @@
+{
+  "fields": {
+    "name": { "value": "UP D.El.Ed Admission 2026", "confidence": 0.9, "sourceQuote": "UP D.El.Ed Admission 2026 — Phase-3 (मॉप-अप / अंतिम) चयन विज्ञप्ति सारांश" },
+    "shortName": { "value": "UP D.El.Ed", "confidence": 0.85, "sourceQuote": "उत्तर प्रदेश डीएलएड (D.El.Ed / BTC)" },
+    "categorySlug": { "value": "teaching-and-education", "confidence": 0.95, "sourceQuote": "डीएलएड (D.El.Ed / BTC) प्रशिक्षण संस्थाओं" },
+    "region": { "value": "up", "confidence": 0.95, "sourceQuote": "उत्तर प्रदेश डीएलएड" },
+    "entityType": { "value": "university-admission", "confidence": 0.8, "sourceQuote": "प्रशिक्षण संस्थाओं में प्रवेश हेतु राज्य रैंक के आधार पर चयन", "reason": "state counselling admission to DIET/training institutes, not a national entrance test" },
+    "selectionModel": { "value": "merit-based", "confidence": 0.92, "sourceQuote": "कोई प्रवेश परीक्षा नहीं।", "reason": "no written test; admission by state merit rank" },
+    "conductingBody": { "value": "Directorate of Elementary Education, Uttar Pradesh", "confidence": 0.6, "sourceQuote": "उत्तर प्रदेश डीएलएड" },
+    "officialWebsite": { "value": "https://updeled.gov.in/?utm_source=chatgpt.com", "confidence": 0.95, "sourceQuote": "Website: updeled.gov.in?utm_source=chatgpt.com" },
+    "eligibility": { "value": "State rank 1 to 1,52,202 and candidates not yet allotted an institution", "confidence": 0.75, "sourceQuote": "Phase-3 चयन पूर्णकरण हेतु समस्त आवंटित अभ्यर्थी (राज्य रैंक क्रमांक 1 से 1,52,202)।" },
+    "fee": { "value": "₹5,000 choice-filling (counselling) fee, non-refundable", "confidence": 0.95, "sourceQuote": "Choice filling fee: ₹5,000 (पाँच हजार रुपये) — non-refundable" },
+    "warnings": { "value": "No admission is valid after the Institution Lock / FREEZE", "confidence": 0.9, "sourceQuote": "⚠ सावधानी: संस्था लॉक (Institution Lock / FREEZE) के बाद कोई भी admission मान्य नहीं होगा।" },
+    "contacts": { "value": "secretarypnp.up@gmail.com, updeled@gmail.com", "confidence": 0.95, "sourceQuote": "Contact: secretarypnp.up@gmail.com, updeled@gmail.com" },
+    "noticeReference": { "value": "डीएलएड 2026 / 530-5603 / 2026-27", "confidence": 0.98, "sourceQuote": "Reference: डीएलएड 2026 / 530-5603 / 2026-27, दिनांक 01.10.2026" }
+  },
+  "dates": [
+    {
+      "label": "Phase-3 चयन पूर्णकरण / Choice Filling",
+      "dateText": "05.10.2026 (अपराह्न) से 07.10.2026 सायं 06:00 बजे",
+      "type": "counselling_round3",
+      "kind": "choice_filling",
+      "phase": "Phase-3",
+      "rank_batch": "1–1,52,202",
+      "audience": "candidate",
+      "confidence": 0.9,
+      "sourceQuote": "05.10.2026 (अपराह्न) से 07.10.2026 सायं 06:00 बजे तक"
+    },
+    {
+      "label": "Seat Allotment",
+      "dateText": "08.10.2026",
+      "type": "result",
+      "kind": "allotment",
+      "phase": "Phase-3",
+      "audience": "candidate",
+      "confidence": 0.95,
+      "sourceQuote": "Seat Allotment: 08.10.2026"
+    },
+    {
+      "label": "Document Verification / Admission",
+      "dateText": "09.10.2026 से 14.10.2026 (सायं 05:00 बजे)",
+      "type": "counselling",
+      "kind": "document_verification",
+      "phase": "Phase-3",
+      "audience": "candidate",
+      "confidence": 0.9,
+      "sourceQuote": "Document Verification / Admission: 09.10.2026 से 14.10.2026 (सायं 05:00 बजे)"
+    },
+    {
+      "label": "Institution Locking / FREEZE",
+      "dateText": "15.10.2026",
+      "type": "other",
+      "kind": "institute_lock",
+      "phase": "Phase-3",
+      "audience": "institute",
+      "confidence": 0.95,
+      "sourceQuote": "Institution Locking / FREEZE: 15.10.2026"
+    },
+    {
+      "label": "DM Seat Matrix Meeting",
+      "dateText": "20.10.2026",
+      "type": "meeting",
+      "kind": "other",
+      "confidence": 0.8,
+      "sourceQuote": "Meeting of District Magistrate on 20.10.2026 for seat matrix review."
+    }
+  ],
+  "references": [
+    {
+      "label": "Counselling Notice",
+      "dateText": "07.08.2026",
+      "confidence": 0.9,
+      "sourceQuote": "(पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026 के संदर्भ में)"
+    }
+  ]
+}
