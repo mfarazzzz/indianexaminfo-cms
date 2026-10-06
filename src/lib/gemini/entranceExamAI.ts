@@ -57,10 +57,13 @@ export interface AIExamData {
 // Small focused prompt — high accuracy, low token usage (~3K total)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// S2.3: the 5,000-char slice is REMOVED — it cut the tail (lock warning,
+// emails, reference no.) off every real notice before the model ever saw it.
+// The ai-fill Edge Function caps runaway input honestly (MAX_INPUT_CHARS).
 const STAGE1_PROMPT = (examName: string, year: number, rawContent: string) => `Extract structured facts from this text about "${examName}" ${year}.
 
 TEXT:
-${rawContent.slice(0, 5000)}
+${rawContent}
 
 Return ONLY this JSON (no markdown):
 {
@@ -192,7 +195,7 @@ VERIFIED FACTS (use these exactly):
 - Eligibility: ${facts.eligibility?.qualification || "N/A"} (${facts.eligibility?.percentage || "N/A"})
 
 RAW CONTEXT:
-${rawContent.slice(0, 3500)}
+${rawContent}
 
 Return ONLY valid JSON:
 {"seoTitle":"under 60 chars with exam name+year","seoDescription":"under 160 chars for Google Discover","tags":["10-12 tags"],"faqs":[{"question":"Q about ${examName} ${year}","answer":"2-3 sentence detailed answer using real data above"}],"contentModules":{"overview":{"summary":"1-2 line summary","body":"<h3>About</h3><p>overview using facts above</p>"},"eligibility":{"qualification":"${facts.eligibility?.qualification || ""}","ageLimit":"No upper age limit","nationality":"Indian citizens","attempts":"No limit","additionalCriteria":"<p>Additional criteria from data</p>"},"application-process":{"description":"<p>Process overview</p>","steps":[{"title":"Step","description":"detail"}],"applyLink":"${facts.officialWebsite}","fee":"<p>General: ₹${facts.fee?.general || 0}, SC/ST/PwBD: ₹${facts.fee?.scSt || 0}</p>"},"exam-pattern":{"mode":"Computer Based Test","duration":"","totalMarks":0,"markingScheme":"","sections":[],"notes":""},"syllabus":{"subjects":[],"notes":""},"admit-card":{"releaseDate":"","downloadLink":"${facts.officialWebsite}","body":"<p>How to download</p>","documents":""},"result":{"declarationDate":"","checkLink":"${facts.officialWebsite}","body":"<p>How to check result</p>","statistics":""}}}

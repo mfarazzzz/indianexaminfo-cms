@@ -23,10 +23,12 @@
 //    fire-and-forget promise can be dropped when the isolate freezes, and then
 //    the rate limit counts nothing.
 //
-// SPRINT-1 NOTE (owner F2d, deliberately NOT built now): the browser still sends
-// the whole prompt, so any user who passes the permission check can use this as
-// a general model proxy inside the rate limits. In AI Fill v2 the prompt
-// templates move server-side and the client sends { template, sourceText }.
+// SPRINT-1 NOTE (owner F2d) — RESOLVED BY S2.3: the browser used to send the
+// whole prompt, so any permitted user could use this as a general model proxy.
+// S2.3 adds the template path: { template: "NOTICE_EXTRACT_V1", sourceText,
+// pillar? } in, VALIDATED JSON out — extraction prompts live only here.
+// The legacy {prompt} branch stays ONLY while the old per-tab AI buttons exist
+// (S2.8 removes those entry points and this branch with them).
 //
 // Secrets the OWNER sets (Dashboard -> Project Settings -> Edge Functions -> Secret
 // keys, or `supabase secrets set --name AI_KEY_GROQ`):
@@ -44,8 +46,10 @@
 //                      refused (fail closed).
 // A provider row whose secret is missing is skipped, never guessed at.
 //
-// Body:  { prompt: string, consumer?: string, jsonMode?: boolean }
-// 200:   { content: string, provider: string, model: string }
+// Body:  template: { template: string, sourceText: string, pillar?: string, consumer?: string }
+//        legacy:   { prompt: string, consumer?: string, jsonMode?: boolean }
+// 200:   template: { content: {fields, dates}, issues: [...], provider, model, template }
+//        legacy:   { content: string, provider: string, model: string }
 // Error: { error: string }  with 400/401/403/429/502/504
 //
 // jsonMode asks the provider for a single JSON object. The two browser callers
@@ -54,6 +58,7 @@
 // shapes are kept - the caller says which one it is, so no behaviour moves here.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { TEMPLATES, buildPrompt, loadOptions, validateAnswer, type TemplateName } from "./templates.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -71,8 +76,13 @@ const ALLOWED_ORIGINS: string[] = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
   .map((o) => o.trim())
   .filter(Boolean);
 
-/** The prompt cap. The largest real prompt here is a notification plus a schema. */
+/** The prompt cap for the legacy raw-prompt path. */
 const MAX_INPUT_CHARS = 20_000;
+/** S2.3: the template path takes the WHOLE notice text — the client used to
+ *  slice to 5,000/3,500 and lost the tail of every real notice. This cap is
+ *  generous (a 2-page Hindi extraction runs ~8–15k chars); over it the caller
+ *  gets an honest error instead of silent truncation. */
+const MAX_SOURCE_CHARS = 60_000;
 /** Provider call budget. The browser used 30s; 25s leaves room to answer cleanly. */
 const PROVIDER_TIMEOUT_MS = 25_000;
 /** Per-user limits. AI Fill is a paste-and-check tool, not a chat. */
@@ -146,6 +156,23 @@ async function promptHash(prompt: string): Promise<string> {
   } catch {
     return "unavailable";
   }
+}
+
+/** Awaited audit-log write — the rate limit counts what lands here (F2a). */
+async function logCall(
+  admin: ReturnType<typeof createClient>,
+  providerId: string | null,
+  userId: string,
+  hash: string,
+  status: "success" | "error",
+  errorMessage: string | null,
+  latencyMs: number,
+  consumerName: string,
+): Promise<void> {
+  await admin.from("ai_request_logs").insert({
+    provider_id: providerId, user_id: userId, prompt_hash: hash,
+    status, error_message: errorMessage, latency_ms: latencyMs, consumer_name: consumerName,
+  });
 }
 
 type Resolved = {
@@ -314,19 +341,88 @@ Deno.serve(async (req) => {
     return json({ error: "This account has used its AI allowance for today. Ask the admin if you need more." }, 429, cors.headers);
   }
 
-  // 4. Input cap.
-  let body: { prompt?: unknown; consumer?: unknown; jsonMode?: unknown };
+  // 4. Input. Two shapes: the S2.3 template path and the legacy prompt path.
+  let body: { prompt?: unknown; consumer?: unknown; jsonMode?: unknown; template?: unknown; sourceText?: unknown; pillar?: unknown };
   try {
     body = await req.json();
   } catch {
     return json({ error: "The request was not valid JSON." }, 400, cors.headers);
   }
+  const consumer = typeof body.consumer === "string" && body.consumer.trim() ? body.consumer.slice(0, 60) : "ai-fill";
+
+  const templateName = typeof body.template === "string" ? body.template.trim() : "";
+  if (templateName) {
+    // ── S2.3 template path ─────────────────────────────────────────────────
+    if (!(TEMPLATES as readonly string[]).includes(templateName)) {
+      return json({ error: `Unknown extraction template "${templateName}".` }, 400, cors.headers);
+    }
+    const sourceText = typeof body.sourceText === "string" ? body.sourceText : "";
+    if (!sourceText.trim()) {
+      return json({ error: "There was nothing to read. Paste the notification text first." }, 400, cors.headers);
+    }
+    if (sourceText.length > MAX_SOURCE_CHARS) {
+      return json({ error: `That notice is too long for one extraction (${sourceText.length} characters, limit ${MAX_SOURCE_CHARS}). Nothing was filled — split it into two notices or trim repeated headers.` }, 400, cors.headers);
+    }
+    const pillar = typeof body.pillar === "string" && body.pillar.trim() ? body.pillar.trim() : undefined;
+
+    // Allowed options read from the DB AT CALL TIME — the browser sends none.
+    const options = await loadOptions(admin, pillar);
+    const prompt = buildPrompt(templateName as TemplateName, sourceText, options);
+
+    const hash = await promptHash(prompt);
+    const started = Date.now();
+    const tcontroller = new AbortController();
+    const ttimer = setTimeout(() => tcontroller.abort(), PROVIDER_TIMEOUT_MS);
+    let tLast = "AI could not read that notice.";
+    try {
+      for (const target of await resolveProviders(admin)) {
+        const attemptStart = Date.now();
+        try {
+          const content = await callOne(target, prompt, true, tcontroller.signal);
+          clearTimeout(ttimer);
+          // Parse: a non-JSON answer is REPORTED, never returned as empty.
+          let parsed: unknown;
+          try {
+            let cleaned = content.trim();
+            if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+            parsed = JSON.parse(cleaned);
+          } catch {
+            await logCall(admin, target.providerId, userId, hash, "error", "template answer was not JSON", Date.now() - started, consumer);
+            return json({ error: "AI could not read part of the notice: the model did not answer in the required JSON shape. Nothing was filled in — try again, or paste a cleaner extraction." }, 502, cors.headers);
+          }
+          const validated = validateAnswer(parsed, options);
+          await logCall(admin, target.providerId, userId, hash, "success", null, Date.now() - started, consumer);
+          if (target.providerId) {
+            await admin.from("ai_providers")
+              .update({ last_used_at: new Date().toISOString(), last_error: null })
+              .eq("id", target.providerId);
+          }
+          return json({ content: validated.content, issues: validated.issues, provider: target.provider, model: target.model, template: templateName }, 200, cors.headers);
+        } catch (err) {
+          const aborted = tcontroller.signal.aborted;
+          tLast = aborted ? "timed out" : (err instanceof Error ? err.message : String(err));
+          if (aborted) clearTimeout(ttimer);
+          await logCall(admin, target.providerId, userId, hash, "error", tLast.slice(0, 500), Date.now() - attemptStart, consumer);
+          if (target.providerId) {
+            await admin.from("ai_providers").update({ last_error: tLast.slice(0, 500) }).eq("id", target.providerId);
+          }
+          if (aborted) break;
+        }
+      }
+    } finally {
+      clearTimeout(ttimer);
+    }
+    return json({ error: tLast === "timed out"
+      ? "AI took too long to read the notice and the request was stopped. Nothing was filled in — try again."
+      : `AI could not read the notice (${tLast}). Nothing was filled in.` }, 502, cors.headers);
+  }
+
+  // ── Legacy raw-prompt path (per-tab buttons; gone with S2.8) ──────────────
   const prompt = typeof body.prompt === "string" ? body.prompt : "";
   if (!prompt.trim()) return json({ error: "There was nothing to send. Paste the notification text first." }, 400, cors.headers);
   if (prompt.length > MAX_INPUT_CHARS) {
     return json({ error: `That text is too long for AI Fill (${prompt.length} characters, limit ${MAX_INPUT_CHARS}). Shorten it to the parts that matter.` }, 400, cors.headers);
   }
-  const consumer = typeof body.consumer === "string" && body.consumer.trim() ? body.consumer.slice(0, 60) : "ai-fill";
   const jsonMode = body.jsonMode === true;
 
   // 5. Call the provider, walking enabled rows in priority order.

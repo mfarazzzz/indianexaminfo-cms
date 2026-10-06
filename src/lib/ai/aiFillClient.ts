@@ -76,3 +76,71 @@ export async function generateText(
   const { content } = await generateTextWithProvider(prompt, consumer, jsonMode);
   return content;
 }
+
+/** One flagged field from the server-side schema validation (S2.3). */
+export interface ExtractionIssue {
+  field: string;
+  reason: "low_confidence" | "not_an_option" | "bad_shape" | "no_value";
+  detail: string;
+}
+
+/** Cleaned, server-validated extraction answer (see the function's templates.ts). */
+export interface StructuredExtraction {
+  content: { fields: Record<string, unknown>; dates: Record<string, unknown>[] };
+  issues: ExtractionIssue[];
+  provider: string;
+  model: string;
+  template: string;
+}
+
+/**
+ * S2.3 — the ONLY way to run a notice extraction: ask the Edge Function to
+ * render its own named template around the source text. The browser sends no
+ * prompt, so the extraction contract cannot drift per-caller. A JSON/schema
+ * failure comes back as a plain-words AIFillError ("AI could not read part of
+ * the notice …"), never as a silent empty result; per-field problems come
+ * back as `issues` for the review drawer (S2.4) to show.
+ */
+export async function generateStructured(
+  template: "NOTICE_EXTRACT_V1",
+  sourceText: string,
+  opts?: { pillar?: string; consumer?: string },
+): Promise<StructuredExtraction> {
+  const { data, error } = await db.functions.invoke("ai-fill", {
+    body: {
+      template,
+      sourceText,
+      ...(opts?.pillar ? { pillar: opts.pillar } : {}),
+      consumer: opts?.consumer ?? "notice-extract",
+    },
+  });
+
+  if (error) {
+    throw new AIFillError(
+      (await messageFrom(error)) ??
+        "AI could not be reached. Nothing was filled in - your typing is safe.",
+    );
+  }
+
+  const res = data as {
+    content?: unknown; issues?: unknown; provider?: unknown; model?: unknown;
+    template?: unknown; error?: unknown;
+  } | null;
+  if (res && typeof res.error === "string" && res.error.trim()) {
+    throw new AIFillError(res.error);
+  }
+  if (!res || !res.content || typeof res.content !== "object") {
+    throw new AIFillError("AI returned an empty answer. Nothing was filled in.");
+  }
+  const content = res.content as { fields: Record<string, unknown>; dates: Record<string, unknown>[] };
+  if (!content.fields || !Array.isArray(content.dates)) {
+    throw new AIFillError("AI could not read part of the notice: the answer was missing its fields or dates. Nothing was filled in.");
+  }
+  return {
+    content,
+    issues: Array.isArray(res.issues) ? (res.issues as ExtractionIssue[]) : [],
+    provider: typeof res.provider === "string" ? res.provider : "",
+    model: typeof res.model === "string" ? res.model : "",
+    template: typeof res.template === "string" ? res.template : template,
+  };
+}
