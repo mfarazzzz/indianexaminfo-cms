@@ -59,7 +59,39 @@ export const TENTATIVE_SIGNALS = /tentative|expected|approximate|provisional|lik
  * When a model (or importer) supplies a kind, the TYPE is DERIVED from it, so
  * nobody can hand-pair e.g. choice_filling with type "result". Extension is
  * context-dependent and defaults to "other" (the merge step refines it).
+ *
+ * S2.2a STATUS-SAFETY GATE: for records whose selection_model is merit-based
+ * or internal-admission, a rank/merit-list release is NOT an exam result —
+ * `exam_derived_status` filters date_type IN ('result','merit_list') into
+ * result_confirmed (migration 20260902122910:110), so a past "State Rank
+ * Release" row would falsely show "Result declared" on the live site (the
+ * D.El.Ed 10 Aug case). For those models rank_release/merit_list store as
+ * type "other" (kind preserved — S3 renders the right label). Until E1
+ * replaces the VIEW; written-exam/interview-based records keep merit_list.
  */
+const RESULT_BEARING_MODELS_GATE = new Set(["merit-based", "internal-admission"]);
+
+/** Kind → VIEW type, gated by the record's selection model (S2.2a). An
+ *  undefined selectionModel keeps the legacy behaviour (merit_list stays a
+ *  result-family type) — importers that don't know the model can't lose it. */
+export function typeForKind(kind: string, selectionModel?: string | null): string {
+  const base = KIND_TO_VIEW_TYPE[kind as DateEventKind] ?? "other";
+  if (
+    selectionModel && RESULT_BEARING_MODELS_GATE.has(selectionModel) &&
+    (kind === "rank_release" || kind === "merit_list")
+  ) return "other";
+  return base;
+}
+
+/** Apply the S2.2a gate to a rule result (rank_release/merit_list kinds only). */
+function gateTypeForModel(type: string, kind: DateEventKind, selectionModel?: string | null): string {
+  if (!selectionModel) return type;
+  if (RESULT_BEARING_MODELS_GATE.has(selectionModel) && (kind === "rank_release" || kind === "merit_list")) return "other";
+  return type;
+}
+
+/** Kind → coarse VIEW type WITHOUT the selection-model gate (the gate lives in
+ *  typeForKind/normalizeLabel so callers always pass through one function). */
 export const KIND_TO_VIEW_TYPE: Record<DateEventKind, string> = {
   registration_start: "application_start",
   registration_end: "application_end",
@@ -89,10 +121,6 @@ export const KIND_TO_VIEW_TYPE: Record<DateEventKind, string> = {
   walkin: "walkin",
   other: "other",
 };
-
-export function typeForKind(kind: string): string {
-  return KIND_TO_VIEW_TYPE[kind as DateEventKind] ?? "other";
-}
 
 /** One pattern → (kind, VIEW type, canonical label, urgency). Order in the
  *  table below is the match order: most specific first. */
@@ -167,8 +195,12 @@ function extensionResult(rawLabel: string, state: "confirmed" | "expected"): Nor
 /**
  * Map ANY label to a date row. NEVER returns null — an unknown label becomes
  * a custom row with the source label preserved (type "other", kind "other").
+ *
+ * selectionModel (S2.2a, optional): when known, merit-based/internal-admission
+ * records store rank/merit-list rows as type "other" so the derived status
+ * never falsely reads "result-declared"; the kind keeps the meaning.
  */
-export function normalizeLabel(rawLabel: string): NormalizedDate {
+export function normalizeLabel(rawLabel: string, selectionModel?: string | null): NormalizedDate {
   const trimmed = (rawLabel ?? "").trim();
   const state: "confirmed" | "expected" = TENTATIVE_SIGNALS.test(rawLabel ?? "") ? "expected" : "confirmed";
 
@@ -185,7 +217,7 @@ export function normalizeLabel(rawLabel: string): NormalizedDate {
       return {
         label: rule.label,
         isUrgent: rule.isUrgent,
-        type: rule.type,
+        type: gateTypeForModel(rule.type, rule.kind, selectionModel),
         kind: rule.kind,
         stage_label: "",
         state,

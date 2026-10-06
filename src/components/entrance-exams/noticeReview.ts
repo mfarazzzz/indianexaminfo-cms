@@ -14,6 +14,7 @@
 import type { StructuredExtraction, ExtractionIssue } from "@/lib/ai/aiFillClient";
 import type { FieldProposal } from "@/lib/ai/extractionContract";
 import { OPTION_CONFIDENCE_FLOOR } from "@/lib/ai/extractionContract";
+import { normalizeLabel, typeForKind } from "@/lib/dates/normalizeLabel";
 import { parseDateWindow } from "@/lib/utils/indianDateParser";
 
 /** A date row as the review hands it to the form (DateRow-compatible). */
@@ -100,19 +101,29 @@ export function describeDateRow(r: ProposedDateRow): string {
   return parts.join(" ");
 }
 
-/** Turn one template date answer into a form row (window keys filled). */
-function toProposedRow(d: Record<string, unknown>, year: number): ProposedDateRow | null {
+/** Turn one template date answer into a form row (window keys filled).
+ *  S2.2a: type is DERIVED FROM KIND via the selection-model gate — the model's
+ *  own "type" is only a hint; rank/merit rows on a merit-based record store as
+ *  "other" so exam_derived_status can never read "result-declared" from them. */
+function toProposedRow(
+  d: Record<string, unknown>,
+  year: number,
+  selectionModel: string | null | undefined,
+): ProposedDateRow | null {
   const label = typeof d.label === "string" ? d.label.trim() : "";
   const dateText = typeof d.dateText === "string" ? d.dateText.trim() : "";
   if (!label || !dateText) return null;
   const win = parseDateWindow(dateText, year);
   if (!win.date) return null;
+  const norm = normalizeLabel(label, selectionModel);
+  const kind = (typeof d.kind === "string" && d.kind.trim() ? d.kind.trim() : norm.kind);
+  const type = typeForKind(kind, selectionModel);
   const row: ProposedDateRow = {
     label,
     date: win.date,
     isUrgent: false,
-    type: typeof d.type === "string" && d.type ? d.type : "other",
-    kind: typeof d.kind === "string" && d.kind ? d.kind : "other",
+    type,
+    kind,
     state: "confirmed",
     verified: false,
     source_quote: typeof d.sourceQuote === "string" ? d.sourceQuote : "",
@@ -205,8 +216,14 @@ export function buildReviewRows(
   pushField("noticeReference", "Notice reference", fields.noticeReference, "", null, true);
 
   const dates = extraction.content.dates ?? [];
+  // S2.2a gate context: the validated proposal wins; else the record's current
+  // selection model; else undefined (legacy un-gated behaviour).
+  const selProposal = fields.selectionModel;
+  const selForGate = (typeof selProposal?.value === "string" && selProposal.value.trim())
+    ? selProposal.value.trim()
+    : (current.selectionModel || null);
   dates.forEach((d, i) => {
-    const row = toProposedRow(d as Record<string, unknown>, year);
+    const row = toProposedRow(d as Record<string, unknown>, year, selForGate);
     if (!row) return;
     const conf = row.confidence;
     rows.push({

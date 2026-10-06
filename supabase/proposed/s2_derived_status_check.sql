@@ -25,7 +25,7 @@ with rows(d) as (
     {"label":"Registration Opens","date":"2026-06-15","type":"application_start","kind":"registration_start","state":"confirmed"},
     {"label":"Registration Closes","date":"2026-07-08","type":"application_end","kind":"registration_end","state":"confirmed"},
     {"label":"Registration Extended to 03.08.2026","date":"2026-08-03","type":"application_end","kind":"extension","state":"confirmed"},
-    {"label":"State Rank Release","date":"2026-08-10","type":"merit_list","kind":"rank_release","state":"confirmed"},
+    {"label":"State Rank Release","date":"2026-08-10","type":"other","kind":"rank_release","state":"confirmed"},
     {"label":"Phase-3 चयन पूर्णकरण / Choice Filling","date":"2026-10-05","end_date":"2026-10-07","end_time":"18:00","time_text":"afternoon","type":"counselling","kind":"choice_filling","phase":"Phase-3","state":"confirmed"},
     {"label":"Seat Allotment","date":"2026-10-08","type":"counselling","kind":"allotment","phase":"Phase-3","state":"confirmed"},
     {"label":"Document Verification / Admission","date":"2026-10-09","end_date":"2026-10-14","end_time":"17:00","type":"counselling","kind":"document_verification","phase":"Phase-3","state":"confirmed"},
@@ -60,9 +60,10 @@ select
   app_open, app_close, result_confirmed, next_confirmed
 from summary;
 
--- Expected result (as of 06 Oct 2026): the simulation answers
--- 'registration-closed' when the rank/merit row is EXCLUDED (the four Phase-3
--- rows + the application rows), and never 'dates-awaited' — any dated,
--- confirmed row makes has_confirmed_dates true, which is what the VIEW's
--- ELSE branch requires. Run 2) with the State Rank Release row removed to
--- see both outcomes.
+-- Expected result (as of 06 Oct 2026, AFTER the S2.2a gate): 'registration-
+-- closed' — the rank row is stored type "other" (kind rank_release) for this
+-- merit-based record, so result_confirmed stays NULL and the VIEW never reads
+-- "result-declared". Run 2) once with the rank row's type changed back to
+-- "merit_list" to see the pre-gate false 'result-declared' this fix prevents.
+-- Never 'dates-awaited' either way: any confirmed dated row sets
+-- has_confirmed_dates, which is what the VIEW's ELSE branch requires.

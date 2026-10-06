@@ -9,7 +9,7 @@
  *  • extension is a supersedes-row (kind "extension"), not a new type.
  */
 import { describe, expect, it } from 'vitest'
-import { normalizeLabel, type NormalizedDate } from './normalizeLabel'
+import { normalizeLabel, typeForKind, type NormalizedDate } from './normalizeLabel'
 
 /** The exact type vocabulary exam_derived_status (migration 20260902122910)
  *  reads. If normalizeLabel ever emits something outside this set, published
@@ -89,6 +89,45 @@ describe('normalizeLabel — extension is a supersedes row, not a type', () => {
     const n = normalizeLabel('Date Extension Notice')
     expect(n.kind).toBe('extension')
     expect(n.type).toBe('other')
+  })
+})
+
+describe('normalizeLabel — S2.2a status-safety gate (merit-based records)', () => {
+  it('merit-based: rank_release and merit_list store as type "other" (kind kept)', () => {
+    const rank = normalizeLabel('State Rank Release', 'merit-based')
+    expect(rank.type).toBe('other')
+    expect(rank.kind).toBe('rank_release')
+    const merit = normalizeLabel('Merit List', 'merit-based')
+    expect(merit.type).toBe('other')
+    expect(merit.kind).toBe('merit_list')
+  })
+
+  it('internal-admission is gated the same way', () => {
+    expect(normalizeLabel('State Rank Release', 'internal-admission').type).toBe('other')
+  })
+
+  it('written-exam / interview-based keep the result-family type', () => {
+    expect(normalizeLabel('State Rank Release', 'written-exam').type).toBe('merit_list')
+    expect(normalizeLabel('Merit List', 'interview-based').type).toBe('merit_list')
+  })
+
+  it('no selection model given → legacy behaviour unchanged (importers)', () => {
+    expect(normalizeLabel('State Rank Release').type).toBe('merit_list')
+    expect(normalizeLabel('Merit List', null).type).toBe('merit_list')
+  })
+
+  it('the gate never touches other kinds', () => {
+    expect(normalizeLabel('Seat Allotment', 'merit-based').type).toBe('counselling')
+    expect(normalizeLabel('Registration Closes', 'merit-based').type).toBe('application_end')
+    expect(normalizeLabel('Result Declaration', 'merit-based').type).toBe('result')
+  })
+
+  it('typeForKind mirrors the gate (the pipeline\'s single source)', () => {
+    expect(typeForKind('rank_release', 'merit-based')).toBe('other')
+    expect(typeForKind('merit_list', 'merit-based')).toBe('other')
+    expect(typeForKind('rank_release', 'written-exam')).toBe('merit_list')
+    expect(typeForKind('choice_filling', 'merit-based')).toBe('counselling')
+    expect(typeForKind('allotment')).toBe('counselling')
   })
 })
 

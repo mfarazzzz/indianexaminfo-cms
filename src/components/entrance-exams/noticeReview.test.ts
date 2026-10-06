@@ -135,6 +135,42 @@ describe('buildReviewRows — date rows use the S2.2/S2.3 contract', () => {
   })
 })
 
+describe('buildReviewRows — S2.2a status-safety gate on applied rows', () => {
+  const rankDates = [
+    { label: 'State Rank Release', dateText: '10.08.2026', type: 'merit_list', kind: 'rank_release', confidence: 0.9, sourceQuote: 'राज्य रैंक' },
+  ]
+
+  it('a merit-based PROPOSAL gates the rank row to type "other" even though the model said merit_list', () => {
+    const rows = buildReviewRows(
+      extraction({ selectionModel: { value: 'merit-based', confidence: 0.9, sourceQuote: 'no test' } }, rankDates, []),
+      {}, categories, 2026,
+    )
+    const date = rows.find((r) => r.kind === 'date')!
+    expect(date.row!.type).toBe('other')
+    expect(date.row!.kind).toBe('rank_release')
+  })
+
+  it('a written-exam record keeps merit_list for the same row', () => {
+    const rows = buildReviewRows(extraction({}, rankDates, []), { selectionModel: 'written-exam' }, categories, 2026)
+    const date = rows.find((r) => r.kind === 'date')!
+    expect(date.row!.type).toBe('merit_list')
+  })
+
+  it('an empty (server-rejected) selection-model proposal falls back to the current model', () => {
+    const rows = buildReviewRows(
+      extraction({ selectionModel: { value: '', confidence: 0.4, sourceQuote: 'x' } }, rankDates, []),
+      { selectionModel: 'written-exam' }, categories, 2026,
+    )
+    const date = rows.find((r) => r.kind === 'date')!
+    expect(date.row!.type).toBe('merit_list') // current model governs, not the rejected proposal
+  })
+
+  it('internal-admission gates too', () => {
+    const rows = buildReviewRows(extraction({}, rankDates, []), { selectionModel: 'internal-admission' }, categories, 2026)
+    expect(rows.find((r) => r.kind === 'date')!.row!.type).toBe('other')
+  })
+})
+
 describe('summarizeFill — the report on top of the drawer', () => {
   it('counts proposed/accepted/flagged and lists reasons', () => {
     const rows = buildReviewRows(

@@ -118,6 +118,9 @@ export function runNoticePipeline(
   opts: AllowedOptions,
   sourceText: string,
   year: number,
+  /** S2.2a: the record's CURRENT selection model — the proposed one wins when
+   *  it passes validation; otherwise this gates rank/merit-list types. */
+  currentSelectionModel?: string | null,
 ): PipelineResult {
   // 1. parse — the model sometimes wraps JSON in fences or trails a sentence.
   let cleaned = rawModelAnswer.trim();
@@ -183,6 +186,11 @@ export function runNoticePipeline(
   }
 
   // 3–6. dates.
+  // S2.2a: the effective selection model gates rank/merit-list → "other" so a
+  // merit-based record can never derive a false "result-declared". The
+  // proposal wins once validated (it IS the record's model being decided).
+  const selApproved = fields.selectionModel && !fields.selectionModel.flagged ? fields.selectionModel.value : "";
+  const effectiveSelectionModel = selApproved || currentSelectionModel || null;
   const distStart = distributionStart(sourceText);
   const rows: PipelineDateRow[] = [];
   const rejected: { label: string; reason: string }[] = [];
@@ -209,7 +217,7 @@ export function runNoticePipeline(
     void norm; // kept for the custom-row fallback below; labels are preserved verbatim
     const kindRaw = String(d?.kind ?? "").trim();
     const kind = (kindRaw || norm.kind) as DateEventKind | string;
-    const type = typeForKind(kind); // invented model types are DISCARDED
+    const type = typeForKind(kind, effectiveSelectionModel); // invented model types are DISCARDED
     const modelType = String(d?.type ?? "").trim();
     if (modelType && modelType !== type) warnings.push(`date "${label}": model type "${modelType}" overridden → "${type}" (derived from kind)`);
     rows.push({
