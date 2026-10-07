@@ -13,11 +13,15 @@
 import React, { useMemo, useState } from "react";
 import type { ReviewRow, FillReport } from "./noticeReview";
 import type { LikelyMatch } from "@/lib/ai/noticeMatch";
+import type { PipelineResult } from "@/lib/ai/noticePipeline";
 
 interface Props {
   open: boolean;
   rows: ReviewRow[];
   report: FillReport;
+  /** S2.10: the full pipeline result, shown read-only — rejected rows, warnings,
+   *  merged windows and the notice-issue-date provenance all come from here. */
+  result?: PipelineResult;
   /** What the extraction ran on — shown so the editor sees the source scope. */
   providerNote: string;
   /** S2.5: a likely existing record this notice belongs to (new records only). */
@@ -35,7 +39,7 @@ const ConfidenceTag: React.FC<{ value: number }> = ({ value }) => {
   return <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${cls}`}>{pct}%</span>;
 };
 
-export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, providerNote, match, onOpenMatch, onClose, onApply }) => {
+export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result, providerNote, match, onOpenMatch, onClose, onApply }) => {
   const [accepted, setAccepted] = useState<Record<string, boolean>>({});
   // S2.5: "Review here anyway" hides the match banner without losing the rows.
   const [matchDismissed, setMatchDismissed] = useState(false);
@@ -115,6 +119,38 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, provid
           </div>
         )}
 
+        {/* S2.10: read-only pipeline output the editor must SEE but never apply */}
+        {(result?.mergedWindows.length || result?.warnings.length || result?.rejected.length || result?.provenance?.noticeIssueDate) ? (
+          <div className="px-4 py-2 border-b border-slate-100 bg-slate-50 space-y-2 text-[11px]">
+            {result?.provenance?.noticeIssueDate && (
+              <div data-testid="drawer-provenance">
+                <p className="font-semibold text-slate-600">Provenance</p>
+                <p className="text-slate-500">Notice issue date {result.provenance.noticeIssueDate} recorded on the notice — NOT a timeline row.</p>
+              </div>
+            )}
+            {result && result.mergedWindows.length > 0 && (
+              <div data-testid="drawer-merged">
+                <p className="font-semibold text-slate-600">Merged windows ({result.mergedWindows.length})</p>
+                <ul className="list-disc pl-4 text-slate-500">{result.mergedWindows.map((m, i) => <li key={i}>{m}</li>)}</ul>
+              </div>
+            )}
+            {result && result.warnings.length > 0 && (
+              <div data-testid="drawer-warnings">
+                <p className="font-semibold text-slate-600">Warnings ({result.warnings.length})</p>
+                <ul className="list-disc pl-4 text-amber-700">{result.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+              </div>
+            )}
+            {result && result.rejected.length > 0 && (
+              <div data-testid="drawer-not-used">
+                <p className="font-semibold text-slate-600">Not used ({result.rejected.length})</p>
+                <ul className="list-disc pl-4 text-rose-700">
+                  {result.rejected.map((rj, i) => <li key={i}>{rj.label} — {rj.reason}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : null}
+
         {/* Rows */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
           {rows.length === 0 && (
@@ -143,6 +179,9 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, provid
                 <blockquote className="mt-1.5 border-l-2 border-slate-200 pl-2 text-[11px] italic text-slate-500 line-clamp-3" title="Verbatim from the notice">
                   “{r.sourceQuote}”
                 </blockquote>
+              )}
+              {r.flagReason && (
+                <p className="mt-1 text-[11px] text-amber-700" data-testid={`drawer-flag-reason-${r.id}`}>{r.flagReason}</p>
               )}
               {r.noFieldYet && (
                 <p className="mt-1 text-[11px] text-rose-700">The form has no field for this yet — it is never auto-applied. Note for S3.</p>

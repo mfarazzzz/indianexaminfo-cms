@@ -1,41 +1,30 @@
 /**
- * noticeReview.ts — S2.4 review drawer logic (pure, testable).
+ * noticeReview.ts — S2.4/S2.10 review drawer logic (pure, testable).
  *
  * The rule the old AI Fill broke: nothing is ever written silently. Extraction
  * results become ONE ROW PER PROPOSED CHANGE — field · current value · proposed
  * value · source quote · confidence · Accept/Reject — and "Apply accepted"
  * writes to the FORM ONLY (the editor saves; R1.6 holds).
  *
+ * S2.10 (ONE CODE PATH): this consumes a PipelineResult produced by
+ * postProcessExtraction — the SAME authority the golden test pins. It no longer
+ * re-derives kind/type/time from labels (that per-row duplicate has been
+ * deleted); the pipeline owns derivation, the verbatim-quote check, URL
+ * hygiene, distribution rejection, eligibility/fee guards, window pairing and
+ * the notice-issue-date provenance. buildReviewRows only MAPS that result to
+ * review rows and decides default-Accept.
+ *
  * Default state: Accept ONLY where the current value is empty AND confidence
- * is ≥ 0.7. Everything else starts Rejected and needs a deliberate click.
- * Fields the form has no slot for (counselling fee, warnings, contacts) are
- * NOT invented writes — they are listed as "no field yet" for the editor.
+ * is ≥ 0.7 AND the pipeline did NOT flag the item. Flagged fields/dates start
+ * Rejected and show their flagReason. Facts with no form slot (counselling fee,
+ * warnings, contacts) are "no field yet" — never auto-applied.
  */
-import type { StructuredExtraction, ExtractionIssue } from "@/lib/ai/aiFillClient";
-import type { FieldProposal } from "@/lib/ai/extractionContract";
+import type { ExtractionIssue } from "@/lib/ai/aiFillClient";
 import { OPTION_CONFIDENCE_FLOOR } from "@/lib/ai/extractionContract";
-import { normalizeLabel, typeForKind } from "@/lib/dates/normalizeLabel";
-import { parseDateWindow } from "@/lib/utils/indianDateParser";
+import type { PipelineDateRow, PipelineField, PipelineResult } from "@/lib/ai/noticePipeline";
 
-/** A date row as the review hands it to the form (DateRow-compatible). */
-export interface ProposedDateRow {
-  label: string;
-  date: string;
-  isUrgent: boolean;
-  type: string;
-  kind: string;
-  state: "confirmed" | "expected";
-  verified: false;
-  end_date?: string;
-  start_time?: string;
-  end_time?: string;
-  time_text?: string;
-  phase?: string;
-  rank_batch?: string;
-  audience?: string;
-  source_quote: string;
-  confidence: number;
-}
+/** A date row as the review hands it to the form — the pipeline's shape. */
+export type ProposedDateRow = PipelineDateRow;
 
 export interface ReviewRow {
   /** Stable key: the form field path, or "date:<index>". */
@@ -48,10 +37,12 @@ export interface ReviewRow {
   proposed: string;
   sourceQuote: string;
   confidence: number;
-  /** Accept pre-checked only when current is empty AND confidence ≥ floor. */
+  /** Accept pre-checked only when current is empty, confident AND unflagged. */
   defaultAccept: boolean;
   /** No form slot for this fact (S3 will add the field) — never auto-applied. */
   noFieldYet: boolean;
+  /** Set when the pipeline flagged this item; explains WHY it is not trusted. */
+  flagReason?: string;
   /** For kind === "field": the form path to setValue on apply. */
   formPath?: string;
   /** For kind === "field": the value to write (slug→id already resolved). */
@@ -101,83 +92,45 @@ export function describeDateRow(r: ProposedDateRow): string {
   return parts.join(" ");
 }
 
-/** Turn one template date answer into a form row (window keys filled).
- *  S2.2a: type is DERIVED FROM KIND via the selection-model gate — the model's
- *  own "type" is only a hint; rank/merit rows on a merit-based record store as
- *  "other" so exam_derived_status can never read "result-declared" from them. */
-function toProposedRow(
-  d: Record<string, unknown>,
-  year: number,
-  selectionModel: string | null | undefined,
-): ProposedDateRow | null {
-  const label = typeof d.label === "string" ? d.label.trim() : "";
-  const dateText = typeof d.dateText === "string" ? d.dateText.trim() : "";
-  if (!label || !dateText) return null;
-  const win = parseDateWindow(dateText, year);
-  if (!win.date) return null;
-  const norm = normalizeLabel(label, selectionModel);
-  const kind = (typeof d.kind === "string" && d.kind.trim() ? d.kind.trim() : norm.kind);
-  const type = typeForKind(kind, selectionModel);
-  const row: ProposedDateRow = {
-    label,
-    date: win.date,
-    isUrgent: false,
-    type,
-    kind,
-    state: "confirmed",
-    verified: false,
-    source_quote: typeof d.sourceQuote === "string" ? d.sourceQuote : "",
-    confidence: typeof d.confidence === "number" ? Math.min(1, Math.max(0, d.confidence)) : 0,
-  };
-  if (win.end_date) row.end_date = win.end_date;
-  if (win.start_time) row.start_time = win.start_time;
-  if (win.end_time) row.end_time = win.end_time;
-  if (win.time_text) row.time_text = win.time_text;
-  if (typeof d.phase === "string" && d.phase.trim()) row.phase = d.phase.trim();
-  if (typeof d.rank_batch === "string" && d.rank_batch.trim()) row.rank_batch = d.rank_batch.trim();
-  if (d.audience === "candidate" || d.audience === "institute") row.audience = d.audience;
-  if (row.kind === "choice_filling" || row.kind === "registration_start" || row.kind === "registration_end") row.isUrgent = true;
-  return row;
-}
-
 /**
- * Build every review row from one extraction. Ordering: identity/classification
+ * Build every review row from a PipelineResult. Ordering: identity/classification
  * first (they decide the record's shape), then dates, then the "no field yet"
- * facts at the end (the editor's S3 backlog).
+ * facts at the end (the editor's S3 backlog). Kind/type/time are ALREADY derived
+ * by the pipeline; nothing here re-infers them.
  */
 export function buildReviewRows(
-  extraction: StructuredExtraction,
+  result: PipelineResult,
   current: ReviewCurrentValues,
   categories: CategoryLookup[],
-  year: number,
 ): ReviewRow[] {
   const rows: ReviewRow[] = [];
-  const fields = extraction.content.fields as Record<string, FieldProposal | null | undefined>;
-  const issueByField = new Map<string, ExtractionIssue>();
-  for (const iss of extraction.issues) issueByField.set(iss.field, iss);
+  const fields = result.fields;
 
   const pushField = (
     id: string,
     label: string,
-    proposal: FieldProposal | null | undefined,
+    pf: PipelineField | undefined,
     currentStr: string,
     apply: { formPath: string; formValue: unknown } | null,
     noFieldYet = false,
   ) => {
-    if (!proposal) return;
-    const value = fmt(proposal.value);
-    if (!value) return; // server flagged it empty — it belongs to the report, not a row
-    const conf = typeof proposal.confidence === "number" ? proposal.confidence : 0;
+    if (!pf) return;
+    const value = fmt(pf.value);
+    if (!value) return; // pipeline emptied it (rejected option / not stated) — belongs to the report, not a row
+    const conf = pf.confidence;
+    const flagged = !!pf.flagged;
     rows.push({
       id,
       label,
       kind: "field",
       current: currentStr,
       proposed: value,
-      sourceQuote: proposal.sourceQuote ?? "",
+      sourceQuote: pf.sourceQuote,
       confidence: conf,
-      defaultAccept: !noFieldYet && isBlank(currentStr) && conf >= OPTION_CONFIDENCE_FLOOR && !!apply,
+      // A flagged field is NEVER default-accepted, whatever its confidence.
+      defaultAccept: !noFieldYet && !flagged && isBlank(currentStr) && conf >= OPTION_CONFIDENCE_FLOOR && !!apply,
       noFieldYet,
+      flagReason: flagged ? pf.flagReason : undefined,
       formPath: apply?.formPath,
       formValue: apply?.formValue,
     });
@@ -215,16 +168,10 @@ export function buildReviewRows(
   pushField("contacts", "Contact details", fields.contacts, "", null, true);
   pushField("noticeReference", "Notice reference", fields.noticeReference, "", null, true);
 
-  const dates = extraction.content.dates ?? [];
-  // S2.2a gate context: the validated proposal wins; else the record's current
-  // selection model; else undefined (legacy un-gated behaviour).
-  const selProposal = fields.selectionModel;
-  const selForGate = (typeof selProposal?.value === "string" && selProposal.value.trim())
-    ? selProposal.value.trim()
-    : (current.selectionModel || null);
-  dates.forEach((d, i) => {
-    const row = toProposedRow(d as Record<string, unknown>, year, selForGate);
-    if (!row) return;
+  // Date rows: the pipeline already parsed the window, derived kind→type via
+  // the selection-model gate, stripped the URL, rejected distribution content,
+  // paired split windows and checked the quote verbatim. Map them straight.
+  result.rows.forEach((row, i) => {
     const conf = row.confidence;
     rows.push({
       id: `date:${i}:${row.label}`,
@@ -234,30 +181,49 @@ export function buildReviewRows(
       proposed: describeDateRow(row),
       sourceQuote: row.source_quote,
       confidence: conf,
-      defaultAccept: conf >= OPTION_CONFIDENCE_FLOOR,
+      // A date whose quote is not verbatim in the source is flagged — offered
+      // only on a deliberate click, never by default.
+      defaultAccept: conf >= OPTION_CONFIDENCE_FLOOR && !row.flagged,
       noFieldYet: false,
+      flagReason: row.flagged ? row.flagReason : undefined,
       row,
     });
   });
 
   // S2.6: notices the source only REFERS TO become document-reference
-  // proposals — provenance, never a "Notification Release" date row.
-  const references = extraction.content.references ?? [];
-  references.forEach((ref, i) => {
-    const parsed = parseDateWindow(ref.dateText ?? "", year);
+  // proposals — provenance, never a "Notification Release" date row. The
+  // pipeline already parsed their dates.
+  result.references.forEach((ref, i) => {
     rows.push({
       id: `reference:${i}:${ref.label}`,
       label: `Document reference — ${ref.label}`,
       kind: "proposal",
       current: "",
-      proposed: parsed.date ? `recorded as a reference (dated ${parsed.date}), NOT a timeline row` : "recorded as a reference, NOT a timeline row",
-      sourceQuote: ref.sourceQuote ?? "",
-      confidence: typeof ref.confidence === "number" ? ref.confidence : 0,
-      defaultAccept: true, // recording a reference loses nothing — safe by default
+      proposed: ref.date ? `recorded as a reference (dated ${ref.date}), NOT a timeline row` : "recorded as a reference, NOT a timeline row",
+      sourceQuote: ref.sourceQuote,
+      confidence: 1, // provenance: safe by default, records nothing risky
+      defaultAccept: true,
       noFieldYet: false,
-      documentReference: { label: ref.label, date: parsed.date, sourceQuote: ref.sourceQuote ?? "" },
+      documentReference: { label: ref.label, date: ref.date, sourceQuote: ref.sourceQuote },
     });
   });
+
+  // FU1: the notice's OWN issue date — provenance, shown so the editor sees the
+  // press-release date was recorded, not turned into a timeline/notification row.
+  if (result.provenance?.noticeIssueDate) {
+    rows.push({
+      id: `provenance:noticeDate:${result.provenance.noticeIssueDate}`,
+      label: "Notice issue date (provenance)",
+      kind: "proposal",
+      current: "",
+      proposed: `recorded as provenance (notice.date ${result.provenance.noticeIssueDate}), NOT a timeline row`,
+      sourceQuote: result.provenance.noticeIssueQuote ?? "",
+      confidence: 1,
+      defaultAccept: true,
+      noFieldYet: false,
+      documentReference: { label: "Notice issue date", date: result.provenance.noticeIssueDate, sourceQuote: result.provenance.noticeIssueQuote ?? "" },
+    });
+  }
 
   return rows;
 }
@@ -266,13 +232,15 @@ export function buildReviewRows(
 export interface FillReport {
   proposed: number;
   defaultAccepted: number;
-  flagged: number;          // server issues + below floor + no field yet
+  flagged: number;          // server issues + below floor + no field yet + pipeline-flagged
   noFieldYet: number;
+  rejected: number;         // rows the pipeline dropped as not exam data (S2.10)
+  mergedWindows: number;    // window pairs the net collapsed into one row (S2.9)
   lowConfidence: string[];  // labels
   missingOptions: string[]; // suggested new options / rejected values
 }
 
-export function summarizeFill(rows: ReviewRow[], issues: ExtractionIssue[]): FillReport {
+export function summarizeFill(rows: ReviewRow[], issues: ExtractionIssue[], result?: PipelineResult): FillReport {
   const lowConfidence: string[] = [];
   const missingOptions: string[] = [];
   for (const iss of issues) {
@@ -283,12 +251,15 @@ export function summarizeFill(rows: ReviewRow[], issues: ExtractionIssue[]): Fil
   for (const r of rows) {
     if (r.confidence < OPTION_CONFIDENCE_FLOOR && r.proposed) lowConfidence.push(r.label);
     if (r.noFieldYet) missingOptions.push(`${r.label} — no field yet`);
+    if (r.flagReason) lowConfidence.push(`${r.label} (${r.flagReason})`);
   }
   return {
     proposed: rows.length,
     defaultAccepted: rows.filter((r) => r.defaultAccept).length,
     flagged: rows.filter((r) => !r.defaultAccept).length + issues.length,
     noFieldYet: rows.filter((r) => r.noFieldYet).length,
+    rejected: result ? result.rejected.length : 0,
+    mergedWindows: result ? result.mergedWindows.length : 0,
     lowConfidence: Array.from(new Set(lowConfidence)),
     missingOptions: Array.from(new Set(missingOptions)),
   };

@@ -28,6 +28,8 @@ import { validateField } from "@/lib/fields/fieldTypes";
 import { ALL_SELECTION_MODELS, SELECTION_MODEL_LABELS, SELECTION_MODEL_HINTS, type SelectionModel } from "@/types/selection";
 import { getModulesForEntityType, entityTypeForPillar, resolveEntityType, ENTRANCE_EXAM_ENTITY_CHOICES } from "@/config/moduleRegistry";
 import { generateStructured } from "@/lib/ai/aiFillClient";
+import { postProcessExtraction, type PipelineResult } from "@/lib/ai/noticePipeline";
+import { loadAllowedOptions } from "@/lib/ai/allowedOptions";
 import { findLikelyExamMatch, NOTICE_HANDOFF_KEY, type LikelyMatch } from "@/lib/ai/noticeMatch";
 import { buildNoticeAiMetadata } from "@/lib/ai/noticeProvenance";
 import { mergeAcceptedDateRows } from "@/lib/dates/dateRowMerge";
@@ -40,6 +42,13 @@ import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { ResourcesTab } from "@/components/entrance-exams/ResourcesTab";
 import { SyllabusResourcePicker } from "@/components/entrance-exams/SyllabusResourcePicker";
 import { SyllabusTab } from "@/components/entrance-exams/SyllabusTab";
+
+/** A zeroed fill report — used wherever the drawer/provenance is opened with no
+ *  extraction yet in flight (keeps the shape in one place). */
+const EMPTY_FILL_REPORT: FillReport = {
+  proposed: 0, defaultAccepted: 0, flagged: 0, noFieldYet: 0, rejected: 0, mergedWindows: 0,
+  lowConfidence: [], missingOptions: [],
+};
 
 // EDITION_STATUSES dropdown options REMOVED (2026-09-19) with the manual status
 // field. The EditionStatus type is retained (form value + AI-fill still carry the
@@ -167,7 +176,7 @@ export function EntranceExamEditorPage() {
   // S2.4: the review drawer's state — set only after an extraction, cleared on
   // apply/close. Nothing reaches the form without an explicit Accept.
   const [reviewState, setReviewState] = useState<
-    { rows: ReviewRow[]; report: FillReport; providerNote: string; match: LikelyMatch | null; sourceText: string } | null
+    { rows: ReviewRow[]; report: FillReport; providerNote: string; match: LikelyMatch | null; sourceText: string; result: PipelineResult } | null
   >(null);
   // S2.8: the per-tab AI fill state is gone — one entry point now ("Update
   // from a notice" → review drawer), so nothing tracks per-tab fills.
@@ -175,7 +184,7 @@ export function EntranceExamEditorPage() {
   // written into exams.ai_metadata by the EDITOR's next save — never before.
   const extractionMetaRef = React.useRef<{
     provider: string; model: string; template: string; issues: import("@/lib/ai/aiFillClient").ExtractionIssue[];
-    noticeReference?: string; sourceText: string;
+    noticeReference?: string; noticeDate?: string; sourceText: string;
   } | null>(null);
   const pendingProvenanceRef = React.useRef<Record<string, unknown> | null>(null);
   const [isPublished, setIsPublished] = useState(true);
@@ -780,24 +789,33 @@ export function EntranceExamEditorPage() {
         pillar: pillarFromUrl || "entrance-exam",
         consumer: "update-from-notice",
       });
-      const rows = buildReviewRows(
-        ext,
-        form.getValues() as ReviewCurrentValues,
-        categories.map((c) => ({ slug: c.slug, id: c.id })),
+      // S2.10 ONE CODE PATH: run the server-validated object through the SAME
+      // deterministic pipeline the golden test pins — verbatim-quote check,
+      // distribution rejection, eligibility/fee guards, URL hygiene, kind/type
+      // derivation, window pairing and the notice-issue-date provenance. The
+      // allowed options are loaded the same way the pipeline's server twin does.
+      const currentVals = form.getValues() as ReviewCurrentValues;
+      const allowed = await loadAllowedOptions(pillarFromUrl || "entrance-exam");
+      const result = postProcessExtraction(
+        ext.content as unknown as Record<string, unknown>,
+        allowed,
+        rawContent,
         year,
+        currentVals.selectionModel || null,
       );
+      const rows = buildReviewRows(result, currentVals, categories.map((c) => ({ slug: c.slug, id: c.id })));
 
       // S2.5: on a NEW record, check whether the notice belongs to an exam
       // that already exists — one record per cycle, many notices. The drawer
       // then offers to carry the extraction THERE instead of duplicating.
       let match: LikelyMatch | null = null;
       if (isNew) {
-        const f = ext.content.fields as Record<string, { value?: string } | undefined>;
+        const f = result.fields;
         match = await findLikelyExamMatch(
           {
-            name: typeof f.name?.value === "string" ? f.name.value : undefined,
-            shortName: typeof f.shortName?.value === "string" ? f.shortName.value : undefined,
-            conductingBody: typeof f.conductingBody?.value === "string" ? f.conductingBody.value : undefined,
+            name: f.name?.value || undefined,
+            shortName: f.shortName?.value || undefined,
+            conductingBody: f.conductingBody?.value || undefined,
             year,
           },
           pillarFromUrl || "entrance-exam",
@@ -806,20 +824,22 @@ export function EntranceExamEditorPage() {
 
       setReviewState({
         rows,
-        report: summarizeFill(rows, ext.issues),
+        report: summarizeFill(rows, ext.issues, result),
         providerNote: `${ext.provider} · ${ext.model} · template ${ext.template}`,
         match,
         sourceText: rawContent,
+        result,
       });
       // S2.6: remember WHO produced this answer and the notice's own reference —
       // Apply stages it into ai_metadata; the save persists it.
-      const refField = (ext.content.fields as Record<string, { value?: unknown } | undefined>).noticeReference;
+      const refField = result.fields.noticeReference;
       extractionMetaRef.current = {
         provider: ext.provider,
         model: ext.model,
         template: ext.template,
         issues: ext.issues,
-        noticeReference: typeof refField?.value === "string" && refField.value.trim() ? refField.value.trim() : undefined,
+        noticeReference: refField?.value?.trim() ? refField.value.trim() : undefined,
+        noticeDate: result.provenance?.noticeIssueDate,
         sourceText: rawContent,
       };
       if (rows.length === 0) {
@@ -881,10 +901,11 @@ export function EntranceExamEditorPage() {
       pendingProvenanceRef.current = buildNoticeAiMetadata(exam?.aiMetadata, {
         sourceType: "pasted_text",
         noticeReference: meta.noticeReference,
+        noticeDate: meta.noticeDate,
         provider: meta.provider,
         model: meta.model,
         template: meta.template,
-        report: reviewState?.report ?? { proposed: 0, defaultAccepted: 0, flagged: 0, noFieldYet: 0, lowConfidence: [], missingOptions: [] },
+        report: reviewState?.report ?? EMPTY_FILL_REPORT,
         issues: meta.issues,
         acceptedRows: accepted,
         documentReferences: proposalRows.map((r) => r.documentReference!),
@@ -1172,7 +1193,8 @@ export function EntranceExamEditorPage() {
       <NoticeReviewDrawer
         open={!!reviewState}
         rows={reviewState?.rows ?? []}
-        report={reviewState?.report ?? { proposed: 0, defaultAccepted: 0, flagged: 0, noFieldYet: 0, lowConfidence: [], missingOptions: [] }}
+        report={reviewState?.report ?? EMPTY_FILL_REPORT}
+        result={reviewState?.result}
         providerNote={reviewState?.providerNote ?? ""}
         match={reviewState?.match ?? null}
         onOpenMatch={handleOpenMatch}

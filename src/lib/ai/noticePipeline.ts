@@ -55,6 +55,11 @@ export interface PipelineDateRow {
   verified: false;
   source_quote: string;
   confidence: number;
+  /** Follow-up (S2.10): set ONLY when this row must not be trusted blindly —
+   *  today that means its source quote is not verbatim in the pasted notice.
+   *  buildReviewRows refuses to default-accept a flagged row. */
+  flagged?: boolean;
+  flagReason?: string;
 }
 
 export interface PipelineResult {
@@ -221,6 +226,11 @@ function pairWindowRows(rows: PipelineDateRow[], sourceText: string, selectionMo
       if (rb) win.rank_batch = rb;
       const au = open.audience || close.audience;
       if (au) win.audience = au;
+      // A merged window inherits a verbatim-quote flag from either side.
+      if (open.flagged || close.flagged) {
+        win.flagged = true;
+        win.flagReason = open.flagReason || close.flagReason;
+      }
       merged.push(`${open.kind}: ${open.label} + ${close.label}`);
       used.add(j);
       keep = win;
@@ -231,19 +241,14 @@ function pairWindowRows(rows: PipelineDateRow[], sourceText: string, selectionMo
 }
 
 /**
- * Run the pipeline on ONE raw model answer against the source text it was
- * asked about. Throws AIFillError-style Errors with editor-grade messages.
+ * STEP 1 — parse a raw model answer into an object. Kept separate from the
+ * post-processing so the EDITOR can hand the SERVER-validated object straight
+ * to postProcessExtraction without a needless stringify/parse round-trip, while
+ * the golden test still feeds a recorded raw STRING through runNoticePipeline.
+ * Throws editor-grade Errors (never a silent empty result).
  */
-export function runNoticePipeline(
-  rawModelAnswer: string,
-  opts: AllowedOptions,
-  sourceText: string,
-  year: number,
-  /** S2.2a: the record's CURRENT selection model — the proposed one wins when
-   *  it passes validation; otherwise this gates rank/merit-list types. */
-  currentSelectionModel?: string | null,
-): PipelineResult {
-  // 1. parse — the model sometimes wraps JSON in fences or trails a sentence.
+export function parseNoticeAnswer(rawModelAnswer: string): Record<string, unknown> {
+  // The model sometimes wraps JSON in fences or trails a sentence.
   let cleaned = rawModelAnswer.trim();
   if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
   const lastBrace = cleaned.lastIndexOf("}");
@@ -257,7 +262,26 @@ export function runNoticePipeline(
   if (!parsed || typeof parsed !== "object") {
     throw new Error("AI could not read part of the notice: the answer was not an object. Nothing was filled.");
   }
+  return parsed;
+}
 
+/**
+ * STEP 2–7 — OUR deterministic post-processing of an already-parsed extraction.
+ * This is the SINGLE authority the editor and the golden test share: option
+ * validation, kind/type mapping, date/time parsing, URL hygiene, verbatim-quote
+ * check, distribution rejection, eligibility/fee guards, window pairing and the
+ * notice-issue-date provenance. Whatever produced the object (server
+ * validateAnswer or a recorded answer), the platform's output is decided HERE.
+ */
+export function postProcessExtraction(
+  parsed: Record<string, unknown>,
+  opts: AllowedOptions,
+  sourceText: string,
+  year: number,
+  /** S2.2a: the record's CURRENT selection model — the proposed one wins when
+   *  it passes validation; otherwise this gates rank/merit-list types. */
+  currentSelectionModel?: string | null,
+): PipelineResult {
   const warnings: string[] = [];
 
   // 2. fields.
@@ -379,6 +403,15 @@ export function runNoticePipeline(
       source_quote: quote,
       confidence: typeof d?.confidence === "number" ? Math.min(1, Math.max(0, d.confidence)) : 0,
     });
+    // Follow-up (S2.10): a date row's quote must be verbatim in the notice, or
+    // the row is FLAGGED — buildReviewRows then refuses to default-accept it.
+    // Checked here (single, pre-merge quote) so the guarantee lives in ONE place.
+    if (quote && !quoteIn(quote, sourceText)) {
+      const made = rows[rows.length - 1];
+      made.flagged = true;
+      made.flagReason = "source quote not found verbatim in the pasted notice";
+      warnings.push(`date "${label}": ${made.flagReason}`);
+    }
   }
 
   // references (S2.6): document references, dates parsed the same way.
@@ -396,4 +429,19 @@ export function runNoticePipeline(
   const paired = pairWindowRows(rows, sourceText, effectiveSelectionModel);
 
   return { fields, rows: paired.rows, references, rejected, warnings, mergedWindows: paired.merged, provenance };
+}
+
+/**
+ * Back-composed entry point: parse a RAW model answer then post-process it.
+ * Behaviour is identical to before the S2.10 split — the golden test keeps
+ * calling this and must stay green untouched.
+ */
+export function runNoticePipeline(
+  rawModelAnswer: string,
+  opts: AllowedOptions,
+  sourceText: string,
+  year: number,
+  currentSelectionModel?: string | null,
+): PipelineResult {
+  return postProcessExtraction(parseNoticeAnswer(rawModelAnswer), opts, sourceText, year, currentSelectionModel);
 }

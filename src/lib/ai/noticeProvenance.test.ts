@@ -10,7 +10,13 @@ import { describe, expect, it } from 'vitest'
 import { buildNoticeAiMetadata } from './noticeProvenance'
 import { buildReviewRows } from '@/components/entrance-exams/noticeReview'
 import type { ReviewRow } from '@/components/entrance-exams/noticeReview'
-import type { StructuredExtraction } from '@/lib/ai/aiFillClient'
+import { postProcessExtraction } from './noticePipeline'
+import type { AllowedOptions } from './extractionContract'
+
+const allowed: AllowedOptions = {
+  categories: [], regions: [], entityTypes: ['exam', 'university-admission'],
+  selectionModels: ['written-exam', 'merit-based', 'interview-based', 'internal-admission'],
+}
 
 const row = (over: Partial<ReviewRow>): ReviewRow => ({
   id: 'x', label: 'X', kind: 'field', current: '', proposed: 'p',
@@ -22,7 +28,7 @@ describe('buildNoticeAiMetadata — the a1 convention (S2.6)', () => {
     sourceType: 'pasted_text',
     noticeReference: 'डीएलएड 2026 / 530-5603 / 2026-27',
     provider: 'groq', model: 'llama-3.3-70b-versatile', template: 'NOTICE_EXTRACT_V1',
-    report: { proposed: 2, defaultAccepted: 2, flagged: 0, noFieldYet: 0, lowConfidence: [], missingOptions: [] },
+    report: { proposed: 2, defaultAccepted: 2, flagged: 0, noFieldYet: 0, rejected: 0, mergedWindows: 0, lowConfidence: [], missingOptions: [] },
     issues: [],
     acceptedRows: [row({ id: 'name', proposed: 'UP D.El.Ed Admission 2026', sourceQuote: 'उपलब्धता' })],
     documentReferences: [{ label: 'Counselling notice', date: '2026-08-07', sourceQuote: 'पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026' }],
@@ -52,7 +58,7 @@ describe('buildNoticeAiMetadata — the a1 convention (S2.6)', () => {
     for (let i = 0; i < 12; i++) {
       acc = buildNoticeAiMetadata(acc, {
         sourceType: 'pasted_text', provider: 'p', model: 'm', template: 't',
-        report: { proposed: 0, defaultAccepted: 0, flagged: 0, noFieldYet: 0, lowConfidence: [], missingOptions: [] },
+        report: { proposed: 0, defaultAccepted: 0, flagged: 0, noFieldYet: 0, rejected: 0, mergedWindows: 0, lowConfidence: [], missingOptions: [] },
         issues: [], acceptedRows: [],
       }, `2026-10-06T0${i}:00:00Z`)
     }
@@ -65,20 +71,18 @@ describe('buildNoticeAiMetadata — the a1 convention (S2.6)', () => {
 
 describe('buildReviewRows — referenced notices never become date rows (S2.6)', () => {
   it('a "references" entry becomes a proposal row, not a timeline row', () => {
-    const ext = {
-      content: {
-        fields: {},
-        dates: [],
-        references: [{
-          label: 'Previously published counselling notice',
-          dateText: '07.08.2026',
-          confidence: 0.9,
-          sourceQuote: 'पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026',
-        }],
-      },
-      issues: [], provider: 'groq', model: 'm', template: 'NOTICE_EXTRACT_V1',
-    } as unknown as StructuredExtraction
-    const rows = buildReviewRows(ext, {}, [], 2026)
+    const parsed = {
+      fields: {},
+      dates: [],
+      references: [{
+        label: 'Previously published counselling notice',
+        dateText: '07.08.2026',
+        confidence: 0.9,
+        sourceQuote: 'पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026',
+      }],
+    }
+    const result = postProcessExtraction(parsed as Record<string, unknown>, allowed, 'पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026', 2026)
+    const rows = buildReviewRows(result, {}, [])
     expect(rows).toHaveLength(1)
     const r = rows[0]
     expect(r.kind).toBe('proposal')
