@@ -65,6 +65,11 @@ export interface PipelineResult {
   warnings: string[];
   /** S2.9: "kind: labelA + labelB" for each window pair the net merged. */
   mergedWindows: string[];
+  /** Follow-up 1: the notice's OWN issue date, pulled out of important_dates and
+   *  destined for ai_metadata provenance (ai_metadata.notice.date). Populated
+   *  when a `notification` row equal to the issue date was found to be the
+   *  header / sign-off reference line — NOT a real publication event. */
+  provenance?: { noticeIssueDate?: string; noticeIssueQuote?: string };
 }
 
 /** The structural marker for addressing metadata on UP-style notices. */
@@ -109,6 +114,31 @@ function feeKindFlag(value: string): string | undefined {
     return "counselling fee — no field yet";
   }
   return undefined;
+}
+
+/**
+ * Follow-up 1 — the notice's OWN issue date is provenance, not an important date.
+ * A press-release / addendum carries a reference number and its own date in the
+ * HEADER ("पृ0सं0 …", "क्रमांक …", "Ref/Notice/File No …") and again in the
+ * SIGN-OFF. `exam_derived_status` reads the `notification` type (MIN(date) WHERE
+ * date_type='notification'), so letting the notice's letterhead date become a
+ * notification row would mis-set status. A row is diverted to provenance ONLY
+ * when ALL hold:
+ *   • its kind/type maps to `notification`;
+ *   • its parsed date EQUALS the notice's own issue date (from noticeReference);
+ *   • its source quote IS the header/sign-off reference line (carries the
+ *     reference marker, or is contained in the noticeReference quote).
+ * A genuine "this notification/advertisement was released on <date>" event in
+ * the BODY — different date, or no reference marker in its quote — is a real
+ * notification row and passes through untouched.
+ */
+const REFERENCE_MARKER = /पृ0सं0|पत्रांक|क्रमांक|संx्य|संख्या|\bref\b|\bnotice\s*(?:no|number)\b|\bfile\s*no\b|\bc\.?\s*no\b|\bcr\.?\s*no\b/i;
+
+function noticeIssueDateOf(noticeRef: PipelineField | undefined, year: number): string {
+  if (!noticeRef) return "";
+  const src = (noticeRef.sourceQuote || noticeRef.value || "").trim();
+  if (!src) return "";
+  return parseDateWindow(src, year).date || "";
 }
 
 /**
@@ -285,6 +315,11 @@ export function runNoticePipeline(
   const distStart = distributionStart(sourceText);
   const rows: PipelineDateRow[] = [];
   const rejected: { label: string; reason: string }[] = [];
+  // Follow-up 1: the notice's OWN issue date, so a header/sign-off "notification"
+  // row equal to it can be routed to provenance instead of important_dates.
+  const noticeIssueDate = noticeIssueDateOf(fields.noticeReference, year);
+  const refText = `${fields.noticeReference?.sourceQuote ?? ""} ${fields.noticeReference?.value ?? ""}`.trim();
+  let provenance: PipelineResult["provenance"];
   const rawDates = Array.isArray(parsed.dates) ? (parsed.dates as Record<string, unknown>[]) : [];
   for (const d of rawDates) {
     const label = String(d?.label ?? "").trim();
@@ -311,6 +346,19 @@ export function runNoticePipeline(
     const type = typeForKind(kind, effectiveSelectionModel); // invented model types are DISCARDED
     const modelType = String(d?.type ?? "").trim();
     if (modelType && modelType !== type) warnings.push(`date "${label}": model type "${modelType}" overridden → "${type}" (derived from kind)`);
+    // Follow-up 1: the notice's OWN issue date (its header/sign-off reference
+    // line) is provenance, NOT a status-driving notification row. The view
+    // reads MIN(date) WHERE date_type='notification', so a press-release
+    // issuance date must never become one. Divert ONLY when the row maps to
+    // notification, its date equals the notice's issue date, AND its quote is
+    // the header/sign-off reference line (carries the reference marker or is
+    // the noticeReference line). A body "released on <date>" event stays.
+    if (type === "notification" && noticeIssueDate && win.date === noticeIssueDate
+      && (REFERENCE_MARKER.test(quote) || (refText !== "" && quoteIn(quote, refText)))) {
+      provenance = { noticeIssueDate: win.date, noticeIssueQuote: quote };
+      warnings.push(`date "${label}" ${win.date} is the notice's OWN issue date (header/sign-off) → recorded as provenance, not an important date`);
+      continue;
+    }
     rows.push({
       // SOURCE label kept exactly as the model wrote it — type/kind carry the
       // normalized meaning; nothing the pipeline invented replaces the words.
@@ -347,5 +395,5 @@ export function runNoticePipeline(
   // section) into one row — the model-independent backstop under the rules.
   const paired = pairWindowRows(rows, sourceText, effectiveSelectionModel);
 
-  return { fields, rows: paired.rows, references, rejected, warnings, mergedWindows: paired.merged };
+  return { fields, rows: paired.rows, references, rejected, warnings, mergedWindows: paired.merged, provenance };
 }
