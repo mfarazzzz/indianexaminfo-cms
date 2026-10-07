@@ -89,6 +89,24 @@ const PROVIDER_TIMEOUT_MS = 25_000;
 const MAX_CALLS_PER_5_MIN = 15;
 const MAX_CALLS_PER_DAY = 150;
 
+/**
+ * S2.11 — template-branch reliability.
+ * The NOTICE_EXTRACT_V1 answer is SMALL: the recorded golden answer is ~1075
+ * output tokens and the last live run ~1199 (Devanagari-inflated), well under
+ * 1,300. 8192 was never needed and pushed Groq's per-request token limit over
+ * on long Hindi notices (HTTP 413). Cap the template call at 3000 — >2.4× the
+ * largest answer we have ever recorded, with headroom for a bigger notice, and
+ * far inside the provider's request budget. The LEGACY path is untouched.
+ */
+const TEMPLATE_MAX_OUTPUT_TOKENS = 3000;
+/** One short backoff for a 429 (rate limit) before trying the next provider. */
+const PROVIDER_RETRY_BACKOFF_MS = 2000;
+
+/** Awaited sleep for the 429 backoff. Never longer than PROVIDER_RETRY_BACKOFF_MS. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.min(ms, PROVIDER_RETRY_BACKOFF_MS))));
+}
+
 /** Permissions that unlock AI Fill - checked via current_user_has_permission(). */
 const REQUIRED_PERMISSIONS = ["edit_any_post", "create_exam", "create_post"];
 
@@ -237,8 +255,12 @@ async function resolveProviders(admin: ReturnType<typeof createClient>): Promise
   return out;
 }
 
-/** One provider attempt. Throws Error with a plain message; never includes the key. */
-async function callOne(target: Resolved, prompt: string, jsonMode: boolean, signal: AbortSignal): Promise<string> {
+/** One provider attempt. Throws Error with a plain message (plus .status when
+ *  the provider answered with an HTTP error) so the caller can branch on 413/429.
+ *  `maxTokens` overrides the completion budget — the template path uses a small
+ *  computed cap; the legacy path passes nothing and keeps its old default. */
+async function callOne(target: Resolved, prompt: string, jsonMode: boolean, signal: AbortSignal, maxTokens?: number): Promise<string> {
+  const cap = maxTokens ?? (jsonMode ? 8192 : 4096);
   if (target.kind === "gemini") {
     const url = `${target.baseUrl}/v1beta/models/${encodeURIComponent(target.model)}:generateContent`;
     const res = await fetch(url, {
@@ -249,12 +271,12 @@ async function callOne(target: Resolved, prompt: string, jsonMode: boolean, sign
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: jsonMode ? 0.05 : 0.7,
-          maxOutputTokens: jsonMode ? 8192 : 4096,
+          maxOutputTokens: cap,
           ...(jsonMode ? { responseMimeType: "application/json" } : {}),
         },
       }),
     });
-    if (!res.ok) throw new Error(`${target.provider} returned ${res.status}`);
+    if (!res.ok) throw Object.assign(new Error(`${target.provider} returned ${res.status}`), { status: res.status });
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts
       ?.map((p: { text?: string }) => p?.text ?? "")
@@ -273,11 +295,11 @@ async function callOne(target: Resolved, prompt: string, jsonMode: boolean, sign
       model: target.model,
       messages: [{ role: "user", content: prompt }],
       temperature: jsonMode ? 0.05 : 0.7,
-      max_tokens: jsonMode ? 8192 : 4096,
+      max_tokens: cap,
       ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
     }),
   });
-  if (!res.ok) throw new Error(`${target.provider} returned ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(`${target.provider} returned ${res.status}`), { status: res.status });
   const data = await res.json();
   const text = data?.choices?.[0]?.message?.content ?? "";
   if (!String(text).trim()) throw new Error(`${target.provider} returned no text`);
@@ -374,11 +396,13 @@ Deno.serve(async (req) => {
     const tcontroller = new AbortController();
     const ttimer = setTimeout(() => tcontroller.abort(), PROVIDER_TIMEOUT_MS);
     let tLast = "AI could not read that notice.";
+    const providers = await resolveProviders(admin);
     try {
-      for (const target of await resolveProviders(admin)) {
+      for (let pi = 0; pi < providers.length; pi++) {
+        const target = providers[pi];
         const attemptStart = Date.now();
         try {
-          const content = await callOne(target, prompt, true, tcontroller.signal);
+          const content = await callOne(target, prompt, true, tcontroller.signal, TEMPLATE_MAX_OUTPUT_TOKENS);
           clearTimeout(ttimer);
           // Parse: a non-JSON answer is REPORTED, never returned as empty.
           let parsed: unknown;
@@ -400,6 +424,7 @@ Deno.serve(async (req) => {
           return json({ content: validated.content, issues: validated.issues, provider: target.provider, model: target.model, template: templateName }, 200, cors.headers);
         } catch (err) {
           const aborted = tcontroller.signal.aborted;
+          const status = (err as { status?: number })?.status;
           tLast = aborted ? "timed out" : (err instanceof Error ? err.message : String(err));
           if (aborted) clearTimeout(ttimer);
           await logCall(admin, target.providerId, userId, hash, "error", tLast.slice(0, 500), Date.now() - attemptStart, consumer);
@@ -407,6 +432,11 @@ Deno.serve(async (req) => {
             await admin.from("ai_providers").update({ last_error: tLast.slice(0, 500) }).eq("id", target.providerId);
           }
           if (aborted) break;
+          // 413 (payload too large) and 404 (model routing) → fall through to the
+          // NEXT provider immediately. 429 (rate limit) → one short backoff, then
+          // the next provider. In every case we keep going while a provider is
+          // untried — the 502 below is reached only after ALL of them failed.
+          if (status === 429) await sleep(PROVIDER_RETRY_BACKOFF_MS);
         }
       }
     } finally {
