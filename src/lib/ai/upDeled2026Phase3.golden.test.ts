@@ -207,14 +207,34 @@ describe.skipIf(process.env.LIVE !== "1")("golden: live model run (LIVE=1, after
     const table: { row: string; expected: string; live: string; status: string }[] = [];
     const matched = new Set<number>();
     expected.dates.forEach((e: { label: string; kind: string; date: string; end_date?: string; end_time?: string }, i: number) => {
-      const sameKind = live.rows.filter((r) => r.kind === e.kind);
+      // Reviewer option (a), NARROW: document_verification and admission are
+      // treated as equivalent ONLY for an expected row whose label itself
+      // combines verification AND admission. Even then it counts as ok only if
+      // the live row carries the exact date / end_date / end_time AND there is
+      // NO separate deadline row on the end date (a real split window stays a
+      // failure). Everything else keeps the strict kind-matching rule.
+      const combinedVerificationAdmission = /document\s*verif|verification/i.test(e.label) && /admission/i.test(e.label)
+      const equivalentKinds = combinedVerificationAdmission ? [e.kind, "admission", "document_verification"] : [e.kind]
+      const sameKind = live.rows.filter((r) => equivalentKinds.includes(r.kind))
       if (sameKind.length === 0) { failures.push(`missing row: kind ${e.kind} (expected ${e.label} ${e.date})`); table.push({ row: e.kind, expected: `${e.label} ${e.date}`, live: "—", status: "FAIL" }); return }
-      const exact = sameKind.find((r) => r.date === e.date);
+      let exact = sameKind.find((r) => r.date === e.date && r.kind === e.kind) ?? sameKind.find((r) => r.date === e.date)
+      if (exact && equivalentKinds.length > 1 && exact.kind !== e.kind) {
+        // equivalence path: enforce the full window fields and no split deadline
+        const endOk = (exact.end_date ?? "") === (e.end_date ?? "")
+        const timeOk = (exact.end_time ?? "") === (e.end_time ?? "")
+        const separateDeadline = e.end_date ? live.rows.some((r) => r !== exact && r.date === e.end_date) : false
+        if (!endOk || !timeOk || separateDeadline) {
+          failures.push(`equivalence rejected for ${e.kind}: end_date=${exact.end_date ?? ""}/${e.end_date ?? ""} end_time=${exact.end_time ?? ""}/${e.end_time ?? ""} separateDeadline=${separateDeadline}`)
+          table.push({ row: e.kind, expected: `${e.date}${e.end_date ? "→" + e.end_date : ""}${e.end_time ? " " + e.end_time : ""}`, live: `${exact.date}${exact.end_date ? "→" + exact.end_date : ""}${exact.end_time ? " " + exact.end_time : ""} (${exact.kind})`, status: "FAIL" })
+          matched.add(live.rows.indexOf(exact))
+          return
+        }
+      }
       if (!exact) { failures.push(`wrong date: kind ${e.kind} live=${sameKind.map((r) => r.date).join(",")} expected=${e.date}`); table.push({ row: e.kind, expected: e.date, live: sameKind.map((r) => r.date).join(","), status: "FAIL" }); return }
       matched.add(live.rows.indexOf(exact));
       if (e.end_date && (exact.end_date ?? "") !== e.end_date) failures.push(`wrong end_date: ${e.kind} live=${exact.end_date ?? ""} expected=${e.end_date}`);
       else if (!e.end_date && exact.end_date) failures.push(`extra end_date on ${e.kind}: ${exact.end_date}`);
-      table.push({ row: e.kind, expected: `${e.date}${e.end_date ? "→" + e.end_date : ""}${e.end_time ? " " + e.end_time : ""}`, live: `${exact.date}${exact.end_date ? "→" + exact.end_date : ""}${exact.end_time ? " " + exact.end_time : ""}`, status: "ok" })
+      table.push({ row: e.kind, expected: `${e.date}${e.end_date ? "→" + e.end_date : ""}${e.end_time ? " " + e.end_time : ""}`, live: `${exact.date}${exact.end_date ? "→" + exact.end_date : ""}${exact.end_time ? " " + exact.end_time : ""}${exact.kind !== e.kind ? ` (${exact.kind})` : ""}`, status: "ok" })
     })
     live.rows.forEach((r, i) => { if (!matched.has(i)) flags.push(`extra live row: ${r.kind} ${r.label} ${r.date} (wording/scope difference — not a failure by itself)`) })
     for (const [f, exp] of Object.entries({ categorySlug: expected.categorySlug.value, selectionModel: expected.selectionModel.value }) as [string, string][]) {
