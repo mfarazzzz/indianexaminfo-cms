@@ -24,7 +24,7 @@
  * pins, so the pipeline's guarantees do not depend on which side validated.
  */
 import { resolveOption, type AllowedOptions, type FieldProposal } from "@/lib/ai/extractionContract";
-import { typeForKind, normalizeLabel, TENTATIVE_SIGNALS, type DateEventKind } from "@/lib/dates/normalizeLabel";
+import { typeForKind, normalizeLabel, isStatusWindowType, TENTATIVE_SIGNALS, type DateEventKind } from "@/lib/dates/normalizeLabel";
 import { parseDateWindow } from "@/lib/utils/indianDateParser";
 import { normalizeUrl } from "@/lib/utils";
 
@@ -159,6 +159,12 @@ function pairWindowRows(rows: PipelineDateRow[], sourceText: string, selectionMo
       const isEndPair = base !== "" && cand.kind === `${base}_end`;
       const isSameKindDeadline = cand.kind === keep.kind && (DEADLINE_HINT.test(cand.label) || (rowHasTime(cand) && !rowHasTime(keep)));
       if (!isEndPair && !isSameKindDeadline) continue;
+      // S2.9a: never collapse a window the status view reads the END of. The
+      // view takes app_close from its OWN application_end row (and likewise the
+      // exam/result windows from separate rows), so merging a registration
+      // pair (or any status-read kind) would delete the deadline and break
+      // registration-closed/open. Only view-UNREAD kinds (counselling, other) merge.
+      if (isStatusWindowType(keep.kind, selectionModel) || isStatusWindowType(cand.kind, selectionModel)) continue;
       const open = cand.date >= keep.date ? keep : cand;
       const close = cand.date >= keep.date ? cand : keep;
       if (keep.end_date && close.date <= (keep.end_date || keep.date)) continue; // window already closed later

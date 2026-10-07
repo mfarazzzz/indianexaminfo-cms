@@ -122,6 +122,34 @@ export const KIND_TO_VIEW_TYPE: Record<DateEventKind, string> = {
   other: "other",
 };
 
+/**
+ * S2.9a — VIEW types that `exam_derived_status` actually reads (migration
+ * 20260902122910, re-confirmed against the live definition via
+ * pg_get_viewdef). The view reads ONLY `d->>'date'` — never `end_date` /
+ * `end_time` — and every window's END is taken from its OWN row
+ * (`app_close_confirmed = MAX(date) WHERE date_type = 'application_end'`).
+ * So a kind whose type is in this set MUST keep the legacy TWO-ROW shape:
+ * collapsing a registration window into one row deletes the `application_end`
+ * row and breaks rules 7/8 (registration-closed / registration-open) — the
+ * most common recruitment case. `pairWindowRows` refuses to merge any pair
+ * whose VIEW type is listed here.
+ *
+ * Types the view does NOT read (counselling, other, cutoff, answer_key,
+ * exam_city_intimation, interview, walkin) are safe to merge into one window.
+ * `exam_physical` is excluded: the view reads it only for the postponed
+ * bool_or (a STATE), never as a window end.
+ */
+export const STATUS_DATE_TYPES: ReadonlySet<string> = new Set([
+  "application_start", "application_end", "notification", "admit_card",
+  "result", "merit_list", "exam_written", "exam_practical",
+]);
+
+/** True when a kind's VIEW type drives a status window the view reads the END
+ *  of — such rows must stay split (S2.9a). */
+export function isStatusWindowType(kind: string, selectionModel?: string | null): boolean {
+  return STATUS_DATE_TYPES.has(typeForKind(kind, selectionModel));
+}
+
 /** One pattern → (kind, VIEW type, canonical label, urgency). Order in the
  *  table below is the match order: most specific first. */
 interface KindRule {

@@ -67,3 +67,85 @@ from summary;
 -- "merit_list" to see the pre-gate false 'result-declared' this fix prevents.
 -- Never 'dates-awaited' either way: any confirmed dated row sets
 -- has_confirmed_dates, which is what the VIEW's ELSE branch requires.
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- 3) S2.9a SIMULATION — the ordinary RECRUITMENT application window
+--    (SYNTHETIC sample: "Online application: 01.11.2026 to 30.11.2026 (up to
+--    11:59 PM)"). The window is stored as TWO rows — application_start +
+--    application_end — exactly as the pipeline keeps it (S2.9a never merges a
+--    status-read type). Re-running the VIEW's own cascade over these rows at two
+--    "today" values must give registration-open BEFORE 30 Nov and
+--    registration-closed AFTER it. READ-ONLY; no tables touched.
+-- ── TWO-ROW form (correct) ────────────────────────────────────────────────────
+with rows(d) as (
+  select jsonb_array_elements($$[
+    {"label":"Online application opens","date":"2026-11-01","type":"application_start","kind":"registration_start","state":"confirmed"},
+    {"label":"Online application closes","date":"2026-11-30","end_time":"23:59","type":"application_end","kind":"registration_end","state":"confirmed"}
+  ]$$::jsonb)
+),
+date_rows as (
+  select
+    (d->>'date')::date                              as date_val,
+    coalesce(nullif(d->>'type',''), 'other')        as date_type,
+    coalesce(nullif(d->>'state',''), 'confirmed')   as effective_state
+  from rows
+),
+summary as (
+  select
+    min(date_val) filter (where effective_state='confirmed' and date_type='application_start') as app_open,
+    max(date_val) filter (where effective_state='confirmed' and date_type='application_end')   as app_close
+  from date_rows
+),
+days(today_ist) as (
+  values ('2026-11-15'::date), ('2026-12-05'::date)
+)
+select
+  d.today_ist,
+  s.app_open,
+  s.app_close,
+  case
+    when s.app_close is not null and s.app_close <  d.today_ist then 'registration-closed'
+    when s.app_open is not null and s.app_open <= d.today_ist
+         and s.app_close >= d.today_ist                        then 'registration-open'
+    else 'other-branch'
+  end as derived_status_like_the_view
+from days d cross join summary s
+order by d.today_ist;
+-- Expect: 2026-11-15 → registration-open; 2026-12-05 → registration-closed.
+
+-- ── SINGLE-ROW collapsed form (the S2.9 regression S2.9a prevents) ───────────
+-- Same window, but merged into one application_start row carrying an end_date.
+-- The VIEW reads ONLY d->>'date' and needs a separate application_end ROW for
+-- app_close, so app_close is NULL: the record is 'other-branch' (never
+-- registration-open, never registration-closed) at BOTH dates. This is exactly
+-- why registration must stay two rows.
+with rows(d) as (
+  select jsonb_array_elements($$[
+    {"label":"Online application","date":"2026-11-01","end_date":"2026-11-30","end_time":"23:59","type":"application_start","kind":"registration_start","state":"confirmed"}
+  ]$$::jsonb)
+),
+date_rows as (
+  select (d->>'date')::date                           as date_val,
+         coalesce(nullif(d->>'type',''),'other')      as date_type,
+         coalesce(nullif(d->>'state',''),'confirmed') as effective_state
+  from rows
+),
+summary as (
+  select
+    min(date_val) filter (where effective_state='confirmed' and date_type='application_start') as app_open,
+    max(date_val) filter (where effective_state='confirmed' and date_type='application_end')   as app_close
+  from date_rows
+),
+days(today_ist) as ( values ('2026-11-15'::date), ('2026-12-05'::date) )
+select
+  d.today_ist, s.app_open, s.app_close,
+  case
+    when s.app_close is not null and s.app_close <  d.today_ist then 'registration-closed'
+    when s.app_open is not null and s.app_open <= d.today_ist
+         and s.app_close >= d.today_ist                        then 'registration-open'
+    else 'other-branch'   -- app_close NULL: the collapsed row never closes
+  end as derived_status_like_the_view
+from days d cross join summary s
+order by d.today_ist;
+-- Expect: 'other-branch' at BOTH dates — app_close is NULL — proving the
+-- collapse is the regression and the two-row shape is required.
