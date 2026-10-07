@@ -231,3 +231,57 @@ describe.skipIf(process.env.LIVE !== "1")("golden: live model run (LIVE=1, after
     expect(live.rows.some((r) => r.kind === "institute_lock" && r.date === "2026-10-15")).toBe(true)
   }, 90_000)
 });
+
+// ── SYNTHETIC recruitment LIVE check (D, one run) ─────────────────────────────
+// NOT a real notice. Proves the S2.9a rule end-to-end against v3: an ordinary
+// "Online application: 01.11.2026 to 30.11.2026 (up to 11:59 PM)" yields a
+// separate application_start AND application_end row and the pairing net never
+// merges them (the view reads the deadline from its own application_end row).
+describe.skipIf(process.env.LIVE !== "1")("live: SYNTHETIC recruitment window stays TWO rows", () => {
+  const SYNTH_SRC = [
+    "Online application form submission: 01.11.2026 to 30.11.2026 (up to 11:59 PM).",
+    "Fee payment last date 02.12.2026.",
+  ].join("\n");
+
+  it("v3 returns registration_start + registration_end and the net does not merge", async () => {
+    const { readFileSync } = await import("node:fs");
+    const env = Object.fromEntries(
+      readFileSync(".env", "utf8").split(/\r?\n/).filter((l) => /^[A-Z_]+=/i.test(l)).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()]),
+    );
+    const state = JSON.parse(readFileSync(".auth/cms.json", "utf8")) as { origins?: { localStorage?: { name: string; value: string }[] }[] };
+    let sess: { access_token?: string; refresh_token?: string } = {};
+    for (const o of state.origins ?? []) for (const e of o.localStorage ?? []) {
+      if (e.name.startsWith("sb-")) { try { const v = JSON.parse(e.value); sess = v.current ?? v } catch {} }
+    }
+    if (!sess.access_token) throw new Error("no session in .auth/cms.json");
+    const call = async (tok: string) => fetch(`${env.VITE_SUPABASE_URL}/functions/v1/ai-fill`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ template: "NOTICE_EXTRACT_V1", pillar: "government-exam", consumer: "golden-live-synth", sourceText: SYNTH_SRC }),
+    });
+    let res = await call(sess.access_token);
+    if (res.status === 401 && sess.refresh_token) {
+      const rf = await fetch(`${env.VITE_SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST", headers: { "Content-Type": "application/json", apikey: env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ refresh_token: sess.refresh_token }),
+      });
+      const fresh = await rf.json() as { access_token?: string };
+      if (!fresh.access_token) throw new Error("refresh failed");
+      res = await call(fresh.access_token);
+    }
+    if (!res.ok) throw new Error(`synthetic live call failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+    const wire = await res.json() as { content: { fields: Record<string, unknown>; dates: Record<string, unknown>[]; references?: unknown[] }; provider?: string; model?: string };
+    console.log(`SYNTHETIC ANSWERED BY: ${wire.provider ?? "?"} / ${wire.model ?? "?"}`);
+    const liveRaw = JSON.stringify({ fields: wire.content.fields, dates: wire.content.dates, references: wire.content.references ?? [] });
+    const live = runNoticePipeline(liveRaw, allowed, SYNTH_SRC, 2026);
+    console.log("SYNTHETIC rows:", live.rows.map((r) => `${r.type}/${r.kind} ${r.date}${r.end_date ? "→" + r.end_date : ""}${r.end_time ? " " + r.end_time : ""}`))
+    // The net must NOT merge the registration window.
+    expect(live.mergedWindows).toEqual([])
+    const open = live.rows.find((r) => r.type === "application_start")
+    const close = live.rows.find((r) => r.type === "application_end")
+    expect(open, `no application_start row in ${JSON.stringify(live.rows)}`).toBeTruthy()
+    expect(close, `no application_end row in ${JSON.stringify(live.rows)}`).toBeTruthy()
+    expect(open!.date).toBe("2026-11-01")
+    expect(close!.date).toBe("2026-11-30")
+  }, 90_000)
+});
