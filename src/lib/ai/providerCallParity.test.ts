@@ -62,3 +62,34 @@ describe('ai-fill mirrors providerCall.ts', () => {
     expect(typesSrc).toMatch(/AIProviderName = "[^"]*" \| "openai"/)
   })
 })
+
+describe('S2.12 follow-up — the staff test action is metered and logged', () => {
+  const start = indexSrc.indexOf('action === "test"')
+  const testBlock = indexSrc.slice(start, indexSrc.indexOf('// 4. Rate limit per user', start))
+
+  it('shares the per-user 5-minute ceiling before it calls the provider', () => {
+    expect(testBlock).toContain('testSince5')
+    expect(testBlock).toContain('MAX_CALLS_PER_5_MIN')
+  })
+
+  it('records the outcome under consumer_name "provider-test" via the existing logCall path (all three exits)', () => {
+    expect(testBlock).toContain('"provider-test"')
+    // key-not-configured + success + error each log a row
+    expect((testBlock.match(/await logCall\(/g) || []).length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('logs only safe strings — a fixed note for a missing key, the redacted detail otherwise', () => {
+    expect(testBlock).toContain('"key not configured"')
+    expect(testBlock).toContain('detail.slice(0, 500)')
+    // the key VALUE (the env var) is never passed to logCall
+    expect(testBlock).not.toMatch(/logCall\([^)]*\bkey\b[^)]*\)/)
+  })
+
+  it('provider_status stays free: no provider call, no metering, no log', () => {
+    const psStart = indexSrc.indexOf('action === "provider_status"')
+    const psBlock = indexSrc.slice(psStart, indexSrc.indexOf('action === "test"', psStart))
+    expect(psBlock).not.toContain('logCall')
+    expect(psBlock).not.toContain('MAX_CALLS_PER_5_MIN')
+    expect(psBlock).not.toContain('callOne(')
+  })
+})

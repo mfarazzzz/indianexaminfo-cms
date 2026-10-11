@@ -411,10 +411,26 @@ Deno.serve(async (req) => {
   }
 
   if (action === "test") {
-    // Call exactly ONE provider row — NO fallback. The chain test walks the
-    // whole list; this answers "does THIS provider work right now?".
+    // Call exactly ONE provider row — NO fallback. The chain test walks the whole
+    // list; this answers "does THIS provider work right now?". S2.12 follow-up:
+    // a test makes a real provider call, so it shares the per-user 5-minute
+    // ceiling and is recorded in ai_request_logs under consumer_name
+    // "provider-test" — only the slug, model, latency and the REDACTED error body
+    // are ever stored; no secret value, length or prefix.
     const providerId = typeof body.providerId === "string" ? body.providerId.trim() : "";
     if (!providerId) return json({ error: "A providerId is required to test one provider." }, 400, cors.headers);
+
+    // Same 5-minute budget as generation. The rows logged below count toward it,
+    // so repeated tests are throttled by the same mechanism, across isolates.
+    const testSince5 = new Date(Date.now() - 5 * 60_000).toISOString();
+    const { count: testRecent } = await admin
+      .from("ai_request_logs").select("id", { count: "exact", head: true })
+      .eq("user_id", userId).gte("created_at", testSince5);
+    if ((testRecent ?? 0) >= MAX_CALLS_PER_5_MIN) {
+      return json({ error: "Too many AI requests in the last few minutes. Wait a moment and try again." }, 429, cors.headers);
+    }
+    const testHash = await promptHash(`provider-test:${providerId}`);
+
     const { data: row } = await admin
       .from("ai_providers")
       .select("id, provider, model")
@@ -427,6 +443,8 @@ Deno.serve(async (req) => {
     const baseUrl = baseUrlFor(slug);
     const model = String(row.model ?? "");
     if (!key || !baseUrl) {
+      // Log the outcome (the secret NAME is safe; there is no value to leak).
+      await logCall(admin, String(row.id), userId, testHash, "error", "key not configured", 0, "provider-test");
       // The secret NAME is safe to show (it is not a value) — the owner sets it.
       return json({ ok: false, provider: slug, model, keyConfigured: false, error: `No key configured — set ${secretName ?? "AI_KEY_???"} in Supabase.` }, 200, cors.headers);
     }
@@ -436,11 +454,16 @@ Deno.serve(async (req) => {
     const tTo = setTimeout(() => tCtl.abort(), 15_000);
     try {
       const content = await callOne(target, "Reply with the single word: connected", false, tCtl.signal);
-      return json({ ok: true, provider: slug, model, latencyMs: Date.now() - t0, sample: String(content).trim().slice(0, 60) }, 200, cors.headers);
+      const latency = Date.now() - t0;
+      await logCall(admin, target.providerId, userId, testHash, "success", null, latency, "provider-test");
+      return json({ ok: true, provider: slug, model, latencyMs: latency, sample: String(content).trim().slice(0, 60) }, 200, cors.headers);
     } catch (err) {
+      const latency = Date.now() - t0;
       const bodyTxt = (err as { body?: string })?.body ?? "";
       const msg = err instanceof Error ? err.message : String(err);
-      return json({ ok: false, provider: slug, model, latencyMs: Date.now() - t0, error: bodyTxt ? `${msg}: ${bodyTxt}` : msg }, 200, cors.headers);
+      const detail = bodyTxt ? `${msg}: ${bodyTxt}` : msg;
+      await logCall(admin, target.providerId, userId, testHash, "error", detail.slice(0, 500), latency, "provider-test");
+      return json({ ok: false, provider: slug, model, latencyMs: latency, error: detail }, 200, cors.headers);
     } finally {
       clearTimeout(tTo);
     }
