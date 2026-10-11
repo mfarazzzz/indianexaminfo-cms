@@ -255,13 +255,42 @@ async function resolveProviders(admin: ReturnType<typeof createClient>): Promise
   return out;
 }
 
-/** One provider attempt. Throws Error with a plain message (plus .status when
- *  the provider answered with an HTTP error) so the caller can branch on 413/429.
- *  `maxTokens` overrides the completion budget — the template path uses a small
- *  computed cap; the legacy path passes nothing and keeps its old default. */
+/** Mirror of providerCall.ts redactProviderError (kept identical; a vitest parity
+ *  test compares the two). Strips key-shaped strings, caps at 300 chars. */
+function redactProviderError(raw: string): string {
+  if (!raw) return "";
+  return raw
+    .replace(/Bearer\s+[A-Za-z0-9._\-]+/gi, "Bearer [redacted]")
+    .replace(/x-goog-api-key[^A-Za-z0-9]*[A-Za-z0-9_\-]{6,}/gi, "x-goog-api-key [redacted]")
+    .replace(/(["']?\b(?:api[_-]?key|apiKey|key|token|secret|access[_-]?token|password)\b["']?)\s*[:=]\s*["']?[A-Za-z0-9._\-]{6,}["']?/gi, "$1=[redacted]")
+    .replace(/\b(?:sk|gsk|pk)-[A-Za-z0-9_\-]{12,}\b/g, "[redacted]")
+    .replace(/\b[A-Za-z0-9_\-]{28,}\b/g, "[redacted]")
+    .slice(0, 300);
+}
+
+/** S2.12: read up to 300 chars of a provider error body, REDACTED, for the log.
+ *  The thrown Error.message stays the bare "<provider> returned <status>" so the
+ *  browser-facing text is unchanged; only the extra .body (for ai_request_logs)
+ *  carries the diagnosis. */
+async function readErrorBody(res: Response): Promise<string> {
+  try {
+    return redactProviderError(await res.text());
+  } catch {
+    return "";
+  }
+}
+
+/** One provider attempt. Throws Error with a plain message (plus .status and a
+ *  REDACTED .body when the provider answered with an HTTP error) so the caller
+ *  can branch on 413/429 and log the diagnosis. `maxTokens` overrides the
+ *  completion budget — the template path uses a small computed cap; the legacy
+ *  path passes nothing and keeps its old default. */
 async function callOne(target: Resolved, prompt: string, jsonMode: boolean, signal: AbortSignal, maxTokens?: number): Promise<string> {
   const cap = maxTokens ?? (jsonMode ? 8192 : 4096);
   if (target.kind === "gemini") {
+    // Mirror of providerCall.geminiRequestBody: jsonMode → strict JSON AND
+    // thinkingBudget 0 (a Gemini 2.5 "thinking" model would otherwise spend the
+    // 3000-token template cap on hidden reasoning and truncate the answer).
     const url = `${target.baseUrl}/v1beta/models/${encodeURIComponent(target.model)}:generateContent`;
     const res = await fetch(url, {
       method: "POST",
@@ -272,12 +301,13 @@ async function callOne(target: Resolved, prompt: string, jsonMode: boolean, sign
         generationConfig: {
           temperature: jsonMode ? 0.05 : 0.7,
           maxOutputTokens: cap,
-          ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+          ...(jsonMode ? { responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } } : {}),
         },
       }),
     });
-    if (!res.ok) throw Object.assign(new Error(`${target.provider} returned ${res.status}`), { status: res.status });
+    if (!res.ok) throw Object.assign(new Error(`${target.provider} returned ${res.status}`), { status: res.status, body: await readErrorBody(res) });
     const data = await res.json();
+    // Mirror of providerCall.parseGeminiText.
     const text = data?.candidates?.[0]?.content?.parts
       ?.map((p: { text?: string }) => p?.text ?? "")
       .join("") ?? "";
@@ -299,7 +329,7 @@ async function callOne(target: Resolved, prompt: string, jsonMode: boolean, sign
       ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
     }),
   });
-  if (!res.ok) throw Object.assign(new Error(`${target.provider} returned ${res.status}`), { status: res.status });
+  if (!res.ok) throw Object.assign(new Error(`${target.provider} returned ${res.status}`), { status: res.status, body: await readErrorBody(res) });
   const data = await res.json();
   const text = data?.choices?.[0]?.message?.content ?? "";
   if (!String(text).trim()) throw new Error(`${target.provider} returned no text`);
@@ -349,7 +379,74 @@ Deno.serve(async (req) => {
     return json({ error: "AI Fill needs content-editing rights, which this account does not have." }, 403, cors.headers);
   }
 
-  // 3. Rate limit per user, counted in the database so it survives new isolates.
+  // 3. Input parsed FIRST so the no-cost staff actions below never touch the
+  //    generation rate limit. Two generation shapes: template + legacy prompt.
+  let body: { prompt?: unknown; consumer?: unknown; jsonMode?: unknown; template?: unknown; sourceText?: unknown; pillar?: unknown; action?: unknown; providerId?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: "The request was not valid JSON." }, 400, cors.headers);
+  }
+  const consumer = typeof body.consumer === "string" && body.consumer.trim() ? body.consumer.slice(0, 60) : "ai-fill";
+
+  // 3a. S2.12 — STAFF ACTIONS, gated by the SAME JWT + content-edit permission
+  //     checked above. Neither returns a secret value, length, prefix or hash.
+  const action = typeof body.action === "string" ? body.action.trim().toLowerCase() : "";
+
+  if (action === "provider_status") {
+    // Per enabled row: slug, model, and whether its secret is present — nothing
+    // more. Lets the panel show "Key set" / "Key missing, skipped" truthfully.
+    const { data: rows } = await admin
+      .from("ai_providers")
+      .select("provider, model")
+      .eq("is_enabled", true)
+      .order("priority", { ascending: true });
+    const providers = (rows ?? []).map((r: { provider: string; model: string }) => {
+      const slug = String(r.provider ?? "").toLowerCase();
+      const secretName = SECRET_BY_PROVIDER[slug];
+      const key = secretName ? Deno.env.get(secretName) : undefined;
+      return { provider: slug, model: String(r.model ?? ""), keyConfigured: Boolean(key && key.trim()) };
+    });
+    return json({ providers }, 200, cors.headers);
+  }
+
+  if (action === "test") {
+    // Call exactly ONE provider row — NO fallback. The chain test walks the
+    // whole list; this answers "does THIS provider work right now?".
+    const providerId = typeof body.providerId === "string" ? body.providerId.trim() : "";
+    if (!providerId) return json({ error: "A providerId is required to test one provider." }, 400, cors.headers);
+    const { data: row } = await admin
+      .from("ai_providers")
+      .select("id, provider, model")
+      .eq("id", providerId)
+      .single();
+    if (!row) return json({ error: "No such provider row." }, 404, cors.headers);
+    const slug = String(row.provider ?? "").toLowerCase();
+    const secretName = SECRET_BY_PROVIDER[slug];
+    const key = secretName ? Deno.env.get(secretName) : undefined;
+    const baseUrl = baseUrlFor(slug);
+    const model = String(row.model ?? "");
+    if (!key || !baseUrl) {
+      // The secret NAME is safe to show (it is not a value) — the owner sets it.
+      return json({ ok: false, provider: slug, model, keyConfigured: false, error: `No key configured — set ${secretName ?? "AI_KEY_???"} in Supabase.` }, 200, cors.headers);
+    }
+    const target: Resolved = { kind: slug === "gemini" ? "gemini" : "openai-compatible", provider: slug, model, key, baseUrl, providerId: String(row.id) };
+    const t0 = Date.now();
+    const tCtl = new AbortController();
+    const tTo = setTimeout(() => tCtl.abort(), 15_000);
+    try {
+      const content = await callOne(target, "Reply with the single word: connected", false, tCtl.signal);
+      return json({ ok: true, provider: slug, model, latencyMs: Date.now() - t0, sample: String(content).trim().slice(0, 60) }, 200, cors.headers);
+    } catch (err) {
+      const bodyTxt = (err as { body?: string })?.body ?? "";
+      const msg = err instanceof Error ? err.message : String(err);
+      return json({ ok: false, provider: slug, model, latencyMs: Date.now() - t0, error: bodyTxt ? `${msg}: ${bodyTxt}` : msg }, 200, cors.headers);
+    } finally {
+      clearTimeout(tTo);
+    }
+  }
+
+  // 4. Rate limit per user, counted in the database so it survives new isolates.
   const since5 = new Date(Date.now() - 5 * 60_000).toISOString();
   const sinceDay = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
   const [{ count: recent }, { count: today }] = await Promise.all([
@@ -362,15 +459,6 @@ Deno.serve(async (req) => {
   if ((today ?? 0) >= MAX_CALLS_PER_DAY) {
     return json({ error: "This account has used its AI allowance for today. Ask the admin if you need more." }, 429, cors.headers);
   }
-
-  // 4. Input. Two shapes: the S2.3 template path and the legacy prompt path.
-  let body: { prompt?: unknown; consumer?: unknown; jsonMode?: unknown; template?: unknown; sourceText?: unknown; pillar?: unknown };
-  try {
-    body = await req.json();
-  } catch {
-    return json({ error: "The request was not valid JSON." }, 400, cors.headers);
-  }
-  const consumer = typeof body.consumer === "string" && body.consumer.trim() ? body.consumer.slice(0, 60) : "ai-fill";
 
   const templateName = typeof body.template === "string" ? body.template.trim() : "";
   if (templateName) {
@@ -425,17 +513,24 @@ Deno.serve(async (req) => {
         } catch (err) {
           const aborted = tcontroller.signal.aborted;
           const status = (err as { status?: number })?.status;
+          const body = (err as { body?: string })?.body ?? "";
           tLast = aborted ? "timed out" : (err instanceof Error ? err.message : String(err));
+          // Browser text stays tLast ("<provider> returned <status>"); only the
+          // LOG gains the redacted body so an operator can see WHY it failed.
+          const logDetail = body ? `${tLast}: ${body}` : tLast;
           if (aborted) clearTimeout(ttimer);
-          await logCall(admin, target.providerId, userId, hash, "error", tLast.slice(0, 500), Date.now() - attemptStart, consumer);
+          await logCall(admin, target.providerId, userId, hash, "error", logDetail.slice(0, 500), Date.now() - attemptStart, consumer);
           if (target.providerId) {
-            await admin.from("ai_providers").update({ last_error: tLast.slice(0, 500) }).eq("id", target.providerId);
+            await admin.from("ai_providers").update({ last_error: logDetail.slice(0, 500) }).eq("id", target.providerId);
           }
           if (aborted) break;
           // 413 (payload too large) and 404 (model routing) → fall through to the
           // NEXT provider immediately. 429 (rate limit) → one short backoff, then
           // the next provider. In every case we keep going while a provider is
           // untried — the 502 below is reached only after ALL of them failed.
+          // Gemini maps its errors onto the same codes: bad key → 400/403, rate
+          // limit → 429, oversized → 400, unknown model → 404; every one of these
+          // falls through to the next provider exactly as the Groq cases do.
           if (status === 429) await sleep(PROVIDER_RETRY_BACKOFF_MS);
         }
       }
@@ -490,15 +585,19 @@ Deno.serve(async (req) => {
         return json({ content, provider: target.provider, model: target.model }, 200, cors.headers);
       } catch (err) {
         const aborted = controller.signal.aborted;
+        const body = (err as { body?: string })?.body ?? "";
         lastMessage = aborted ? "timed out" : (err instanceof Error ? err.message : String(err));
+        // S2.12: the browser message is unchanged (still `lastMessage`); only the
+        // audit log gains the REDACTED provider body.
+        const logDetail = body ? `${lastMessage}: ${body}` : lastMessage;
         if (aborted) clearTimeout(timer); // do not let the abort kill the DB writes below
         await admin.from("ai_request_logs").insert({
           provider_id: target.providerId, user_id: userId, prompt_hash: hash,
-          status: "error", error_message: lastMessage.slice(0, 500),
+          status: "error", error_message: logDetail.slice(0, 500),
           latency_ms: Date.now() - attemptStart, consumer_name: consumer,
         });
         if (target.providerId) {
-          await admin.from("ai_providers").update({ last_error: lastMessage.slice(0, 500) }).eq("id", target.providerId);
+          await admin.from("ai_providers").update({ last_error: logDetail.slice(0, 500) }).eq("id", target.providerId);
         }
         if (aborted) break; // no point trying the next provider with no time left
       }

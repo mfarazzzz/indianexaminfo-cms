@@ -1,0 +1,64 @@
+/**
+ * S2.12 — the Edge Function mirrors providerCall.ts exactly.
+ *
+ * The Deno function cannot import the client module, so it re-declares the same
+ * request-body literals and the same redactProviderError. This test reads both
+ * source files and fails on drift — the same technique as the SQL↔TS and
+ * templates↔normalizeLabel parity pins.
+ */
+import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+const indexSrc = readFileSync(resolve(__dirname, '../../../supabase/functions/ai-fill/index.ts'), 'utf8')
+const callSrc = readFileSync(resolve(__dirname, './providerCall.ts'), 'utf8')
+
+const redactBlock = (src: string): string => {
+  const m = src.match(/(?:export\s+)?function redactProviderError[\s\S]*?\n}/)
+  if (!m) throw new Error('redactProviderError not found')
+  // Normalise the module's `export` + leading doc so only the body compares.
+  return m[0]
+    .replace(/export\s+/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+describe('ai-fill mirrors providerCall.ts', () => {
+  it('redactProviderError is byte-identical to the canonical module (ignoring export/whitespace)', () => {
+    expect(redactBlock(indexSrc)).toBe(redactBlock(callSrc))
+  })
+
+  it('the Gemini jsonMode body sets strict JSON AND thinkingBudget 0', () => {
+    expect(indexSrc).toContain('responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 }')
+    expect(indexSrc).toContain('maxOutputTokens: cap')
+  })
+
+  it('the OpenAI-compatible body keeps response_format json_object and max_tokens cap', () => {
+    expect(indexSrc).toContain('response_format: { type: "json_object" }')
+    expect(indexSrc).toContain('max_tokens: cap')
+  })
+
+  it('the staff actions exist and expose ONLY keyConfigured (never a key value)', () => {
+    expect(indexSrc).toMatch(/action === "provider_status"/)
+    expect(indexSrc).toMatch(/action === "test"/)
+    expect(indexSrc).toContain('keyConfigured: Boolean(key && key.trim())')
+    // Within the provider_status block the only key-derived field is the boolean.
+    const start = indexSrc.indexOf('action === "provider_status"')
+    const block = indexSrc.slice(start, indexSrc.indexOf('return json({ providers }', start))
+    expect(block).toContain('keyConfigured')
+    expect(block).not.toMatch(/\bkey: /) // never a `key:` in the returned object
+  })
+
+  it('the error body reaches the LOG but the browser message stays the bare status line', () => {
+    expect(indexSrc).toContain('const logDetail = body ? `${tLast}: ${body}` : tLast')
+    // the 502 shown to the browser uses tLast (unchanged), not logDetail
+    expect(indexSrc).toContain('`AI could not read the notice (${tLast}). Nothing was filled in.`')
+  })
+
+  it('openai is a known slug on both sides (types + secret/base maps in the function)', () => {
+    expect(indexSrc).toContain('openai: "AI_KEY_OPENAI"')
+    expect(indexSrc).toContain('openai: "https://api.openai.com/v1"')
+    const typesSrc = readFileSync(resolve(__dirname, '../../../src/types/aiProvider.ts'), 'utf8')
+    expect(typesSrc).toMatch(/AIProviderName = "[^"]*" \| "openai"/)
+  })
+})

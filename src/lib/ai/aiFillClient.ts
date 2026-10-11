@@ -149,3 +149,34 @@ export async function generateStructured(
     template: typeof res.template === "string" ? res.template : template,
   };
 }
+
+/** S2.12 — one enabled provider row as seen by the Edge Function. Only a
+ *  keyConfigured BOOLEAN crosses the wire — never a value, length or prefix. */
+export interface ProviderStatus { provider: string; model: string; keyConfigured: boolean }
+
+/** Ask ai-fill which enabled rows have their secret set (staff-only, same JWT). */
+export async function providerStatus(): Promise<ProviderStatus[]> {
+  const { data, error } = await db.functions.invoke("ai-fill", { body: { action: "provider_status" } });
+  if (error) throw new AIFillError((await messageFrom(error)) ?? "Could not read provider status.");
+  const res = data as { providers?: ProviderStatus[]; error?: unknown } | null;
+  if (res && typeof res.error === "string" && res.error.trim()) throw new AIFillError(res.error);
+  return Array.isArray(res?.providers) ? res!.providers! : [];
+}
+
+/** Result of testing ONE provider (no fallback). */
+export interface ProviderTestResult {
+  ok: boolean; provider: string; model: string;
+  keyConfigured?: boolean; latencyMs?: number; sample?: string; error?: string;
+}
+
+/** Test exactly one provider row through ai-fill's `test` action — no fallback,
+ *  so a red badge means THIS provider, not "the first one in the chain". */
+export async function testProvider(providerId: string): Promise<ProviderTestResult> {
+  const { data, error } = await db.functions.invoke("ai-fill", { body: { action: "test", providerId } });
+  if (error) throw new AIFillError((await messageFrom(error)) ?? "Could not test the provider.");
+  const res = data as (ProviderTestResult & { error?: unknown }) | null;
+  if (!res || typeof res.ok !== "boolean") {
+    throw new AIFillError(res && typeof res.error === "string" ? res.error : "Unexpected test response.");
+  }
+  return res;
+}

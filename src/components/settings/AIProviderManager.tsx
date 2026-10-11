@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2, TestTube2, Loader2, Edit2, Power, AlertCircle, CheckCircle, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { getAllProviders, createProvider, updateProvider, deleteProvider, updateProviderPriorities, getRecentLogs } from "@/services/aiProviderService";
-import { generateTextWithProvider } from "@/lib/ai/aiFillClient";
+import { generateTextWithProvider, providerStatus, testProvider } from "@/lib/ai/aiFillClient";
 import type { AIProvider, AIProviderInsert, AIProviderName, AIRequestLog } from "@/types/aiProvider";
 import { PROVIDER_LABELS, PROVIDER_MODELS } from "@/types/aiProvider";
 import { getErrorMessage } from "@/lib/utils";
@@ -29,6 +29,9 @@ export function AIProviderManager() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+  // provider slug -> its secret is present (from ai-fill provider_status). null = not loaded yet.
+  const [keyStatus, setKeyStatus] = useState<Record<string, boolean> | null>(null);
+  const [testingRowId, setTestingRowId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -37,6 +40,10 @@ export function AIProviderManager() {
       setLogs(recentLogs);
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setLoading(false); }
+    // Key presence comes from the Edge Function (only it can see the secrets).
+    // Best-effort: an older deployed function without the action must not break
+    // this screen — the badges just stay hidden until v4 is live.
+    try { const st = await providerStatus(); const m: Record<string, boolean> = {}; for (const s of st) m[s.provider] = s.keyConfigured; setKeyStatus(m); } catch { setKeyStatus(null); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -72,6 +79,18 @@ export function AIProviderManager() {
       toast.error(getErrorMessage(err));
       await load();
     } finally { setTesting(false); }
+  };
+
+  // S2.12: test THIS row only — no fallback — so a failure means this provider,
+  // not "the first provider the chain happened to reach".
+  const handleTestOne = async (id: string) => {
+    setTestingRowId(id);
+    try {
+      const r = await testProvider(id);
+      if (r.ok) toast.success(`${r.provider} / ${r.model} responded in ${r.latencyMs}ms${r.sample ? ` (“${r.sample}”)` : ""}`);
+      else toast.error(`${r.provider} / ${r.model}: ${r.error ?? "test failed"}`);
+    } catch (err) { toast.error(getErrorMessage(err)); }
+    finally { setTestingRowId(null); await load(); }
   };
 
   const handleMoveUp = async (index: number) => {
@@ -116,12 +135,11 @@ export function AIProviderManager() {
       <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
         <KeyRound size={14} className="mt-0.5 shrink-0" />
         <div>
-          API keys are stored as Supabase Edge Function secrets, not in this app. The
-          server reads them only while making the call, so no key appears in the CMS,
-          its build or this screen. Ask the admin to set{" "}
-          <span className="font-mono">{secretNameFor("groq")}</span>{" "}
-          (and one per extra provider you enable) in the Supabase dashboard.
-          A provider whose secret is not set is skipped.
+          The secret NAME each provider needs is shown beside it (for example
+          <span className="font-mono"> {secretNameFor("groq")}</span>). The owner sets
+          that secret in the Supabase dashboard — the CMS never shows or stores the
+          value, only whether the server can see it. A provider whose secret is not
+          set is skipped, even if it is enabled and first in priority.
         </div>
       </div>
 
@@ -129,6 +147,16 @@ export function AIProviderManager() {
       <div className="text-xs text-slate-500">
         {providers.filter((p) => p.isEnabled).length} enabled / {providers.length} total
       </div>
+
+      {/* S2.12: warn loudly if the server would fall back to none — every enabled
+          row's secret is missing. (keyStatus is null until ai-fill v4 is live.) */}
+      {keyStatus && providers.some((p) => p.isEnabled) && !providers.some((p) => p.isEnabled && keyStatus[p.provider]) && (
+        <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800" data-testid="ai-no-key-warning">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+          <div>No enabled provider has a key set, so AI Fill cannot run. Set the secret
+            named next to a provider (for example <span className="font-mono">{secretNameFor("groq")}</span>) in the Supabase dashboard.</div>
+        </div>
+      )}
 
       {/* Provider list */}
       <div className="space-y-2">
@@ -153,6 +181,13 @@ export function AIProviderManager() {
                 "bg-pink-100 text-pink-700"
               }`}>{PROVIDER_LABELS[p.provider]}</span>
 
+              {/* S2.12: key presence, straight from the Edge Function. Only shown
+                  once provider_status has answered (ai-fill v4+). */}
+              {keyStatus && (keyStatus[p.provider]
+                ? <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700" data-testid={`ai-key-set-${p.id}`}>Key set</span>
+                : <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-red-100 text-red-700" data-testid={`ai-key-missing-${p.id}`} title={`Set ${secretNameFor(p.provider)} in Supabase`}>Key missing{p.isEnabled ? ", skipped" : ""}</span>
+              )}
+
               {/* Label + secret name */}
               <div className="flex-1 min-w-0">
                 <span className="text-sm font-medium text-slate-700">{p.label}</span>
@@ -170,6 +205,11 @@ export function AIProviderManager() {
               ) : null}
 
               {/* Actions */}
+              <button onClick={() => handleTestOne(p.id)} disabled={testingRowId === p.id}
+                title="Test this provider only (no fallback)"
+                className="p-1.5 rounded text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                {testingRowId === p.id ? <Loader2 size={14} className="animate-spin" /> : <TestTube2 size={14} />}
+              </button>
               <button onClick={() => handleToggle(p.id, !p.isEnabled)} title={p.isEnabled ? "Disable" : "Enable"}
                 className={`p-1.5 rounded ${p.isEnabled ? "text-green-600 hover:bg-green-50" : "text-slate-400 hover:bg-slate-100"}`}>
                 <Power size={14} />

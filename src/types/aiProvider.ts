@@ -8,7 +8,7 @@
  * dropped by supabase/proposed/settings_allow_list_and_key_removal.sql.
  */
 
-export type AIProviderName = "groq" | "gemini" | "cerebras" | "mistral" | "openrouter";
+export type AIProviderName = "groq" | "openai" | "gemini" | "cerebras" | "mistral" | "openrouter";
 
 export interface AIProvider {
   id: string;
@@ -52,6 +52,7 @@ export interface AIRequestLog {
 
 export const PROVIDER_LABELS: Record<AIProviderName, string> = {
   groq: "Groq",
+  openai: "OpenAI",
   gemini: "Google Gemini",
   cerebras: "Cerebras",
   mistral: "Mistral",
@@ -64,6 +65,12 @@ export const PROVIDER_MODELS: Record<AIProviderName, { value: string; label: str
     { value: "openai/gpt-oss-20b", label: "GPT-OSS 20B (Fast)" },
     { value: "qwen/qwen3.6-27b", label: "Qwen 3.6 27B" },
     { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout" },
+  ],
+  openai: [
+    { value: "gpt-4o", label: "GPT-4o" },
+    { value: "gpt-4o-mini", label: "GPT-4o mini" },
+    { value: "gpt-4.1", label: "GPT-4.1" },
+    { value: "o4-mini", label: "o4-mini (reasoning)" },
   ],
   gemini: [
     { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
