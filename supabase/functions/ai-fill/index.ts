@@ -140,6 +140,40 @@ function baseUrlFor(slug: string): string {
   return base;
 }
 
+/** Model-list fetch guard (S2.13b): a directory call must not hang the panel. */
+const MODEL_LIST_TIMEOUT_MS = 15000;
+
+// Mirrors src/lib/ai/providerCall.ts (modelsEndpoint + parseModelList) — kept in
+// sync by providerCallParity.test.ts. Gemini ids arrive as "models/<id>" and are
+// stripped; only {id,displayName,supportsGenerate} ever cross the wire (never a
+// key or any other provider field).
+function modelListKind(slug: string): "gemini" | "openai-compatible" {
+  return slug === "gemini" ? "gemini" : "openai-compatible";
+}
+function modelsUrl(baseUrl: string, kind: "gemini" | "openai-compatible"): string {
+  return kind === "gemini" ? `${baseUrl}/v1beta/models` : `${baseUrl}/models`;
+}
+function normalizeModels(
+  kind: "gemini" | "openai-compatible",
+  data: any,
+): { id: string; displayName?: string; supportsGenerate?: boolean }[] {
+  const list = kind === "gemini" ? (data?.models ?? []) : (data?.data ?? data?.models ?? []);
+  const out: { id: string; displayName?: string; supportsGenerate?: boolean }[] = [];
+  for (const m of Array.isArray(list) ? list : []) {
+    if (!m || typeof m !== "object") continue;
+    const raw = String(m.id ?? m.name ?? "");
+    const id = kind === "gemini" ? raw.replace(/^models\//, "") : raw;
+    if (!id) continue;
+    const entry: { id: string; displayName?: string; supportsGenerate?: boolean } = { id };
+    // Gemini `name` is the "models/<id>" path, never a display name; OpenAI-compatible may carry `name`.
+    const dn = kind === "gemini" ? m.displayName : (m.name ?? m.displayName);
+    if (typeof dn === "string" && dn) entry.displayName = dn;
+    if (Array.isArray(m.supportedGenerationMethods)) entry.supportsGenerate = m.supportedGenerationMethods.includes("generateContent");
+    out.push(entry);
+  }
+  return out;
+}
+
 /**
  * F2c: CORS is NOT "*". The origin is checked per request against
  * ALLOWED_ORIGINS; a disallowed browser origin gets no
@@ -466,6 +500,62 @@ Deno.serve(async (req) => {
       return json({ ok: false, provider: slug, model, latencyMs: latency, error: detail }, 200, cors.headers);
     } finally {
       clearTimeout(tTo);
+    }
+  }
+
+  // ── S2.13b: list_models — the panel's hard-coded model dropdown is retired.
+  //    The owner must be able to see the provider's REAL live model ids, so a
+  //    silently retired id (e.g. gemini-2.5-flash) can never break production
+  //    unnoticed. Staff-gated above; metered + logged like provider-test; the
+  //    key never leaves the function and only {id,displayName,supportsGenerate}
+  //    cross the wire. Placed before the legacy rate-limit like provider_status.
+  if (action === "list_models") {
+    const slug = String(body.provider ?? "").trim().toLowerCase();
+    if (!SECRET_BY_PROVIDER[slug]) {
+      return json({ error: "Unknown or unsupported provider; expected one of: groq, gemini, mistral, cerebras, openrouter, openai." }, 400, cors.headers);
+    }
+    // Shared 5-minute ceiling (a directory call is a real network call, so it is
+    // metered — unlike provider_status, which is pure local metadata).
+    const { count: modelsRecent } = await admin
+      .from("ai_request_logs").select("id", { count: "exact", head: true })
+      .eq("user_id", userId).gte("created_at", new Date(Date.now() - 5 * 60_000).toISOString());
+    if ((modelsRecent ?? 0) >= MAX_CALLS_PER_5_MIN) {
+      return json({ error: `Rate limit: ${MAX_CALLS_PER_5_MIN} AI calls per 5 minutes exceeded.` }, 429, cors.headers);
+    }
+    const key = Deno.env.get(SECRET_BY_PROVIDER[slug]) ?? "";
+    const baseUrl = baseUrlFor(slug);
+    if (!key || !baseUrl) {
+      return json({ provider: slug, models: [], keyConfigured: Boolean(key), error: `Provider secret ${SECRET_BY_PROVIDER[slug]} is not set on the server.` }, 200, cors.headers);
+    }
+    const kind = modelListKind(slug);
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), MODEL_LIST_TIMEOUT_MS);
+    const tHash = crypto.randomUUID();
+    const started = Date.now();
+    try {
+      const res = await fetch(modelsUrl(baseUrl, kind), {
+        method: "GET",
+        headers: kind === "gemini" ? { "x-goog-api-key": key } : { "Authorization": `Bearer ${key}` },
+        signal: ctrl.signal,
+      });
+      const latency = Date.now() - started;
+      if (!res.ok) {
+        const bodyTxt = await res.text().catch(() => "");
+        const red = redactProviderError(bodyTxt);
+        const msg = `model list failed: HTTP ${res.status}${red ? ` - ${red}` : ""}`;
+        await logCall(admin, null, userId, tHash, "error", msg.slice(0, 500), latency, "provider-models");
+        return json({ provider: slug, models: [], error: msg }, 200, cors.headers);
+      }
+      const models = normalizeModels(kind, await res.json());
+      await logCall(admin, null, userId, tHash, "success", null, latency, "provider-models");
+      return json({ provider: slug, models }, 200, cors.headers);
+    } catch (err) {
+      const latency = Date.now() - started;
+      const msg = ctrl.signal.aborted ? `model list timed out after ${MODEL_LIST_TIMEOUT_MS / 1000}s` : redactProviderError(String(err));
+      await logCall(admin, null, userId, tHash, "error", msg.slice(0, 500), latency, "provider-models");
+      return json({ provider: slug, models: [], error: msg }, 200, cors.headers);
+    } finally {
+      clearTimeout(to);
     }
   }
 

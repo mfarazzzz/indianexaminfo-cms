@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   geminiRequestBody, openaiChatBody, parseGeminiText, parseOpenaiText, redactProviderError,
+  parseModelList, modelsEndpoint,
 } from './providerCall'
 
 /** A stand-in for ai-fill's callOne Gemini branch, fetch injected. */
@@ -97,5 +98,34 @@ describe('redactProviderError', () => {
     expect(redactProviderError('model_not_found')).toBe('model_not_found')
     expect(redactProviderError('x'.repeat(1000)).length).toBeLessThanOrEqual(300)
     expect(redactProviderError('')).toBe('')
+  })
+})
+
+describe('model list (S2.13b)', () => {
+  it('strips the Gemini models/ prefix and reads generate-support', () => {
+    const data = { models: [
+      { name: 'models/gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
+      { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] },
+    ] }
+    expect(parseModelList('gemini', data)).toEqual([
+      { id: 'gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', supportsGenerate: true },
+      { id: 'gemini-2.5-flash', supportsGenerate: true },
+    ])
+  })
+
+  it('reads OpenAI-compatible {data:[{id}]} and returns ONLY id (drops secret fields)', () => {
+    expect(parseModelList('openai-compatible', { data: [{ id: 'gpt-oss-120b', owned_by: 'groq', secret: 'LEAK' }] }))
+      .toEqual([{ id: 'gpt-oss-120b' }])
+  })
+
+  it('never surfaces a key even if the provider echoes one in the list', () => {
+    const models = parseModelList('openai-compatible', { data: [{ id: 'm', apiKey: 'sk-abcdefghijklmnopqrstuvwxyz0123' }] })
+    expect(JSON.stringify(models)).not.toMatch(/sk-|apiKey|LEAK/)
+    expect(models).toEqual([{ id: 'm' }])
+  })
+
+  it('builds the correct endpoint per kind', () => {
+    expect(modelsEndpoint('https://generativelanguage.googleapis.com', 'gemini')).toBe('https://generativelanguage.googleapis.com/v1beta/models')
+    expect(modelsEndpoint('https://api.groq.com/openai/v1', 'openai-compatible')).toBe('https://api.groq.com/openai/v1/models')
   })
 })

@@ -93,3 +93,32 @@ describe('S2.12 follow-up — the staff test action is metered and logged', () =
     expect(psBlock).not.toContain('callOne(')
   })
 })
+
+describe('model-list mirror (index.ts <-> providerCall.ts) (S2.13b)', () => {
+  it('index.ts carries the Gemini + OpenAI model-list endpoints and the prefix strip', () => {
+    expect(indexSrc).toContain('/v1beta/models')
+    expect(indexSrc).toContain('list_models')
+    // Gemini ids come back as "models/<id>" and MUST be stripped, in both sources.
+    expect(indexSrc).toMatch(/replace\(\/\^models\\\//)
+  })
+
+  it('the canonical builder and the function use the SAME endpoints and prefix strip', () => {
+    // providerCall.ts (browser source) and index.ts (Deno mirror) must agree.
+    for (const src of [callSrc, indexSrc]) {
+      expect(src).toContain('/v1beta/models')
+      expect(src).toMatch(/\/models\b/)
+      expect(src).toMatch(/replace\(\/\^models\\\//)
+    }
+  })
+
+  it('list_models is metered + logged, and never emits a key field', () => {
+    const lmStart = indexSrc.indexOf('action === "list_models"')
+    const lmBlock = indexSrc.slice(lmStart, indexSrc.indexOf('// 4. Rate limit per user', lmStart))
+    expect(lmBlock).toContain('MAX_CALLS_PER_5_MIN')
+    expect(lmBlock).toContain('"provider-models"')
+    expect(lmBlock).toContain('redactProviderError')
+    // Only these response fields are built — no key/apiKey ever appears.
+    expect(lmBlock).not.toMatch(/\bapiKey\b/)
+    expect(lmBlock).not.toMatch(/json\(\{[^}]*\bkey:/)
+  })
+})

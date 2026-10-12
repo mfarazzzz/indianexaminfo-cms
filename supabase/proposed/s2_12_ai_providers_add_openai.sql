@@ -12,6 +12,10 @@
 -- Verified live constraint (read-only, 2026-10-11):
 --   conname ai_providers_provider_check
 --   def     CHECK (provider = ANY (ARRAY['groq','gemini','cerebras','mistral','openrouter']))
+--
+-- Live row counts immediately before applying (re-verified 2026-10-12, read-only):
+--   ai_providers total = 3   groq = 2   gemini = 1   openai = 0
+--   (No existing value is dropped by the new CHECK, so it cannot fail on data.)
 -- ══════════════════════════════════════════════════════════════════════════════
 
 ALTER TABLE public.ai_providers

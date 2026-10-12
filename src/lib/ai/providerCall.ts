@@ -67,6 +67,47 @@ export function parseOpenaiText(data: unknown): string {
   return typeof c === "string" ? c : "";
 }
 
+/** One entry of a provider's live model list. Deliberately minimal — an id plus
+ *  optional display name / generate-support, never anything secret. */
+export interface ModelInfo { id: string; displayName?: string; supportsGenerate?: boolean }
+
+/** The model-list endpoint for a provider kind. Gemini needs the x-goog-api-key
+ *  header; the OpenAI-compatible family needs Authorization. Neither key is here
+ *  — this only builds the URL. baseUrl already excludes a trailing slash. */
+export function modelsEndpoint(baseUrl: string, kind: "gemini" | "openai-compatible"): string {
+  return kind === "gemini" ? `${baseUrl}/v1beta/models` : `${baseUrl}/models`
+}
+
+/**
+ * Normalise a provider's model-list response to ModelInfo[]. Gemini returns
+ * { models: [{ name: "models/<id>", displayName, supportedGenerationMethods }] };
+ * the "models/" prefix is stripped so the id matches what callOne puts in the URL.
+ * OpenAI-compatible returns { data: [{ id }] } (some gateways use { models: [] }).
+ * No provider body field other than these is ever surfaced.
+ */
+export function parseModelList(kind: "gemini" | "openai-compatible", data: unknown): ModelInfo[] {
+  const list: unknown[] =
+    kind === "gemini"
+      ? ((data as any)?.models ?? [])
+      : (((data as any)?.data ?? (data as any)?.models) ?? [])
+  const out: ModelInfo[] = []
+  for (const m of Array.isArray(list) ? list : []) {
+    if (!m || typeof m !== "object") continue
+    const raw = String((m as any).id ?? (m as any).name ?? "")
+    const id = kind === "gemini" ? raw.replace(/^models\//, "") : raw
+    if (!id) continue
+    const entry: ModelInfo = { id }
+    // Gemini's `name` is the "models/<id>" resource path, never a display name —
+    // use its `displayName` field only. OpenAI-compatible may carry a `name`.
+    const dn = kind === "gemini" ? (m as any).displayName : ((m as any).name ?? (m as any).displayName)
+    if (typeof dn === "string" && dn) entry.displayName = dn
+    const methods = (m as any).supportedGenerationMethods
+    if (Array.isArray(methods)) entry.supportsGenerate = methods.includes("generateContent")
+    out.push(entry)
+  }
+  return out
+}
+
 /**
  * Redact anything that looks like a credential from a provider error body before
  * it is logged, then cap at 300 chars. Deliberately aggressive on secret shapes

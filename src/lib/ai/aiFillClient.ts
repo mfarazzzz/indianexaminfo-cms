@@ -180,3 +180,25 @@ export async function testProvider(providerId: string): Promise<ProviderTestResu
   }
   return res;
 }
+
+/** S2.13b — one entry of a provider's live model list. Only these three fields
+ *  ever cross the wire; a key or any other provider field never appears. */
+export interface LiveModel { id: string; displayName?: string; supportsGenerate?: boolean }
+
+/** Fetch a provider's REAL live model ids through ai-fill's `list_models` action
+ *  (staff-only; the secret stays on the server). Returns the list plus an optional
+ *  already-redacted error string (e.g. the secret is not set) — it does not throw
+ *  for a policy-empty result so the panel can show the reason inline. A transport
+ *  failure (no JWT / network) still throws AIFillError. */
+export async function listModels(
+  provider: string,
+): Promise<{ provider: string; models: LiveModel[]; error?: string }> {
+  const { data, error } = await db.functions.invoke("ai-fill", { body: { action: "list_models", provider } });
+  if (error) throw new AIFillError((await messageFrom(error)) ?? "Could not list models.");
+  const res = data as { provider?: string; models?: LiveModel[]; error?: string } | null;
+  return {
+    provider: res?.provider ?? provider,
+    models: Array.isArray(res?.models) ? res!.models! : [],
+    error: typeof res?.error === "string" && res.error.trim() ? res.error : undefined,
+  };
+}

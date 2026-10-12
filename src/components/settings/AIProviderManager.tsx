@@ -9,10 +9,11 @@
  * shows the health board the function writes.
  */
 import React, { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, TestTube2, Loader2, Edit2, Power, AlertCircle, CheckCircle, KeyRound } from "lucide-react";
+import { Plus, Trash2, TestTube2, Loader2, Edit2, Power, AlertCircle, CheckCircle, KeyRound, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { getAllProviders, createProvider, updateProvider, deleteProvider, updateProviderPriorities, getRecentLogs } from "@/services/aiProviderService";
-import { generateTextWithProvider, providerStatus, testProvider } from "@/lib/ai/aiFillClient";
+import { generateTextWithProvider, providerStatus, testProvider, listModels } from "@/lib/ai/aiFillClient";
+import { modelLooksRetired, neverSucceeded, modelSuggestions } from "./providerModelBadges";
 import type { AIProvider, AIProviderInsert, AIProviderName, AIRequestLog } from "@/types/aiProvider";
 import { PROVIDER_LABELS, PROVIDER_MODELS } from "@/types/aiProvider";
 import { getErrorMessage } from "@/lib/utils";
@@ -32,6 +33,32 @@ export function AIProviderManager() {
   // provider slug -> its secret is present (from ai-fill provider_status). null = not loaded yet.
   const [keyStatus, setKeyStatus] = useState<Record<string, boolean> | null>(null);
   const [testingRowId, setTestingRowId] = useState<string | null>(null);
+  // S2.13b: provider slug -> its LIVE model ids (from ai-fill list_models). Absent
+  // = never fetched, so no retired warning is shown for that provider.
+  const [liveModels, setLiveModels] = useState<Record<string, string[]>>({});
+  const [modelsLoading, setModelsLoading] = useState<Record<string, boolean>>({});
+  const [modelsError, setModelsError] = useState<Record<string, string>>({});
+
+  // Fetch a provider's real model list. Best-effort: an older deployed function
+  // without the action returns an error, which we surface per-provider without
+  // breaking the screen.
+  const refreshModels = useCallback(async (provider: string) => {
+    setModelsLoading((m) => ({ ...m, [provider]: true }));
+    try {
+      const r = await listModels(provider);
+      if (r.models.length) {
+        setLiveModels((lm) => ({ ...lm, [provider]: r.models.map((x) => x.id) }));
+        setModelsError((e) => { const { [provider]: _drop, ...rest } = e; return rest; });
+        toast.success(`${r.models.length} live models for ${provider}.`);
+      } else {
+        setModelsError((e) => ({ ...e, [provider]: r.error ?? "no models returned" }));
+      }
+    } catch (err) {
+      setModelsError((e) => ({ ...e, [provider]: getErrorMessage(err) }));
+    } finally {
+      setModelsLoading((m) => ({ ...m, [provider]: false }));
+    }
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -210,8 +237,22 @@ export function AIProviderManager() {
                 <span className="text-xs text-slate-400 ml-2 font-mono">{secretNameFor(p.provider)}</span>
               </div>
 
-              {/* Model */}
-              <span className="text-xs text-slate-500 hidden sm:inline">{p.model}</span>
+              {/* Model + S2.13b honest badges. Retired = the row's model is not in
+                  the last LIVE list we fetched for this provider; never-succeeded
+                  = the health columns show no success yet and a 404/model_not_found. */}
+              <div className="hidden sm:flex flex-col items-end leading-tight">
+                <span className="text-xs text-slate-500 font-mono">{p.model}</span>
+                {liveModels[p.provider] && modelLooksRetired(p.model, liveModels[p.provider]) && (
+                  <span className="text-[10px] text-amber-700" data-testid={`ai-model-retired-${p.id}`}>
+                    model not in provider's live list (may be retired)
+                  </span>
+                )}
+                {neverSucceeded(p) && (
+                  <span className="text-[10px] text-red-600" data-testid={`ai-never-succeeded-${p.id}`} title={p.lastError ?? ""}>
+                    never succeeded
+                  </span>
+                )}
+              </div>
 
               {/* Status - written by the Edge Function after real calls */}
               {p.lastError ? (
@@ -229,6 +270,11 @@ export function AIProviderManager() {
               <button onClick={() => handleToggle(p.id, !p.isEnabled)} title={p.isEnabled ? "Disable" : "Enable"}
                 className={`p-1.5 rounded ${p.isEnabled ? "text-green-600 hover:bg-green-50" : "text-slate-400 hover:bg-slate-100"}`}>
                 <Power size={14} />
+              </button>
+              <button onClick={() => refreshModels(p.provider)} disabled={modelsLoading[p.provider]}
+                title="Refresh this provider's live model list"
+                className="p-1.5 rounded text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                {modelsLoading[p.provider] ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               </button>
               <button onClick={() => { setEditingId(p.id); setShowForm(true); }} title="Edit"
                 className="p-1.5 rounded text-slate-500 hover:bg-slate-100">
@@ -275,6 +321,9 @@ export function AIProviderManager() {
       {showForm && (
         <ProviderFormModal
           editing={editingId ? providers.find((p) => p.id === editingId) : undefined}
+          liveModels={liveModels}
+          modelsLoading={modelsLoading}
+          onRefreshModels={(prov) => { void refreshModels(prov); }}
           onSave={async (data) => {
             if (editingId) {
               await updateProvider(editingId, data);
@@ -295,19 +344,34 @@ export function AIProviderManager() {
 
 // ── Add/Edit Form Modal ────────────────────────────────────────────────────
 
-function ProviderFormModal({ editing, onSave, onCancel }: { editing?: AIProvider; onSave: (data: AIProviderInsert) => Promise<void>; onCancel: () => void }) {
+function ProviderFormModal({
+  editing, onSave, onCancel, liveModels, onRefreshModels, modelsLoading,
+}: {
+  editing?: AIProvider;
+  onSave: (data: AIProviderInsert) => Promise<void>;
+  onCancel: () => void;
+  liveModels: Record<string, string[]>;
+  onRefreshModels: (provider: string) => void;
+  modelsLoading: Record<string, boolean>;
+}) {
   const [provider, setProvider] = useState<AIProviderName>(editing?.provider ?? "groq");
   const [label, setLabel] = useState(editing?.label ?? "");
   const [model, setModel] = useState(editing?.model ?? "openai/gpt-oss-120b");
   const [saving, setSaving] = useState(false);
 
-  const models = PROVIDER_MODELS[provider] ?? [];
+  // Suggestions = the provider's LIVE ids when fetched, else the hard-coded map
+  // as a fallback. The owner can type ANY id regardless — this is a combobox, not
+  // a dropdown, so a brand-new model works before the list is ever refreshed.
+  const liveIds = liveModels[provider];
+  const suggestions = modelSuggestions(liveIds, PROVIDER_MODELS[provider] ?? []);
+  const notInLive = modelLooksRetired(model, liveIds);
 
   const handleSubmit = async () => {
     if (!label.trim()) { toast.error("A label is required."); return; }
+    if (!model.trim()) { toast.error("A model id is required."); return; }
     setSaving(true);
     try {
-      await onSave({ provider, label: label.trim(), model });
+      await onSave({ provider, label: label.trim(), model: model.trim() });
     } catch (err) { toast.error(getErrorMessage(err)); }
     finally { setSaving(false); }
   };
@@ -333,10 +397,25 @@ function ProviderFormModal({ editing, onSave, onCancel }: { editing?: AIProvider
 
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Model</label>
-          <select value={model} onChange={(e) => setModel(e.target.value)}
-            className="w-full rounded border border-slate-200 px-3 py-2 text-sm">
-            {models.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
+          <div className="flex gap-2">
+            <input list={`ai-models-${provider}`} value={model} onChange={(e) => setModel(e.target.value)}
+              placeholder="type or pick a model id"
+              className="flex-1 rounded border border-slate-200 px-3 py-2 text-sm font-mono" />
+            <button type="button" onClick={() => onRefreshModels(provider)} disabled={!!modelsLoading[provider]}
+              title="Fetch this provider's live model list"
+              className="flex items-center gap-1 rounded border border-slate-200 px-2 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+              {modelsLoading[provider] ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Live
+            </button>
+          </div>
+          {/* datalist gives free text + suggestions in one control. */}
+          <datalist id={`ai-models-${provider}`}>
+            {suggestions.map((s) => <option key={s} value={s} />)}
+          </datalist>
+          {notInLive && (
+            <p className="text-[11px] text-amber-700 mt-1" data-testid="ai-model-typed-warning">
+              “{model}” is not in the fetched live list — allowed (it may be new), double-check the id.
+            </p>
+          )}
         </div>
 
         <p className="text-[11px] text-slate-500">
