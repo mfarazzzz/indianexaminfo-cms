@@ -1,0 +1,92 @@
+-- ══════════════════════════════════════════════════════════════════════════════
+-- PROPOSED — NOT APPLIED (S2.13 follow-up: exam_editions create fails on a draft)
+--
+-- SYMPTOM. /govt-vacancy/new (and every exam pillar, since draft-on-create) fails
+-- with: 403 code 42501 "new row violates row-level security policy for table
+-- exam_editions". No record is left behind (the create does a compensating delete).
+--
+-- ROOT CAUSE (proven, read-only).
+--   createEntranceExam / addEdition insert the first cycle with
+--     .from("exam_editions").insert({…}).select("*").single()   (entranceExamService.ts 450 & 783)
+--   PostgREST turns that into  INSERT … RETURNING * .  Per PostgREST/Supabase
+--   maintainers (supabase/supabase#7289; PostgREST/postgrest#1844) the RETURNING of
+--   a mutation is evaluated against the table's SELECT policy; a row that the SELECT
+--   policy hides raises 42501 "new row violates row-level security policy" — the same
+--   text as a WITH-CHECK failure, but it is the SELECT side. Reporter proof there:
+--   changing the SELECT policy to USING (true) made the INSERT succeed.
+--   The exam_editions INSERT WITH CHECK itself PASSES for this account
+--   (create_exam AND edit_any_exam are both granted), so the block is purely the
+--   RETURNING SELECT.
+--
+-- WHY exam_editions AND NOT exams. A brand-new exam is workflow_status='draft'
+--   ⇒ is_published = false. The exam insert returns fine because `exams` has a
+--   staff-read policy that ignores publish state; `exam_editions` does NOT.
+--
+-- LIVE STATE (read-only, 2026-10-12, project cwbhhcqsrbuoybeaondk):
+--   exams total = 397, ALL is_published = true (draft exams = 0)
+--   exam_editions total = 399; exams without any edition = 0; draft-parent editions = 0
+--   ⇒ every existing edition has a published parent, so nothing today shows the
+--     "row exists but is hidden" case; that case only ever appears at CREATE time and
+--     is immediately rolled back by the compensating delete — which is why no draft
+--     record can be produced through this path at all.
+--   Simulation as role authenticated (owner 1b7bf398-…, BEGIN READ ONLY…ROLLBACK):
+--     exams_visible = 397 (sees drafts), exam_editions_visible = 399 (only published parents)
+--
+-- SELECT POLICIES (pg_policies, verbatim):
+--   exam_editions            : public_read_exam_editions USING (EXISTS(SELECT 1 FROM exams
+--                                WHERE exams.id=exam_editions.exam_id AND exams.is_published=true))  ONLY
+--   exams                    : public_read_published_exams USING(is_published=true)
+--                              staff_read_all_exams        USING(auth.uid() IS NOT NULL)              <-- staff read
+--   exam_resources           : public_read_exam_resources  + staff_read_all_exam_resources USING(auth.uid() IS NOT NULL)
+--   exam_syllabus            : public_read_exam_syllabus   + staff_read_all_exam_syllabus  USING(auth.uid() IS NOT NULL)
+--   exam_syllabus_subjects   : public_read_exam_syllabus_subjects  ONLY   (same latent gap, lower traffic)
+--   ⇒ exam_editions is the ONE parent-child table missing its staff_read_all_* policy. The
+--     sibling tables already solved exactly this problem; that policy was simply never added
+--     for exam_editions.
+--
+-- FIX: add the missing staff-read on exam_editions, mirroring the three siblings so an
+--   authenticated staff member can SELECT a draft edition (and therefore INSERT…RETURNING
+--   and UPDATE…RETURNING of a draft edition succeed). This also unblocks editing a draft
+--   exam's dates (updateEdition .update().select()) and addEdition on a draft.
+--   No key material, no data change. Reversible (DROP POLICY).
+-- ══════════════════════════════════════════════════════════════════════════════
+
+CREATE POLICY "staff_read_all_exam_editions"
+  ON public.exam_editions AS PERMISSIVE
+  FOR SELECT
+  TO authenticated
+  USING (auth.uid() IS NOT NULL);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ALTERNATIVE (tighter, if the owner prefers not to expose every draft edition to
+-- every logged-in user). Uses ONLY permission slugs that exist on this project —
+-- note there is NO "view_all_exams" permission. The gate mirrors exam_editions' own
+-- INSERT/UPDATE policy, so exactly the users who can write a cycle can read it back:
+--
+--   CREATE POLICY "staff_read_all_exam_editions"
+--     ON public.exam_editions AS PERMISSIVE
+--     FOR SELECT
+--     TO authenticated
+--     USING (
+--       current_user_has_permission('create_exam')
+--       OR current_user_has_permission('edit_any_exam')
+--     );
+--
+-- Trade-off: the mirror-the-siblings version above is the smallest, most consistent
+-- change and matches exams/exam_resources/exam_syllabus (which already let any
+-- authenticated user read drafts); the permission-gated version is stricter but
+-- introduces a vocabulary that its sibling read policies do not use.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- NOT DONE HERE ON PURPOSE: exam_syllabus_subjects has the identical gap
+-- (syllabusService.ts updates it with .select().single()). It is lower-traffic and
+-- not the reported symptom; flag it for the owner, do not widen scope without approval.
+
+-- ── Relation to the other proposal ──────────────────────────────────────────
+-- supabase/proposed/20261012120000_exam_atomic_create_first_cycle.sql (SECURITY
+-- DEFINER create_exam_with_edition RPC) ALSO fixes this symptom — a definer RPC
+-- returns the row under the definer's rights, and makes exam+edition atomic in one
+-- request. That is the more complete change (atomicity + this SELECT gap in one).
+-- THIS one-policy file is the MINIMAL fix for the reported 42501 if the owner wants
+-- the smallest possible, sibling-consistent change without new functions. The two are
+-- alternatives, not cumulative; pick one.
