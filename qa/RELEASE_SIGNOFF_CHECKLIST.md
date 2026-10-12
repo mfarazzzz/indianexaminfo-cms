@@ -45,6 +45,7 @@
 | 3.4 | No pending schema changes | ☐ | |
 | 3.5 | Indexes verified (cms_results, cms_education_news) | ☐ | |
 | 3.6 | Test query executes successfully | ☐ | |
+| 3.7 | **Create-a-draft smoke test** — create ONE draft record in EACH pillar (entrance-exam, government-exam, govt-vacancy, board-exam, university-exam), confirm its first cycle (`exam_editions`) saves with **no** "new row violates row-level security policy for table exam_editions" error, then delete all five | ☐ | Guards the draft-on-create RLS regression that went unnoticed from 2026-10-04 (fixed by migration `20261012142358`) |
 
 ### 4. Security
 
