@@ -93,21 +93,37 @@ export function AIProviderManager() {
     finally { setTestingRowId(null); await load(); }
   };
 
-  const handleMoveUp = async (index: number) => {
-    if (index === 0) return;
-    const newOrder = [...providers];
-    [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
-    setProviders(newOrder);
-    await updateProviderPriorities(newOrder.map((p) => p.id)).catch(() => {});
-  };
+  // Reorder = optimistic flip, then PERSIST. updateProviderPriorities now throws
+  // on any failed write (Supabase returns errors as values, not rejections), so a
+  // silent no-op is impossible: on failure we roll the order back to what it was
+  // and resync to the DB; on success we refetch so the UI shows what the DB holds.
+  const commitOrder = async (next: AIProvider[]) => {
+    const prev = providers
+    setProviders(next)
+    try {
+      await updateProviderPriorities(next.map((p) => p.id))
+      await load()                 // show the DB's truth, not the optimistic order
+      toast.success("Order saved.")
+    } catch (err) {
+      setProviders(prev)           // revert the optimistic flip
+      toast.error(getErrorMessage(err))
+      await load()                 // resync (the write may have half-applied)
+    }
+  }
 
-  const handleMoveDown = async (index: number) => {
-    if (index === providers.length - 1) return;
-    const newOrder = [...providers];
-    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
-    setProviders(newOrder);
-    await updateProviderPriorities(newOrder.map((p) => p.id)).catch(() => {});
-  };
+  const handleMoveUp = (index: number) => {
+    if (index === 0) return
+    const next = [...providers]
+    ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
+    void commitOrder(next)
+  }
+
+  const handleMoveDown = (index: number) => {
+    if (index === providers.length - 1) return
+    const next = [...providers]
+    ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
+    void commitOrder(next)
+  }
 
   if (loading) return <div className="flex justify-center py-8"><Loader2 className="animate-spin text-blue-600" size={20} /></div>;
 

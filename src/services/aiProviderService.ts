@@ -74,9 +74,24 @@ export async function deleteProvider(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Rewrite priorities to match the given id order (1..n). Supabase returns RLS /
+ * write failures as a resolved `{ error }`, NOT a rejection — so the old code
+ * (a bare await, errors ignored) let a failed reorder pass silently, the panel
+ * kept its optimistic order, and a reload showed the DB's unchanged one. Here
+ * every write's error is captured and a real Error is thrown so the caller can
+ * roll back and refetch. No unique index on priority exists, so a straight
+ * rewrite is safe (no half-way swap conflict); the only hazard is an ignored
+ * error, which this removes.
+ */
 export async function updateProviderPriorities(orderedIds: string[]): Promise<void> {
+  const failures: string[] = [];
   for (let i = 0; i < orderedIds.length; i++) {
-    await db.from("ai_providers").update({ priority: i + 1 }).eq("id", orderedIds[i]);
+    const { error } = await db.from("ai_providers").update({ priority: i + 1 }).eq("id", orderedIds[i]);
+    if (error) failures.push(`${orderedIds[i]}: ${error.message}`);
+  }
+  if (failures.length) {
+    throw new Error(`Order not saved (${failures.length}/${orderedIds.length} writes failed): ${failures[0]}`);
   }
 }
 
