@@ -129,3 +129,18 @@ describe('model list (S2.13b)', () => {
     expect(modelsEndpoint('https://api.groq.com/openai/v1', 'openai-compatible')).toBe('https://api.groq.com/openai/v1/models')
   })
 })
+
+describe('gemini thinking config (S2.13c)', () => {
+  it('defaults to thinkingBudget 0 when no override is given', () => {
+    expect(geminiRequestBody('p', true, 3000).generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 })
+  })
+  it('honours an explicit thinkingLevel (Gemini 3 family) instead of a budget', () => {
+    expect(geminiRequestBody('p', true, 3000, { thinkingLevel: 'low' }).generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'low' })
+  })
+  it('omits thinkingConfig entirely when told to (null) — never half-applied', () => {
+    expect(geminiRequestBody('p', true, 3000, null).generationConfig.thinkingConfig).toBeUndefined()
+  })
+  it('keeps strict-JSON responseMimeType alongside a budget override', () => {
+    expect(geminiRequestBody('p', true, 3000, { thinkingBudget: 1024 }).generationConfig.responseMimeType).toBe('application/json')
+  })
+})

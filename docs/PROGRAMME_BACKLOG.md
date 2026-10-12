@@ -178,3 +178,46 @@ These emerged from the investigation and are not simply re-stated claims from th
 ---
 
 **End of Phase 0. Awaiting owner approval of workstream order before any workstream begins.**
+
+---
+
+## Backlog — S2.13(c): valid-JSON-but-wrong-shape answers do NOT trigger provider fallback
+
+**Raised by:** owner, S2.13 part (c). **Status:** documented only, deliberately NOT
+built in S2.13 ("Do NOT build a quality gate in S2.13").
+
+**The gap.** On the template path, `ai-fill` calls a provider, `JSON.parse`s the
+answer and runs `validateAnswer`. A NON-JSON answer is reported (502) and the
+loop already falls through on HTTP 413/404/429/502. But a response that is
+*syntactically valid JSON and passes `validateAnswer`'s structural check* —
+`{ fields: {...}, dates: [...] }` present — yet whose per-row CONTENT is wrong is
+accepted and returned as a 200. Because no error is raised, **the next provider is
+never tried**, so one weak model's malformed-but-parseable output silently becomes
+the extraction the reviewer sees.
+
+**Three wrong shapes actually observed from `openai/gpt-oss-120b` in this session's
+LIVE runs** (each parsed fine and was not rejected by `validateAnswer`):
+
+1. **Split window** — a single application/counselling window emitted as two date
+   rows instead of one window row (a `{kind:..}` duplicated with the two endpoints
+   as separate rows). `parseNoticeAnswer` had to re-merge them (`pairWindowRows`).
+2. **Dropped rows** — the `dates` array omitted an event the notice plainly
+   contained (e.g. `document_verification` / `choice_filling` absent), producing a
+   valid-but-incomplete extraction with no failure signal.
+3. **Wrong kind** — a row carrying a `kind` outside the allowed vocabulary or
+   mis-kinded (the `document_verification` → `admission` class of error). It parses
+   and survives structural validation; only the strict LIVE classifier caught it.
+
+**Why it is not fixed here.** A shape gate that rejects-and-refalls-through needs a
+definition of "required" per notice (which events MUST appear, one-window-vs-two),
+which is a quality gate, not transport reliability, and would change extraction
+*acceptance* behaviour. That is out of S2.13 scope and risks false rejections on
+legitimate short notices.
+
+**Proposed follow-up (a real item, not done).** Add a post-`validateAnswer` shape
+check on the template path that, for a JSON that parses but is materially malformed
+(a `kind` not in the vocabulary; a date row missing `date`; a window split that the
+deterministic merge could not reconcile), throws so the provider loop falls through
+to the next provider — and, if every provider returns a wrong-shape answer, surfaces
+"AI could not read part of the notice" rather than a half-extraction. Keep it a
+TRANSPORT/shape gate, not a content-quality gate.

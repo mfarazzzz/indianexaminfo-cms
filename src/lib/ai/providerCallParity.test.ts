@@ -28,9 +28,22 @@ describe('ai-fill mirrors providerCall.ts', () => {
     expect(redactBlock(indexSrc)).toBe(redactBlock(callSrc))
   })
 
-  it('the Gemini jsonMode body sets strict JSON AND thinkingBudget 0', () => {
-    expect(indexSrc).toContain('responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 }')
+  it('the Gemini jsonMode body sets strict JSON AND an overridable thinking config (default thinkingBudget 0)', () => {
+    // S2.13c: thinkingBudget is no longer hard-coded inline — it comes from
+    // geminiThinking() so the owner can override it (AI_GEMINI_THINKING_BUDGET /
+    // _LEVEL) without a code change, and it is never silently dropped. The default
+    // value (0) is set inside geminiThinking; behaviour is covered in providerCall.test.
+    expect(indexSrc).toContain('responseMimeType: "application/json"')
+    expect(indexSrc).toContain('thinkingConfig')
+    expect(indexSrc).toContain('geminiThinking()')
     expect(indexSrc).toContain('maxOutputTokens: cap')
+    expect(indexSrc).toContain('tc.thinkingBudget = 0')
+  })
+
+  it('the per-provider timeout is env-overridable and applied per attempt (S2.13c)', () => {
+    expect(indexSrc).toContain('timeoutForSlug')
+    expect(indexSrc).toMatch(/AI_TIMEOUT_MS_\$\{slug\.toUpperCase\(\)\}/)
+    expect(indexSrc).toContain('AbortSignal.timeout(target.timeoutMs)')
   })
 
   it('the OpenAI-compatible body keeps response_format json_object and max_tokens cap', () => {

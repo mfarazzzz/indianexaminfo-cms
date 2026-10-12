@@ -16,24 +16,36 @@
  * body). The caller stores only the redacted result.
  */
 
-/** Gemini generationConfig for a text prompt. jsonMode → strict JSON, and
- *  thinkingBudget 0 so a 2.5 "thinking" model does not spend the small output
- *  cap on hidden reasoning and truncate the extraction answer. */
+/** Gemini generationConfig thinking control (S2.13c). Gemini 2.5 "thinking" models
+ *  honour thinkingBudget (0 disables); the Gemini 3 family uses thinkingLevel.
+ *  Overridable, never silently dropped — index.ts resolves it from env. */
+export interface GeminiThinking { thinkingBudget?: number; thinkingLevel?: string }
+
+/** Gemini generationConfig for a text prompt. jsonMode → strict JSON, plus a
+ *  thinking config: the DEFAULT is { thinkingBudget: 0 } (a 2.5 "thinking" model
+ *  must not spend the small output cap on hidden reasoning and truncate the
+ *  extraction answer). Pass `thinking` to override; pass `null` to omit it. */
 export function geminiRequestBody(
   prompt: string,
   jsonMode: boolean,
   cap: number,
+  thinking?: GeminiThinking | null,
 ): { contents: { parts: { text: string }[] }[]; generationConfig: Record<string, unknown> } {
-  return {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: jsonMode ? 0.05 : 0.7,
-      maxOutputTokens: cap,
-      ...(jsonMode
-        ? { responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } }
-        : {}),
-    },
+  const gc: Record<string, unknown> = {
+    temperature: jsonMode ? 0.05 : 0.7,
+    maxOutputTokens: cap,
   };
+  if (jsonMode) gc.responseMimeType = "application/json";
+  if (jsonMode) {
+    const t = thinking === undefined ? { thinkingBudget: 0 } : thinking;
+    if (t) {
+      const tc: GeminiThinking = {};
+      if (typeof t.thinkingBudget === "number") tc.thinkingBudget = t.thinkingBudget;
+      if (typeof t.thinkingLevel === "string" && t.thinkingLevel) tc.thinkingLevel = t.thinkingLevel;
+      if (Object.keys(tc).length) gc.thinkingConfig = tc;
+    }
+  }
+  return { contents: [{ parts: [{ text: prompt }] }], generationConfig: gc };
 }
 
 /** OpenAI-compatible /chat/completions body (groq, openai, mistral, cerebras,

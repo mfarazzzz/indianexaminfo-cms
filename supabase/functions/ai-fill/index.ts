@@ -143,6 +143,43 @@ function baseUrlFor(slug: string): string {
 /** Model-list fetch guard (S2.13b): a directory call must not hang the panel. */
 const MODEL_LIST_TIMEOUT_MS = 15000;
 
+/**
+ * S2.13c: per-provider call timeout. Default stays 25s (PROVIDER_TIMEOUT_MS);
+ * overridable globally via AI_TIMEOUT_MS or per provider via AI_TIMEOUT_MS_<SLUG>
+ * (e.g. AI_TIMEOUT_MS_GEMINI). Measured success p95 is Groq ~6.9s, Gemini ~17.9s,
+ * so 25s is NOT raised blindly — it already exceeds both p95s with headroom; the
+ * knob exists so the owner can tighten Groq or widen Gemini from the dashboard
+ * without a code change. Invalid/blank env falls back to the 25s default.
+ */
+function timeoutForSlug(slug: string): number {
+  const per = Number(Deno.env.get(`AI_TIMEOUT_MS_${slug.toUpperCase()}`));
+  if (Number.isFinite(per) && per > 0) return per;
+  const glob = Number(Deno.env.get("AI_TIMEOUT_MS"));
+  if (Number.isFinite(glob) && glob > 0) return glob;
+  return PROVIDER_TIMEOUT_MS;
+}
+
+/**
+ * S2.13c: the Gemini thinking config, overridable and NEVER silently dropped.
+ * thinkingBudget:0 disables hidden reasoning for Gemini 2.5 "thinking" models so
+ * a 3000-token answer cap is not eaten by reasoning. For the Gemini 3 family the
+ * equivalent knob is thinkingLevel ("low"/"high"/"minimal"); budget may not apply.
+ * We cannot assume which a given id honours, so:
+ *   - AI_GEMINI_THINKING_BUDGET  int  (default 0; set to "-1" to omit)
+ *   - AI_GEMINI_THINKING_LEVEL   str  (unset by default; e.g. "low")
+ * Default yields exactly {thinkingBudget:0} — the previous behaviour, so nothing
+ * changes until the owner sets an override.
+ */
+function geminiThinking(): { thinkingBudget?: number; thinkingLevel?: string } | null {
+  const tc: { thinkingBudget?: number; thinkingLevel?: string } = {};
+  const budgetRaw = Deno.env.get("AI_GEMINI_THINKING_BUDGET");
+  if (budgetRaw === undefined) tc.thinkingBudget = 0; // default: current behaviour
+  else { const b = Number(budgetRaw); if (Number.isFinite(b) && b >= 0) tc.thinkingBudget = b; /* "-1"/blank => omit */ }
+  const level = Deno.env.get("AI_GEMINI_THINKING_LEVEL");
+  if (level && level.trim()) tc.thinkingLevel = level.trim();
+  return Object.keys(tc).length ? tc : null;
+}
+
 // Mirrors src/lib/ai/providerCall.ts (modelsEndpoint + parseModelList) — kept in
 // sync by providerCallParity.test.ts. Gemini ids arrive as "models/<id>" and are
 // stripped; only {id,displayName,supportsGenerate} ever cross the wire (never a
@@ -234,6 +271,10 @@ type Resolved = {
   key: string;
   baseUrl: string;
   providerId: string | null;
+  // S2.13c: per-provider wall-clock budget for ONE attempt (default 25s, settable
+  // per slug by env) so a slow provider times out on its OWN and the next is
+  // tried, instead of one shared ceiling killing the whole chain.
+  timeoutMs: number;
 };
 
 /**
@@ -265,6 +306,7 @@ async function resolveProviders(admin: ReturnType<typeof createClient>): Promise
       key,
       baseUrl,
       providerId: String(row.id),
+      timeoutMs: timeoutForSlug(slug),
     });
   }
 
@@ -283,6 +325,7 @@ async function resolveProviders(admin: ReturnType<typeof createClient>): Promise
         key,
         baseUrl,
         providerId: null,
+        timeoutMs: timeoutForSlug(fallbackSlug),
       });
     }
   }
@@ -321,21 +364,30 @@ async function readErrorBody(res: Response): Promise<string> {
  *  path passes nothing and keeps its old default. */
 async function callOne(target: Resolved, prompt: string, jsonMode: boolean, signal: AbortSignal, maxTokens?: number): Promise<string> {
   const cap = maxTokens ?? (jsonMode ? 8192 : 4096);
+  // S2.13c: each attempt carries its OWN budget (target.timeoutMs, default 25s,
+  // env-settable per provider). A slow provider now aborts by itself so the next
+  // is tried, instead of one shared ceiling killing the chain; `signal` (client
+  // disconnect / overall guard) still composes in.
+  const effSignal = AbortSignal.any([signal, AbortSignal.timeout(target.timeoutMs)]);
   if (target.kind === "gemini") {
-    // Mirror of providerCall.geminiRequestBody: jsonMode → strict JSON AND
-    // thinkingBudget 0 (a Gemini 2.5 "thinking" model would otherwise spend the
-    // 3000-token template cap on hidden reasoning and truncate the answer).
+    // Mirror of providerCall.geminiRequestBody: jsonMode → strict JSON AND an
+    // OVERRIDABLE thinking config (geminiThinking(): default {thinkingBudget:0} so
+    // a Gemini 2.5 "thinking" model does not spend the 3000-token cap on hidden
+    // reasoning; AI_GEMINI_THINKING_BUDGET / AI_GEMINI_THINKING_LEVEL override it,
+    // never silently dropped).
     const url = `${target.baseUrl}/v1beta/models/${encodeURIComponent(target.model)}:generateContent`;
+    const thinking = jsonMode ? geminiThinking() : null;
     const res = await fetch(url, {
       method: "POST",
-      signal,
+      signal: effSignal,
       headers: { "Content-Type": "application/json", "x-goog-api-key": target.key },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: jsonMode ? 0.05 : 0.7,
           maxOutputTokens: cap,
-          ...(jsonMode ? { responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } } : {}),
+          ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+          ...(thinking ? { thinkingConfig: thinking } : {}),
         },
       }),
     });
@@ -351,7 +403,7 @@ async function callOne(target: Resolved, prompt: string, jsonMode: boolean, sign
 
   const res = await fetch(`${target.baseUrl}/chat/completions`, {
     method: "POST",
-    signal,
+    signal: effSignal,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${target.key}` },
     // Mirrors the parameters the browser used, so extraction quality does not move
     // underneath the review screen at the same time as the transport changes.
@@ -482,7 +534,7 @@ Deno.serve(async (req) => {
       // The secret NAME is safe to show (it is not a value) — the owner sets it.
       return json({ ok: false, provider: slug, model, keyConfigured: false, error: `No key configured — set ${secretName ?? "AI_KEY_???"} in Supabase.` }, 200, cors.headers);
     }
-    const target: Resolved = { kind: slug === "gemini" ? "gemini" : "openai-compatible", provider: slug, model, key, baseUrl, providerId: String(row.id) };
+    const target: Resolved = { kind: slug === "gemini" ? "gemini" : "openai-compatible", provider: slug, model, key, baseUrl, providerId: String(row.id), timeoutMs: timeoutForSlug(slug) };
     const t0 = Date.now();
     const tCtl = new AbortController();
     const tTo = setTimeout(() => tCtl.abort(), 15_000);
@@ -595,9 +647,14 @@ Deno.serve(async (req) => {
     const hash = await promptHash(prompt);
     const started = Date.now();
     const tcontroller = new AbortController();
-    const ttimer = setTimeout(() => tcontroller.abort(), PROVIDER_TIMEOUT_MS);
     let tLast = "AI could not read that notice.";
     const providers = await resolveProviders(admin);
+    // S2.13c: per-attempt budgets now live inside callOne (target.timeoutMs), so
+    // this outer timer is only an OVERALL guard = sum of every provider's budget
+    // + the one backoff each may take + slack. A single slow provider can no
+    // longer abort the whole chain; it times out on its own and the next is tried.
+    const overallBudgetMs = providers.reduce((s, p) => s + p.timeoutMs, 0) + PROVIDER_RETRY_BACKOFF_MS * providers.length + 5_000;
+    const ttimer = setTimeout(() => tcontroller.abort(), overallBudgetMs);
     try {
       for (let pi = 0; pi < providers.length; pi++) {
         const target = providers[pi];
@@ -624,10 +681,15 @@ Deno.serve(async (req) => {
           }
           return json({ content: validated.content, issues: validated.issues, provider: target.provider, model: target.model, template: templateName }, 200, cors.headers);
         } catch (err) {
-          const aborted = tcontroller.signal.aborted;
+          const aborted = tcontroller.signal.aborted;              // overall guard / client gone
+          // S2.13c: a per-attempt timeout aborts with a TimeoutError (from
+          // AbortSignal.timeout inside callOne) WITHOUT tripping the outer guard,
+          // so it must fall through to the NEXT provider, not break the chain.
+          const name = (err as { name?: string })?.name;
+          const perAttemptTimeout = !aborted && (name === "TimeoutError" || name === "AbortError");
           const status = (err as { status?: number })?.status;
           const body = (err as { body?: string })?.body ?? "";
-          tLast = aborted ? "timed out" : (err instanceof Error ? err.message : String(err));
+          tLast = aborted || perAttemptTimeout ? "timed out" : (err instanceof Error ? err.message : String(err));
           // Browser text stays tLast ("<provider> returned <status>"); only the
           // LOG gains the redacted body so an operator can see WHY it failed.
           const logDetail = body ? `${tLast}: ${body}` : tLast;
@@ -636,15 +698,16 @@ Deno.serve(async (req) => {
           if (target.providerId) {
             await admin.from("ai_providers").update({ last_error: logDetail.slice(0, 500) }).eq("id", target.providerId);
           }
-          if (aborted) break;
+          if (aborted) break;   // only the overall guard / client disconnect stops the chain
           // 413 (payload too large) and 404 (model routing) → fall through to the
-          // NEXT provider immediately. 429 (rate limit) → one short backoff, then
-          // the next provider. In every case we keep going while a provider is
-          // untried — the 502 below is reached only after ALL of them failed.
+          // NEXT provider immediately. A per-provider timeout also falls through.
+          // 429 (rate limit) → one short backoff, then the next provider. In every
+          // case we keep going while a provider is untried — the 502 below is
+          // reached only after ALL of them failed.
           // Gemini maps its errors onto the same codes: bad key → 400/403, rate
           // limit → 429, oversized → 400, unknown model → 404; every one of these
           // falls through to the next provider exactly as the Groq cases do.
-          if (status === 429) await sleep(PROVIDER_RETRY_BACKOFF_MS);
+          if (status === 429 && !perAttemptTimeout) await sleep(PROVIDER_RETRY_BACKOFF_MS);
         }
       }
     } finally {
