@@ -75,7 +75,10 @@ function canonicalizePhone(v: string): string | null {
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'content-type',
+  // The browser sends apikey + Authorization (non-simple headers) on every
+  // submit, so the OPTIONS preflight MUST list them or the browser blocks the
+  // POST and the reader sees "connection could not reach us". Mirror ai-fill.
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
