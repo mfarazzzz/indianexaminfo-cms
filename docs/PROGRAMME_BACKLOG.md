@@ -221,3 +221,17 @@ deterministic merge could not reconcile), throws so the provider loop falls thro
 to the next provider — and, if every provider returns a wrong-shape answer, surfaces
 "AI could not read part of the notice" rather than a half-extraction. Keep it a
 TRANSPORT/shape gate, not a content-quality gate.
+
+---
+
+## Backlog — `pages` has the same draft-on-create RLS trap that `exam_editions` had (NOT fixed)
+
+**Raised by:** owner, S2.13 follow-up broader sweep. **Status:** documented only, deliberately NOT fixed (owner: "do not touch the pages RLS gap yet").
+
+**Evidence (read-only, 2026-10-12, project cwbhhcqsrbuoybeaondk).**
+- `pg_policies`: `pages` has exactly ONE SELECT policy — `public_read_pages`, roles `{public}`, `USING (status = 'published'::page_status)`. It has **no `staff_read_all_pages` companion**, unlike `exams` / `exam_editions` / `exam_resources` / `exam_syllabus` / `exam_syllabus_subjects`, which all carry a `staff_read_all_* USING (auth.uid() IS NOT NULL)` policy.
+- Writers (`src/services/pageService.ts`): `createPage` does `.insert({ …, status: input.status ?? "draft" }).select().single()` (L29–34) and `updatePage` does `.update(updates).eq("id", id).select().single()` (L47).
+- **Mechanism — the same class we just fixed on `exam_editions`:** PostgREST issues `INSERT … RETURNING *` / `UPDATE … RETURNING *`; the RETURNING representation is filtered by the SELECT policy, and a row it hides raises `42501 "new row violates row-level security policy"` (create) or yields 0 rows so `.single()` errors (update) — a **draft** page (`status != 'published'`) is therefore unreturnable to the editor who just wrote it. Primary sources: supabase/supabase#7289, PostgREST/postgrest#1844. The `exam_editions` instance was fixed by migration `20261012142358` (`staff_read_all_exam_editions`).
+- **Impact:** creating a new CMS page as a draft, or editing one while it is a draft, fails with an RLS error — the same broken create path that sat unnoticed on `exam_editions` from 2026-10-04.
+
+**Proposed fix (later, needs live counts + owner approval — NOT applied here):** mirror the siblings — `CREATE POLICY staff_read_all_pages ON public.pages FOR SELECT TO authenticated USING (auth.uid() IS NOT NULL)`; or the tighter form gated on the existing `manage_pages` permission (that slug is present in `permissions`, group `structure`). Alternative service change (drop `.select()` and re-fetch) would lose the immediate returned row the editor UI needs and still cannot re-read a draft page, so the policy is the correct fix. Count `pages` rows + how many are `status='draft'` before deciding.
