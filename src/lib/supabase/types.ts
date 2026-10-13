@@ -109,8 +109,14 @@ export interface Database {
           updated_at: string;
           created_by: string | null;
           updated_by: string | null;
+          // D-P1 (migration 20261013125113) exam-update columns
+          kind: "provisional" | "final" | "revised" | "corrigendum" | "withdrawn" | null;
+          supersedes_id: string | null;
+          expires_at: string | null;
+          display_order: number;
+          verified_by: string | null;
         };
-        Insert: Omit<Database["public"]["Tables"]["content_posts"]["Row"], "id" | "created_at" | "updated_at">;
+        Insert: Omit<Database["public"]["Tables"]["content_posts"]["Row"], "id" | "created_at" | "updated_at" | "kind" | "supersedes_id" | "expires_at" | "display_order" | "verified_by"> & Partial<Pick<Database["public"]["Tables"]["content_posts"]["Row"], "kind" | "supersedes_id" | "expires_at" | "display_order" | "verified_by">>;
         Update: Partial<Database["public"]["Tables"]["content_posts"]["Insert"]>;
       };
       blog_authors: {
