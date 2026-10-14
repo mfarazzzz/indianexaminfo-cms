@@ -62,6 +62,16 @@ export interface PipelineDateRow {
   flagReason?: string;
 }
 
+/** S2.14b — one post in a vacancy breakdown. `count` null when the source gave
+ *  a post name with no number. */
+export interface PipelineVacancyPost { name: string; count: number | null }
+export interface PipelineVacancy { total: number | null; posts: PipelineVacancyPost[]; quote?: string }
+/** An Important Link whose URL was ATTESTED (present in the pasted text or an
+ *  HTML anchor) — never an invented URL. */
+export interface PipelineLink { label: string; url: string; kind: string }
+/** A relative / to-be-notified exam-stage line. Kept as a NOTE, never a dated row. */
+export interface PipelineNote { text: string; sourceQuote?: string }
+
 export interface PipelineResult {
   fields: Record<string, PipelineField>;
   rows: PipelineDateRow[];
@@ -75,6 +85,11 @@ export interface PipelineResult {
    *  when a `notification` row equal to the issue date was found to be the
    *  header / sign-off reference line — NOT a real publication event. */
   provenance?: { noticeIssueDate?: string; noticeIssueQuote?: string };
+  /** S2.14b — OPTIONAL, only present when the answer carried them. Absent for
+   *  every current (pre-v8) server answer, so existing consumers are unaffected. */
+  vacancy?: PipelineVacancy;
+  importantLinks?: PipelineLink[];
+  notes?: PipelineNote[];
 }
 
 /** The structural marker for addressing metadata on UP-style notices. */
@@ -284,6 +299,93 @@ export function parseNoticeAnswer(rawModelAnswer: string): Record<string, unknow
   return parsed;
 }
 
+// ── S2.14b — tolerant parsing of the OPTIONAL new answer fields ─────────────
+// A pre-v8 answer has none of these → each returns undefined/[] and the result
+// shape is unchanged. A malformed value never throws. Facts only, never invented.
+const LINK_KINDS = new Set(["official", "apply", "notification", "short_notice", "result", "admit_card", "answer_key", "other"]);
+const BAD_URL_SCHEME = /^\s*(javascript|data|vbscript|mailto|tel):/i;
+
+function toIntOrNull(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+  if (typeof v === "string") { const digits = v.replace(/[^\d]/g, ""); if (!digits) return null; const n = parseInt(digits, 10); return Number.isFinite(n) ? n : null; }
+  return null;
+}
+
+/** vacancy: { total, posts[] } OR a bare number/string. Never invents a number. */
+function parseVacancy(raw: unknown): PipelineVacancy | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw === "number" || typeof raw === "string") {
+    const total = toIntOrNull(raw);
+    return total == null ? undefined : { total, posts: [] };
+  }
+  if (typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  const total = toIntOrNull(o.total ?? o.count ?? o.value);
+  const postsRaw = Array.isArray(o.posts) ? o.posts : [];
+  const posts: PipelineVacancyPost[] = postsRaw
+    .map((p): PipelineVacancyPost => {
+      if (p && typeof p === "object") {
+        const q = p as Record<string, unknown>;
+        return { name: String(q.name ?? q.post ?? "").trim(), count: toIntOrNull(q.count ?? q.vacancy ?? q.posts) };
+      }
+      return { name: String(p).trim(), count: null };
+    })
+    .filter((p) => p.name !== "");
+  const quote = typeof o.sourceQuote === "string" && o.sourceQuote.trim() ? o.sourceQuote.trim() : undefined;
+  if (total == null && posts.length === 0) return undefined;
+  return { total, posts, quote };
+}
+
+/** important_links[]: keep only links whose URL is ATTESTED — the URL (or a
+ *  substring) appears in the pasted text OR in an HTML anchor the paste carried.
+ *  javascript:/mailto:/tel: dropped; utm stripped via normalizeUrl; an invented
+ *  URL nowhere in the source is silently discarded (never rendered, never stored). */
+function parseImportantLinks(
+  raw: unknown,
+  sourceText: string,
+  sourceLinks?: { label: string; url: string }[],
+): PipelineLink[] {
+  if (!Array.isArray(raw)) return [];
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+  const t = norm(sourceText);
+  const anchors = (sourceLinks ?? []).map((a) => norm(a.url)).filter(Boolean);
+  const out: PipelineLink[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const label = String(o.label ?? o.name ?? "").trim();
+    const rawUrl = String(o.url ?? "").trim();
+    if (!label || !rawUrl) continue;
+    if (BAD_URL_SCHEME.test(rawUrl)) continue;
+    const u = norm(rawUrl);
+    const attested = t.includes(u) || anchors.some((a) => a === u || a.includes(u) || u.includes(a));
+    if (!attested) continue;
+    let url = rawUrl;
+    try { url = normalizeUrl(rawUrl) || rawUrl; } catch { url = rawUrl; }
+    const kindRaw = String(o.kind ?? "").trim().toLowerCase();
+    out.push({ label, url, kind: LINK_KINDS.has(kindRaw) ? kindRaw : "other" });
+  }
+  return out;
+}
+
+/** notes[]: relative / TBN exam-stage lines. Kept as text (+ optional quote).
+ *  NEVER parsed into a dated row — that is the whole point. */
+function parseNotes(raw: unknown): PipelineNote[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PipelineNote[] = [];
+  for (const n of raw) {
+    if (typeof n === "string") { const text = n.trim(); if (text) out.push({ text }); continue; }
+    if (n && typeof n === "object") {
+      const o = n as Record<string, unknown>;
+      const text = String(o.text ?? o.note ?? o.label ?? "").trim();
+      if (!text) continue;
+      const sourceQuote = typeof o.sourceQuote === "string" && o.sourceQuote.trim() ? o.sourceQuote.trim() : undefined;
+      out.push({ text, sourceQuote });
+    }
+  }
+  return out;
+}
+
 /**
  * STEP 2–7 — OUR deterministic post-processing of an already-parsed extraction.
  * This is the SINGLE authority the editor and the golden test share: option
@@ -300,6 +402,9 @@ export function postProcessExtraction(
   /** S2.2a: the record's CURRENT selection model — the proposed one wins when
    *  it passes validation; otherwise this gates rank/merit-list types. */
   currentSelectionModel?: string | null,
+  /** S2.14b: HTML anchors from the paste (label+url). Used ONLY to attest
+   *  important_links URLs; never rendered. */
+  sourceLinks?: { label: string; url: string }[],
 ): PipelineResult {
   const warnings: string[] = [];
 
@@ -447,7 +552,18 @@ export function postProcessExtraction(
   // section) into one row — the model-independent backstop under the rules.
   const paired = pairWindowRows(rows, sourceText, effectiveSelectionModel);
 
-  return { fields, rows: paired.rows, references, rejected, warnings, mergedWindows: paired.merged, provenance };
+  // S2.14b — OPTIONAL new fields (tolerant; absent → undefined/[]). Included only
+  // when present so a pre-v8 result object is byte-identical to before.
+  const vacancy = parseVacancy(parsed.vacancy);
+  const importantLinks = parseImportantLinks(parsed.important_links, sourceText, sourceLinks);
+  const notes = parseNotes(parsed.notes);
+
+  return {
+    fields, rows: paired.rows, references, rejected, warnings, mergedWindows: paired.merged, provenance,
+    ...(vacancy ? { vacancy } : {}),
+    ...(importantLinks.length ? { importantLinks } : {}),
+    ...(notes.length ? { notes } : {}),
+  };
 }
 
 /**
@@ -461,6 +577,7 @@ export function runNoticePipeline(
   sourceText: string,
   year: number,
   currentSelectionModel?: string | null,
+  sourceLinks?: { label: string; url: string }[],
 ): PipelineResult {
-  return postProcessExtraction(parseNoticeAnswer(rawModelAnswer), opts, sourceText, year, currentSelectionModel);
+  return postProcessExtraction(parseNoticeAnswer(rawModelAnswer), opts, sourceText, year, currentSelectionModel, sourceLinks);
 }
