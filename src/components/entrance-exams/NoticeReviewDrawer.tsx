@@ -120,7 +120,7 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
         )}
 
         {/* S2.10: read-only pipeline output the editor must SEE but never apply */}
-        {(result?.mergedWindows.length || result?.warnings.length || result?.rejected.length || result?.provenance?.noticeIssueDate) ? (
+        {(result?.mergedWindows.length || result?.warnings.length || result?.rejected.length || result?.notes?.length || result?.provenance?.noticeIssueDate) ? (
           <div className="px-4 py-2 border-b border-slate-100 bg-slate-50 space-y-2 text-[11px]">
             {result?.provenance?.noticeIssueDate && (
               <div data-testid="drawer-provenance">
@@ -145,6 +145,14 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
                 <p className="font-semibold text-slate-600">Not used ({result.rejected.length})</p>
                 <ul className="list-disc pl-4 text-rose-700">
                   {result.rejected.map((rj, i) => <li key={i}>{rj.label} — {rj.reason}</li>)}
+                </ul>
+              </div>
+            )}
+            {result && result.notes && result.notes.length > 0 && (
+              <div data-testid="drawer-notes">
+                <p className="font-semibold text-slate-600">Notes ({result.notes.length}) — relative / to-be-notified, kept out of the timeline</p>
+                <ul className="list-disc pl-4 text-slate-500">
+                  {result.notes.map((n, i) => <li key={i}>{n.text}</li>)}
                 </ul>
               </div>
             )}

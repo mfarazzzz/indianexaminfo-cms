@@ -65,6 +65,8 @@ export interface ReviewCurrentValues {
   eligibility?: Record<string, unknown> | null;
   applicationFee?: Record<string, unknown> | null;
   importantDates?: { label: string; date: string }[];
+  /** S2.14b — the editor's `vacancy` form field (a string; parsed to int on save). */
+  vacancy?: string;
 }
 
 /** categories slug → id, resolved at the editor (the DB owns both). `name` is
@@ -194,6 +196,52 @@ export function buildReviewRows(
       noFieldYet: false,
       flagReason: row.flagged ? row.flagReason : undefined,
       row,
+    });
+  });
+
+  // S2.14b — vacancy TOTAL maps to the existing `vacancy` form field (the editor
+  // has one); the post-wise list and Important Links have no form slot yet
+  // (D-P2 / R2.5), so they are reviewable but never auto-applied.
+  if (result.vacancy && result.vacancy.total != null) {
+    const cur = fmt(current.vacancy);
+    rows.push({
+      id: "vacancy",
+      label: "Vacancy (total posts)",
+      kind: "field",
+      current: cur,
+      proposed: String(result.vacancy.total),
+      sourceQuote: result.vacancy.quote ?? "",
+      confidence: 1,
+      defaultAccept: isBlank(cur),
+      noFieldYet: false,
+      formPath: "vacancy",
+      formValue: String(result.vacancy.total),
+    });
+  }
+  (result.vacancy?.posts ?? []).forEach((post, i) => {
+    rows.push({
+      id: `vacancy-post:${i}:${post.name}`,
+      label: `Post — ${post.name}`,
+      kind: "field",
+      current: "",
+      proposed: post.count == null ? "—" : `${post.count} posts`,
+      sourceQuote: "",
+      confidence: 1,
+      defaultAccept: false,
+      noFieldYet: true,
+    });
+  });
+  (result.importantLinks ?? []).forEach((link, i) => {
+    rows.push({
+      id: `link:${i}:${link.label}`,
+      label: `Link — ${link.label}`,
+      kind: "field",
+      current: "",
+      proposed: `${link.url}  (${link.kind})`,
+      sourceQuote: "",
+      confidence: 1,
+      defaultAccept: false,
+      noFieldYet: true,
     });
   });
 
