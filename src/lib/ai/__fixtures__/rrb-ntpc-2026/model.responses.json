@@ -1,0 +1,41 @@
+{
+  "answer": {
+    "fields": {
+      "name": { "value": "RRB NTPC Graduate Level Recruitment 2026 (Advt CEN 06/2026)", "confidence": 0.99, "sourceQuote": "RRB NTPC Graduate Level Recruitment 2026 (Advt CEN 06/2026) Online Form 3548 Posts" },
+      "shortName": { "value": "RRB NTPC 2026", "confidence": 0.95, "sourceQuote": "RRB NTPC Graduate Level Recruitment 2026" },
+      "conductingBody": { "value": "Railway Recruitment Board (RRB)", "confidence": 1, "sourceQuote": "Railway Recruitment Board (RRB)" },
+      "region": { "value": "all-india", "confidence": 0.95, "sourceQuote": "Railway Recruitment Board (RRB) has released" },
+      "categorySlug": { "value": "railways", "confidence": 0.99, "sourceQuote": "Railway Recruitment Board (RRB)" },
+      "entityType": { "value": "recruitment", "confidence": 0.99, "sourceQuote": "notification for the recruitment of Non-Technical Popular Categories" },
+      "selectionModel": { "value": "written-exam", "confidence": 0.9, "sourceQuote": "Admit Card Available: 04 Days Before Exam" },
+      "officialWebsite": { "value": "https://www.rrbcdg.gov.in/", "confidence": 1, "sourceQuote": "Official Website: https://www.rrbcdg.gov.in/" },
+      "fee": { "value": "General / OBC / EWS: ₹ 500/-; SC / ST / EBC / All Category Female: ₹ 250/-", "confidence": 0.99, "sourceQuote": "General / OBC / EWS: ₹ 500/-" },
+      "noticeReference": { "value": "Advt No : CEN 06/2026", "confidence": 1, "sourceQuote": "Advt No : CEN 06/2026" }
+    },
+    "dates": [
+      { "label": "Online Apply Start Date", "dateText": "08 October 2026 (Tentative)", "type": "application_start", "kind": "registration_start", "confidence": 0.95, "sourceQuote": "Online Apply Start Date: 08 October 2026 (Tentative)" },
+      { "label": "Online Apply Last Date", "dateText": "06 November 2026 (Tentative)", "type": "application_end", "kind": "registration_end", "confidence": 0.95, "sourceQuote": "Online Apply Last Date: 06 November 2026 (Tentative)" },
+      { "label": "Last Date for Fee Payment", "dateText": "06 November 2026", "type": "other", "kind": "fee_last_date", "confidence": 0.9, "sourceQuote": "Last Date for Fee Payment: 06 November 2026" }
+    ],
+    "references": [],
+    "vacancy": {
+      "total": 3548,
+      "sourceQuote": "NTPC Graduate Level Posts: 3548 Posts",
+      "posts": [
+        { "name": "Chief Commercial Cum Ticket Supervisor", "count": 127 },
+        { "name": "Goods Train Manager", "count": 2750 },
+        { "name": "Junior Accounts Assistant Cum Typist", "count": 300 },
+        { "name": "Senior Clerk Cum Typist", "count": 371 }
+      ]
+    },
+    "important_links": [
+      { "label": "Apply Online", "url": "https://www.rrbapply.gov.in/ntpc", "kind": "apply" },
+      { "label": "Official Website", "url": "https://www.rrbcdg.gov.in/", "kind": "official" },
+      { "label": "Scholarship Portal", "url": "https://evil.example/not-in-source", "kind": "other" }
+    ],
+    "notes": [
+      { "text": "Exam Date: To be notified later", "sourceQuote": "Exam Date: To be notified later" },
+      { "text": "Admit Card Available: 04 Days Before Exam", "sourceQuote": "Admit Card Available: 04 Days Before Exam" }
+    ]
+  }
+}

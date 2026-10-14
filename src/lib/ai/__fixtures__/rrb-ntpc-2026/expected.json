@@ -1,0 +1,18 @@
+{
+  "dates": [
+    { "label": "Online Apply Start Date", "type": "application_start", "kind": "registration_start", "date": "2026-10-08", "state": "expected", "isUrgent": true },
+    { "label": "Online Apply Last Date", "type": "application_end", "kind": "registration_end", "date": "2026-11-06", "state": "expected", "isUrgent": true },
+    { "label": "Last Date for Fee Payment", "type": "other", "kind": "fee_last_date", "date": "2026-11-06", "state": "confirmed", "isUrgent": true }
+  ],
+  "mergedWindows": [],
+  "vacancy": { "total": 3548, "postCount": 4 },
+  "importantLinks": {
+    "keptUrls": ["https://www.rrbapply.gov.in/ntpc", "https://www.rrbcdg.gov.in/"],
+    "droppedUrl": "https://evil.example/not-in-source"
+  },
+  "notes": {
+    "count": 2,
+    "texts": ["Exam Date: To be notified later", "Admit Card Available: 04 Days Before Exam"]
+  },
+  "noDatedRowKinds": ["exam_written", "admit_card"]
+}
