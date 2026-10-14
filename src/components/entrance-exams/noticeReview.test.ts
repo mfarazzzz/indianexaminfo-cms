@@ -84,6 +84,18 @@ describe('buildReviewRows — default Accept rule (S2.4)', () => {
     expect(cat.defaultAccept).toBe(false)
   })
 
+  it('the category row shows the current category LABEL, not its UUID (S2.14a)', () => {
+    const cats: CategoryLookup[] = [{ slug: 'railways', id: 'cat-rly-uuid', name: 'Railways' }]
+    const rows = buildReviewRows(
+      resultWithFields({ categorySlug: pf('railways', 0.9, 'Railway Recruitment Board') }),
+      { categoryId: 'cat-rly-uuid' } as ReviewCurrentValues,
+      cats,
+    )
+    const cat = rows.find((r) => r.id === 'categorySlug')!
+    expect(cat.current).toBe('Railways')
+    expect(cat.current).not.toContain('uuid')
+  })
+
   it('fee / warnings / contacts / noticeReference appear as flagged rows with no apply target', () => {
     const rows = buildReviewRows(
       resultWithFields({

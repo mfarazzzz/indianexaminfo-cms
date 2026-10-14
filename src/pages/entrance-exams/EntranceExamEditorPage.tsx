@@ -803,7 +803,7 @@ export function EntranceExamEditorPage() {
         year,
         currentVals.selectionModel || null,
       );
-      const rows = buildReviewRows(result, currentVals, categories.map((c) => ({ slug: c.slug, id: c.id })));
+      const rows = buildReviewRows(result, currentVals, categories.map((c) => ({ slug: c.slug, id: c.id, name: c.name })));
 
       // S2.5: on a NEW record, check whether the notice belongs to an exam
       // that already exists — one record per cycle, many notices. The drawer

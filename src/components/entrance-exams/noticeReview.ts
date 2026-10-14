@@ -67,8 +67,9 @@ export interface ReviewCurrentValues {
   importantDates?: { label: string; date: string }[];
 }
 
-/** categories slug → id, resolved at the editor (the DB owns both). */
-export interface CategoryLookup { slug: string; id: string }
+/** categories slug → id, resolved at the editor (the DB owns both). `name` is
+ *  carried so the drawer can show the current category's LABEL, not its UUID. */
+export interface CategoryLookup { slug: string; id: string; name?: string }
 
 const isBlank = (v: unknown): boolean =>
   v === undefined || v === null ||
@@ -150,7 +151,13 @@ export function buildReviewRows(
   const catProposal = fields.categorySlug;
   if (catProposal?.value) {
     const hit = categories.find((c) => c.slug === String(catProposal.value).trim().toLowerCase());
-    pushField("categorySlug", "Category", catProposal, fmt(current.categoryId),
+    // S2.14a: the form stores the category by ID, but a raw UUID on the
+    // "current:" side is meaningless to the editor — resolve id → label.
+    const currentCatId = String(current.categoryId ?? "").trim();
+    const currentCatLabel = currentCatId
+      ? (categories.find((c) => c.id === currentCatId)?.name ?? currentCatId)
+      : "";
+    pushField("categorySlug", "Category", catProposal, currentCatLabel,
       hit ? { formPath: "categoryId", formValue: hit.id } : null, !hit);
   }
 
