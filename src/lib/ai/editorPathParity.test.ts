@@ -91,3 +91,41 @@ describe('editor path — verbatim quote + URL hygiene reach the review (S2.10)'
     expect(date.defaultAccept).toBe(false)
   })
 })
+
+describe('S2.14a — ellipsis-stitched quotes are verified segment by segment', () => {
+  it('a "..."-stitched quote whose every segment is verbatim is NOT flagged', () => {
+    const src = 'Application must be completed before 06 November 2026. Fee payment deadline is also 06 November 2026. Refund only after Stage I.'
+    const result = postProcessExtraction(
+      { fields: { warnings: { value: 'complete before the deadline', confidence: 0.95, sourceQuote: 'Application must be completed before 06 November 2026 ... Fee payment deadline is also 06 November 2026' } }, dates: [] } as Record<string, unknown>,
+      allowed, src, 2026,
+    )
+    expect(result.fields.warnings.flagged).toBe(false)
+  })
+
+  it('the unicode ellipsis "…" is also treated as a segment separator', () => {
+    const src = 'Online Apply Start Date: 08 October 2026 (Tentative) and Online Apply Last Date: 06 November 2026 (Tentative)'
+    const result = postProcessExtraction(
+      { fields: { warnings: { value: 'v', confidence: 0.9, sourceQuote: 'Online Apply Start Date: 08 October 2026 … Online Apply Last Date: 06 November 2026' } }, dates: [] } as Record<string, unknown>,
+      allowed, src, 2026,
+    )
+    expect(result.fields.warnings.flagged).toBe(false)
+  })
+
+  it('a stitched quote with ONE invented segment is STILL flagged', () => {
+    const src = 'Application must be completed before 06 November 2026. Fee payment deadline is also 06 November 2026.'
+    const result = postProcessExtraction(
+      { fields: { warnings: { value: 'x', confidence: 0.95, sourceQuote: 'Application must be completed before 06 November 2026 ... the scholarship amount is ten thousand rupees' } }, dates: [] } as Record<string, unknown>,
+      allowed, src, 2026,
+    )
+    expect(result.fields.warnings.flagged).toBe(true)
+    expect(result.fields.warnings.flagReason).toContain('verbatim')
+  })
+
+  it('a non-ellipsis quote still fails unless it is a contiguous substring (unchanged)', () => {
+    const result = postProcessExtraction(
+      { fields: { warnings: { value: 'x', confidence: 0.95, sourceQuote: 'INVENTED LINE NOT IN NOTICE' } }, dates: [] } as Record<string, unknown>,
+      allowed, 'a notice with no such line', 2026,
+    )
+    expect(result.fields.warnings.flagged).toBe(true)
+  })
+})

@@ -87,11 +87,30 @@ function distributionStart(sourceText: string): number {
   return m && m.index !== undefined ? m.index : -1;
 }
 
-/** Whitespace-normalized containment — quotes vs source (Devanagari-safe). */
+/** Whitespace-normalized containment — quotes vs source (Devanagari-safe).
+ *  S2.14a: the model sometimes STITCHES non-contiguous fragments with an
+ *  ellipsis ("…" or "..."). A whole-quote substring test then fails on a quote
+ *  that is genuinely supported. So split on the ellipsis and require EVERY
+ *  substantive segment (>= 12 non-space chars) to appear verbatim, IN ORDER;
+ *  short connective segments are ignored. When there is no ellipsis (or no
+ *  substantive segment) the ORIGINAL whole-quote containment applies unchanged.
+ *  Nothing is weakened: a single invented segment still fails. */
 function quoteIn(quote: string, text: string): boolean {
-  const q = quote.replace(/\s+/g, " ").trim();
+  const norm = (s: string): string => s.replace(/\s+/g, " ").trim();
+  const t = norm(text);
+  const q = norm(quote);
   if (!q) return false;
-  return text.replace(/\s+/g, " ").includes(q);
+  const MIN_SEGMENT = 12;
+  const segments = q.split(/\.{3,}|…+/).map(norm).filter((s) => s.length > 0);
+  const substantive = segments.filter((s) => s.replace(/\s/g, "").length >= MIN_SEGMENT);
+  if (substantive.length === 0) return t.includes(q); // no real segments → original strict rule
+  let cursor = 0;
+  for (const seg of substantive) {
+    const idx = t.indexOf(seg, cursor);
+    if (idx < 0) return false;
+    cursor = idx + seg.length;
+  }
+  return true;
 }
 
 /** Mistranscription guard (§15.3 pitfall 1): the eligibility quote says
