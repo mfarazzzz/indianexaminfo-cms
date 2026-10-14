@@ -136,6 +136,26 @@ Return ONLY one valid JSON object, exactly this shape:
       "confidence": 0-1,
       "sourceQuote": "the verbatim referring line"
     }
+  ],
+  "vacancy": {
+    "total": "BIG total number of posts/vacancy the notice PRINTS, as an integer, or null if none is printed",
+    "sourceQuote": "verbatim line the total came from",
+    "posts": [
+      { "name": "post/job name exactly as printed", "count": "that post's vacancy as an integer, or null if not printed" }
+    ]
+  },
+  "important_links": [
+    {
+      "label": "link text as printed (e.g. 'Apply Online', 'Official Website')",
+      "url": "the web address EXACTLY as it appears in the text — ONLY if a real address is present; NEVER invent, guess, complete or 'remember' one",
+      "kind": "one of: official, apply, notification, short_notice, result, admit_card, answer_key, other"
+    }
+  ],
+  "notes": [
+    {
+      "text": "an exam-stage line the notice gives WITHOUT an absolute date (e.g. 'Exam Date: To be notified', 'Admit Card: 4 Days Before Exam')",
+      "sourceQuote": "verbatim line"
+    }
   ]
 }
 
@@ -150,6 +170,24 @@ DATE RULES (two-vocabulary contract — the site computes status from "type"):
 - Every date in the notice gets a row — INCLUDE events you have no vocabulary for: use type "other", kind "other", and KEEP the label as written. Dropping a date is the worst failure.
 - A date the notice only REFERS TO as background ("पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026", "vide notice No. … dated …") is NOT an event of THIS notice: put it in "references" (a document reference), NEVER in "dates", never as a "Notification Release" row.
 - An extension of an earlier deadline: kind "extension", keep its label, one row.
+
+VACANCY RULES:
+- "vacancy.total" is the OVERALL posts/vacancy total ONLY if the notice PRINTS a number (e.g. "Total Posts: 3548"). Use null when it does not. NEVER compute or guess a total by adding posts up.
+- "vacancy.posts" is the post-wise breakdown ONLY when the notice lists individual posts ("Goods Train Manager: 2750"). Leave it an empty array when only a total is given. Every name/count must be copied from the text, not invented.
+- "vacancy" is OPTIONAL: omit it entirely when the notice states no vacancy figure at all.
+
+IMPORTANT-LINKS RULES:
+- Only a link whose ADDRESS literally appears in the text may be returned. A label with no address next to it → OMIT the link. A missing link is correct; an invented or guessed URL is a serious failure (the platform will discard it anyway).
+- Copy the URL exactly as printed (the platform cleans tracking parameters itself). Assign the closest "kind".
+- "important_links" is OPTIONAL — an empty array when the notice carries no addresses.
+
+NOTES RULES (relative / to-be-notified lines):
+- An exam-stage line that has NO absolute date — "Exam Date: To be notified later", "Admit Card: 4 Days Before Exam", "Exam City Intimation: 10 Days Before Exam" — goes in "notes" with its verbatim sourceQuote. NEVER put such a line in "dates" (it is not a dated event, and would pollute the status timeline).
+- "notes" is OPTIONAL — an empty array when there are none.
+
+SOURCE HYGIENE (aggregator pages are the expected input):
+- The text may come from a job/aggregator website, not the official PDF. IGNORE all page CHROME — navigation menus, "Trending Now", "Related Posts", comment forms, "Download App"/"Follow us"/social widgets, and the footer. Extract ONLY the notice facts; skip everything that is not part of the notification itself.
+- Do NOT reproduce the page's own descriptive prose. Every field is a FACT backed by a short verbatim "sourceQuote" (evidence of where the fact was read), not sentences to republish. Keep quotes minimal and factual.
 
 NON-CONTENT: distribution lists ("प्रतिलिपि … District Magistrate / banks / DIET …"), salutations and letterhead are ADDRESSING metadata — never extract them into any field.
 
@@ -244,5 +282,74 @@ export function validateAnswer(parsed: unknown, opts: AllowedOptionsServer): { c
     sourceQuote: typeof r?.sourceQuote === "string" ? r.sourceQuote : "",
   })).filter((r: any) => r.label && (r.dateText || r.sourceQuote));
 
-  return { content: { fields, dates, references }, issues };
+  // ── S2.14b — OPTIONAL new fields, tolerant. Included ONLY when present so a
+  // pre-v8-shaped answer is byte-identical to before. This is SHAPE validation:
+  // a malformed value is dropped, never throws. URL attestation against the
+  // actual source text (and HTML anchors) happens CLIENT-side in
+  // postProcessExtraction — validateAnswer has no sourceText — so here we only
+  // restrict the kind vocabulary and drop empty rows / dangerous schemes.
+  const BAD_URL_SCHEME = /^\s*(javascript|data|vbscript|mailto|tel):/i;
+  const LINK_KINDS = ["official", "apply", "notification", "short_notice", "result", "admit_card", "answer_key", "other"];
+  const toIntOrNull = (v: unknown): number | null => {
+    if (typeof v === "number" && isFinite(v)) return Math.trunc(v);
+    if (typeof v === "string") { const d = v.replace(/[^\d]/g, ""); if (!d) return null; const n = parseInt(d, 10); return isFinite(n) ? n : null; }
+    return null;
+  };
+
+  // vacancy: { total, posts[] } OR a bare number/string. Never invents a number.
+  let vacancy: { total: number | null; posts: { name: string; count: number | null }[]; sourceQuote?: string } | undefined;
+  if (root.vacancy != null) {
+    if (typeof root.vacancy === "number" || typeof root.vacancy === "string") {
+      const total = toIntOrNull(root.vacancy);
+      if (total != null) vacancy = { total, posts: [] };
+    } else if (typeof root.vacancy === "object") {
+      const o = root.vacancy as Record<string, any>;
+      const total = toIntOrNull(o.total ?? o.count ?? o.value);
+      const postsRaw = Array.isArray(o.posts) ? o.posts : [];
+      const posts = postsRaw
+        .map((p: any): { name: string; count: number | null } => (p && typeof p === "object")
+          ? { name: String(p.name ?? p.post ?? "").trim(), count: toIntOrNull(p.count ?? p.vacancy ?? p.posts) }
+          : { name: String(p).trim(), count: null })
+        .filter((p: any) => p.name !== "");
+      const quote = typeof o.sourceQuote === "string" && o.sourceQuote.trim() ? o.sourceQuote.trim() : "";
+      if (total != null || posts.length) vacancy = { total, posts, ...(quote ? { sourceQuote: quote } : {}) };
+    }
+  }
+
+  // important_links[]: {label, url, kind}. Empty label/url and bad schemes dropped.
+  const importantLinks: { label: string; url: string; kind: string }[] = [];
+  if (Array.isArray(root.important_links)) {
+    for (const item of root.important_links as any[]) {
+      if (!item || typeof item !== "object") continue;
+      const label = String(item.label ?? item.name ?? "").trim();
+      const url = String(item.url ?? "").trim();
+      if (!label || !url || BAD_URL_SCHEME.test(url)) continue;
+      const kindRaw = String(item.kind ?? "").trim().toLowerCase();
+      importantLinks.push({ label, url, kind: LINK_KINDS.includes(kindRaw) ? kindRaw : "other" });
+    }
+  }
+
+  // notes[]: relative / to-be-notified lines as text (+ optional quote). NEVER dates.
+  const notes: { text: string; sourceQuote?: string }[] = [];
+  if (Array.isArray(root.notes)) {
+    for (const n of root.notes as any[]) {
+      if (typeof n === "string") { const text = n.trim(); if (text) notes.push({ text }); continue; }
+      if (n && typeof n === "object") {
+        const text = String(n.text ?? n.note ?? n.label ?? "").trim();
+        if (!text) continue;
+        const sourceQuote = typeof n.sourceQuote === "string" && n.sourceQuote.trim() ? n.sourceQuote.trim() : "";
+        notes.push({ text, ...(sourceQuote ? { sourceQuote } : {}) });
+      }
+    }
+  }
+
+  return {
+    content: {
+      fields, dates, references,
+      ...(vacancy ? { vacancy } : {}),
+      ...(importantLinks.length ? { important_links: importantLinks } : {}),
+      ...(notes.length ? { notes } : {}),
+    },
+    issues,
+  };
 }
