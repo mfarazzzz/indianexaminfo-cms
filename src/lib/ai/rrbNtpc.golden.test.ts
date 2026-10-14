@@ -151,3 +151,75 @@ describe("golden: RRB NTPC 2026 — backward compatibility (pre-v8 answer)", () 
     expect(viaString.notes).toEqual(result.notes);
   });
 });
+
+// ── S2.14b Stage 2 LIVE check (LIVE=1, after the v8 deploy) ──────────────────
+// Calls the DEPLOYED ai-fill v8 with the RRB NTPC pasted.txt and runs the answer
+// back through the SAME client pipeline. Hard-asserts only the invariants that
+// MUST hold (v8 compiles + answers; two-row registration contract; no merged
+// window; NO un-attested important-link survives; NO relative/TBN line becomes a
+// dated exam/admit-card row). Reports provider/model and the new-field capture as
+// data, since model output is not deterministic and Gemini may 503-fall-through.
+describe.skipIf(process.env.LIVE !== "1")("live: RRB NTPC notice through deployed v8", () => {
+  it("answers through postProcessExtraction with the S2.14b invariants intact", async () => {
+    const { readFileSync } = await import("node:fs");
+    const env = Object.fromEntries(
+      readFileSync(".env", "utf8").split(/\r?\n/).filter((l) => /^[A-Z_]+=/i.test(l)).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()]),
+    );
+    const state = JSON.parse(readFileSync(".auth/cms.json", "utf8")) as { origins?: { localStorage?: { name: string; value: string }[] }[] };
+    let sess: { access_token?: string; refresh_token?: string } = {};
+    for (const o of state.origins ?? []) for (const e of o.localStorage ?? []) {
+      if (e.name.startsWith("sb-")) { try { const v = JSON.parse(e.value); sess = v.current ?? v } catch {} }
+    }
+    if (!sess.access_token) throw new Error("no session in .auth/cms.json — run npm run cms:login first");
+
+    const src = pastedText.replace(/\r\n/g, "\n");
+    const call = async (tok: string) => fetch(`${env.VITE_SUPABASE_URL}/functions/v1/ai-fill`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ template: "NOTICE_EXTRACT_V1", pillar: "government-exam", consumer: "s214b-live", sourceText: src }),
+    });
+    let res = await call(sess.access_token);
+    if (res.status === 401 && sess.refresh_token) {
+      const rf = await fetch(`${env.VITE_SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST", headers: { "Content-Type": "application/json", apikey: env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ refresh_token: sess.refresh_token }),
+      });
+      if (!rf.ok) throw new Error(`live call 401 and refresh failed (${rf.status}) — re-run npm run cms:login`);
+      const fresh = await rf.json() as { access_token?: string };
+      if (!fresh.access_token) throw new Error("refresh returned no access token");
+      res = await call(fresh.access_token);
+    }
+    if (!res.ok) throw new Error(`live v8 call failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+    const wire = await res.json() as { content: Record<string, unknown>; provider?: string; model?: string; template?: string };
+    console.log(`RRB LIVE ANSWERED BY: ${wire.provider ?? "?"} / ${wire.model ?? "?"} (template ${wire.template ?? "?"})`);
+
+    const live = postProcessExtraction(wire.content, allowed, src, 2026, null);
+
+    // Report what v8 captured (data, not assertions — the model varies).
+    console.log("RRB LIVE capture:", JSON.stringify({
+      mergedWindows: live.mergedWindows,
+      vacancyTotal: live.vacancy?.total ?? null,
+      postCount: live.vacancy?.posts?.length ?? 0,
+      linksKept: (live.importantLinks ?? []).map((l) => l.url),
+      notesCount: live.notes?.length ?? 0,
+    }));
+
+    // HARD invariants:
+    // 1. the registration window stays TWO rows and never merges.
+    expect(live.mergedWindows).toEqual([]);
+    const open = live.rows.find((r) => r.type === "application_start");
+    const close = live.rows.find((r) => r.type === "application_end");
+    expect(open, `no application_start row in ${JSON.stringify(live.rows)}`).toBeTruthy();
+    expect(close, `no application_end row in ${JSON.stringify(live.rows)}`).toBeTruthy();
+    // 2. no relative/TBN line became a dated exam / admit-card row.
+    expect(live.rows.some((r) => r.kind === "exam_written" || r.type === "exam_written")).toBe(false);
+    expect(live.rows.some((r) => r.kind === "admit_card" || r.type === "admit_card")).toBe(false);
+    // 3. every surviving important-link URL is attested against the source.
+    for (const l of live.importantLinks ?? []) {
+      expect(src.replace(/\s+/g, " ")).toContain(l.url.replace(/\s+/g, " ").slice(0, 40));
+    }
+    // 4. a vacancy total the model returned is a positive integer (never invented
+    //    by the pipeline — parseVacancy only reads a number that came in the answer).
+    if (live.vacancy && live.vacancy.total != null) expect(Number.isInteger(live.vacancy.total)).toBe(true);
+  }, 90_000);
+});
