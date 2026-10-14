@@ -31,6 +31,7 @@ import { generateStructured } from "@/lib/ai/aiFillClient";
 import { postProcessExtraction, type PipelineResult } from "@/lib/ai/noticePipeline";
 import { loadAllowedOptions } from "@/lib/ai/allowedOptions";
 import { findLikelyExamMatch, NOTICE_HANDOFF_KEY, type LikelyMatch } from "@/lib/ai/noticeMatch";
+import { extractAnchors, preCleanNotice, type SourceLink } from "@/lib/ai/noticePaste";
 import { buildNoticeAiMetadata } from "@/lib/ai/noticeProvenance";
 import { mergeAcceptedDateRows } from "@/lib/dates/dateRowMerge";
 import { NoticeReviewDrawer } from "@/components/entrance-exams/NoticeReviewDrawer";
@@ -772,7 +773,7 @@ export function EntranceExamEditorPage() {
   // Now the server-side NOTICE_EXTRACT_V1 template produces flagged rows, the
   // drawer shows every proposal with its source quote and confidence, and only
   // the editor's Accepted rows touch the FORM (R1.6 holds: the editor saves).
-  const handleAIGenerate = async (rawContent?: string) => {
+  const handleAIGenerate = async (rawContent?: string, sourceLinks?: SourceLink[]) => {
     const year = form.getValues("editionYear") || new Date().getFullYear();
     if (!rawContent || rawContent.trim().length < 50) {
       // YMYL: the old knowledge-only mode fabricated dates. The notice IS the
@@ -802,6 +803,7 @@ export function EntranceExamEditorPage() {
         rawContent,
         year,
         currentVals.selectionModel || null,
+        sourceLinks,
       );
       const rows = buildReviewRows(result, currentVals, categories.map((c) => ({ slug: c.slug, id: c.id, name: c.name })));
 
@@ -2060,8 +2062,24 @@ function NewEditionDialog({ onConfirm, onCancel, frequency, busy, defaultYear }:
 
 // ── AI Fill Dialog ─────────────────────────────────────────────────────────
 
-function AIFillDialog({ onGenerate, onCancel }: { onGenerate: (rawContent?: string) => void; onCancel: () => void }) {
+function AIFillDialog({ onGenerate, onCancel }: { onGenerate: (rawContent?: string, sourceLinks?: SourceLink[]) => void; onCancel: () => void }) {
   const [rawContent, setRawContent] = useState("");
+  // S2.14b: real anchor hrefs recovered from an HTML paste (never rendered).
+  const [sourceLinks, setSourceLinks] = useState<SourceLink[]>([]);
+  // S2.14b: opt-in chrome strip; the raw text is always available (leave off).
+  const [cleanChrome, setCleanChrome] = useState(false);
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const html = e.clipboardData?.getData("text/html") || "";
+    if (html) {
+      const anchors = extractAnchors(html);
+      if (anchors.length) setSourceLinks(anchors);
+    }
+    // No preventDefault — the textarea still receives the plain text unchanged.
+  };
+
+  const preview = cleanChrome ? preCleanNotice(rawContent) : { cleaned: rawContent, removed: 0 };
+  const canSend = preview.cleaned.trim().length >= 50;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -2072,25 +2090,38 @@ function AIFillDialog({ onGenerate, onCancel }: { onGenerate: (rawContent?: stri
         </div>
 
         <p className="text-sm text-slate-600">
-          Paste the official notice text below. The AI proposes structured changes — name, category, selection, dates with times, eligibility, fees — each with the exact words it read them from. <strong>Nothing is applied until you review it</strong>, and nothing is saved until you press Save.
+          Paste the notice text below (an official notice or an aggregator page). The AI proposes structured changes — name, category, selection, dates with times, eligibility, fees — each with the exact words it read them from. <strong>Nothing is applied until you review it</strong>, and nothing is saved until you press Save.
         </p>
 
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">
-            Official notice text <span className="text-rose-500">*</span>
+            Notice text <span className="text-rose-500">*</span>
           </label>
           <textarea
             value={rawContent}
             onChange={(e) => setRawContent(e.target.value)}
+            onPaste={handlePaste}
             rows={10}
             placeholder={`Paste the notification / press-note text here — Hindi is fine.\n\nExample:\nUP D.El.Ed Phase-3 Counselling 2026\nChoice filling: 05.10.2026 (अपराह्न) से 07.10.2026 सायं 06:00 बजे\nSeat Allotment: 08.10.2026\n...`}
             className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-mono leading-relaxed focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-y"
           />
+          <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+            <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+              <input type="checkbox" checked={cleanChrome} onChange={(e) => setCleanChrome(e.target.checked)} className="rounded" />
+              Remove obvious page chrome (nav / trending / related / comments)
+            </label>
+            {cleanChrome && preview.removed > 0 && <span className="text-purple-600">cleaned {preview.removed} line{preview.removed === 1 ? "" : "s"}</span>}
+          </div>
+          {sourceLinks.length > 0 && (
+            <p className="mt-1 text-[11px] text-emerald-600" data-testid="paste-links-detected">
+              {sourceLinks.length} link{sourceLinks.length === 1 ? "" : "s"} with addresses detected from the paste — the AI can attach real URLs to Important Links.
+            </p>
+          )}
         </div>
 
         <div className="bg-purple-50 border border-purple-100 rounded p-3">
           <p className="text-xs text-purple-700">
-            <strong>How it works:</strong> the notice is the only source — dates, kinds (choice filling, allotment, lock…), times, fee, eligibility each come back with a verbatim quote and a confidence. Review every change in the drawer, accept what is right, then Apply. PDF/OCR input arrives with S5; paste the text for scanned notices.
+            <strong>How it works:</strong> the notice is the only source — dates, kinds (choice filling, allotment, lock…), times, fee, eligibility each come back with a verbatim quote and a confidence. Review every change in the drawer, accept what is right, then Apply. We extract facts, never the page's prose. PDF/OCR input arrives with S5.
           </p>
         </div>
 
@@ -2098,7 +2129,7 @@ function AIFillDialog({ onGenerate, onCancel }: { onGenerate: (rawContent?: stri
           <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded">
             Cancel
           </button>
-          <button type="button" onClick={() => onGenerate(rawContent || undefined)} disabled={!rawContent.trim()}
+          <button type="button" onClick={() => onGenerate(preview.cleaned || undefined, sourceLinks)} disabled={!canSend}
             className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-1.5 disabled:opacity-50">
             <Sparkles size={14} />
             Read the notice
