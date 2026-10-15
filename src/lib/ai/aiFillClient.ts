@@ -77,10 +77,15 @@ export async function generateText(
   return content;
 }
 
-/** One flagged field from the server-side schema validation (S2.3). */
+/**
+ * One flagged field from the server-side schema validation (S2.3).
+ * `low_yield` is v10's answer-level flag: valid JSON, but far fewer date rows
+ * than the notice contains events. Consumers must tolerate a reason they do not
+ * know — summarizeFill counts every issue and displays only the ones it maps.
+ */
 export interface ExtractionIssue {
   field: string;
-  reason: "low_confidence" | "not_an_option" | "bad_shape" | "no_value";
+  reason: "low_confidence" | "not_an_option" | "bad_shape" | "no_value" | "low_yield";
   detail: string;
 }
 

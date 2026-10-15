@@ -112,8 +112,11 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
         )}
 
         {/* Flagged summary at the top — reasons first, rows below */}
-        {(report.lowConfidence.length > 0 || report.missingOptions.length > 0) && (
+        {(report.lowConfidence.length > 0 || report.missingOptions.length > 0 || !!report.yieldWarning) && (
           <div className="px-4 py-2 border-b border-slate-100 bg-amber-50/50 text-[11px] text-amber-800 space-y-0.5" data-testid="drawer-flagged-summary">
+            {report.yieldWarning && (
+              <p className="font-medium" data-testid="drawer-low-yield-warning">Low yield: {report.yieldWarning}</p>
+            )}
             {report.lowConfidence.length > 0 && <p>Low confidence: {report.lowConfidence.join(", ")}</p>}
             {report.missingOptions.length > 0 && <p>Missing options / no field: {report.missingOptions.join("; ")}</p>}
           </div>

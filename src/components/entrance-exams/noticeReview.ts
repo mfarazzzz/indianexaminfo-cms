@@ -293,15 +293,25 @@ export interface FillReport {
   mergedWindows: number;    // window pairs the net collapsed into one row (S2.9)
   lowConfidence: string[];  // labels
   missingOptions: string[]; // suggested new options / rejected values
+  /**
+   * v10: the server's answer-level low_yield issue, if any — "only N of ~M
+   * dated events came back". Optional so a pre-v10 FillReport literal still
+   * compiles; summarizeFill always sets it (null when there is no such issue).
+   */
+  yieldWarning?: string | null;
 }
 
 export function summarizeFill(rows: ReviewRow[], issues: ExtractionIssue[], result?: PipelineResult): FillReport {
   const lowConfidence: string[] = [];
   const missingOptions: string[] = [];
+  let yieldWarning: string | null = null;
   for (const iss of issues) {
     if (iss.reason === "low_confidence") lowConfidence.push(iss.field);
     if (iss.reason === "not_an_option") missingOptions.push(`${iss.field}: ${iss.detail}`);
     if (iss.reason === "no_value") lowConfidence.push(`${iss.field} (not stated)`);
+    // v10: one visible line, not a silent count. The FIRST low_yield issue wins
+    // (the server adds at most one per answer, for the `dates` field).
+    if (iss.reason === "low_yield" && yieldWarning === null) yieldWarning = iss.detail;
   }
   for (const r of rows) {
     if (r.confidence < OPTION_CONFIDENCE_FLOOR && r.proposed) lowConfidence.push(r.label);
@@ -317,5 +327,6 @@ export function summarizeFill(rows: ReviewRow[], issues: ExtractionIssue[], resu
     mergedWindows: result ? result.mergedWindows.length : 0,
     lowConfidence: Array.from(new Set(lowConfidence)),
     missingOptions: Array.from(new Set(missingOptions)),
+    yieldWarning,
   };
 }

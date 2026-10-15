@@ -10,6 +10,8 @@
  *    and flows straight into buildReviewRows — the ONE code path the editor uses.
  */
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { buildReviewRows, summarizeFill, describeDateRow } from './noticeReview'
 import type { ReviewCurrentValues, CategoryLookup } from './noticeReview'
 import { postProcessExtraction, type PipelineResult, type PipelineField, type PipelineDateRow } from '@/lib/ai/noticePipeline'
@@ -182,5 +184,46 @@ describe('summarizeFill — the report on top of the drawer', () => {
     expect(report.noFieldYet).toBe(1)
     expect(report.missingOptions.some((m) => m.includes('categorySlug'))).toBe(true)
     expect(report.lowConfidence).toContain('region')
+  })
+
+  // v10: a low_yield issue must be VISIBLE, not just counted. Before v10 the
+  // report routed only low_confidence / not_an_option / no_value, so a new
+  // reason reached the drawer as +1 on the flagged chip and nothing else.
+  it('v10: a low_yield issue becomes report.yieldWarning (and still counts as flagged)', () => {
+    const result = resultWithFields({ shortName: pf('AB', 0.9) })
+    const rows = buildReviewRows(result, {} as ReviewCurrentValues, categories)
+    const detail = 'only 1 of ~9 dated events in the notice came back - some events were dropped; check the timeline before saving'
+    const report = summarizeFill(rows, [
+      { field: 'dates', reason: 'low_yield', detail },
+      { field: 'region', reason: 'low_confidence', detail: 'x' },
+    ])
+    expect(report.yieldWarning).toBe(detail)
+    expect(report.flagged).toBe(rows.filter((r) => !r.defaultAccept).length + 2)
+  })
+
+  it('v10: no low_yield issue means no warning line (null, never an empty string)', () => {
+    const result = resultWithFields({ shortName: pf('AB', 0.9) })
+    const rows = buildReviewRows(result, {} as ReviewCurrentValues, categories)
+    expect(summarizeFill(rows, []).yieldWarning).toBe(null)
+  })
+
+  it('v10: an unknown issue reason cannot break the report (forward tolerance)', () => {
+    const result = resultWithFields({ shortName: pf('AB', 0.9) })
+    const rows = buildReviewRows(result, {} as ReviewCurrentValues, categories)
+    // A future server reason this bundle does not know about: counted, never thrown.
+    const report = summarizeFill(rows, [{ field: 'dates', reason: 'not_included_yet' as never, detail: 'future' }])
+    expect(report.yieldWarning).toBe(null)
+    expect(report.flagged).toBe(rows.filter((r) => !r.defaultAccept).length + 1)
+  })
+
+  it('v10: the drawer really renders the warning (guards the counted-but-invisible bug)', () => {
+    const src = readFileSync(resolve(__dirname, 'NoticeReviewDrawer.tsx'), 'utf8')
+    expect(src).toContain('report.yieldWarning')
+    expect(src).toContain('data-testid="drawer-low-yield-warning"')
+    // The block's own render condition must include it, or a lone low-yield
+    // answer would still show nothing.
+    const gate = src.match(/\{\(report\.lowConfidence\.length > 0 \|\| report\.missingOptions\.length > 0([^)]*)\) && \(/)
+    expect(gate, 'flagged-summary render gate changed shape').toBeTruthy()
+    expect(gate![1]).toContain('yieldWarning')
   })
 })
