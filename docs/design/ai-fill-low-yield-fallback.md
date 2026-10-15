@@ -196,3 +196,33 @@ No new secret needed (the gate is code, not config); no migration, no DB write b
 raw-prompt path is not gated. Deploy follows the same integrity protocol as v9: both files
 in one call, read back and compared by markers, sizes, line counts, absence of removed code,
 plus the auth/preflight probes.
+
+## 9. Known gap, measured 2026-10-15 (owner decision, NOT implemented)
+
+The v9 live verification run took the RRB NTPC notice through the deployed function and the
+answer came back with **one** date row: `application_start 2026-10-08` survived, the closing
+`application_end` (06.11.2026) did not, and none of `vacancy` / `important_links` / `notes`
+were returned at all. The v8 run of the same input on 14 Oct had produced three rows plus all
+three optional fields.
+
+Under these thresholds that answer is **accepted**: the RRB text mentions M=2 distinct days,
+and `M <= 2` is inert by design (§3) precisely so a genuinely short notice is never punished.
+So the gate is correct as designed and still did not catch this case.
+
+What closing it would take, and why it is out of scope: with M=2 the only signal that a row is
+missing is the notice's own event structure (an opening date with a stated last date implies
+TWO rows under the two-row registration contract). Reading that implication is a CONTENT
+judgement — the class this design explicitly refuses to make (§5), because it is the same road
+that produces false rejections on legitimate short notices. The honest options for the owner
+are therefore:
+
+1. leave it: the two-row contract is enforced by the prompt and the client pairing net, and
+   the reviewer still sees one row plus the drawer;
+2. accept a narrow, contract-specific rule for the application window only (an
+   `application_start` row with no `application_end` row becomes its own issue — reported, not
+   refused), which stays content-agnostic about everything except that one pair;
+3. widen T1/T2 downward (e.g. trigger at M=2 when N<=1), which trades the guarantee in §3
+   ("a notice with genuinely few dates must NOT trigger") for coverage — not recommended.
+
+Recorded here rather than in code, because the thresholds above are the approved ones and this
+session's job was to implement exactly them.
