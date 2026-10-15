@@ -137,26 +137,9 @@ Return ONLY one valid JSON object, exactly this shape:
       "sourceQuote": "the verbatim referring line"
     }
   ],
-  "vacancy": {
-    "total": "BIG total number of posts/vacancy the notice PRINTS, as an integer, or null if none is printed",
-    "sourceQuote": "verbatim line the total came from",
-    "posts": [
-      { "name": "post/job name exactly as printed", "count": "that post's vacancy as an integer, or null if not printed" }
-    ]
-  },
-  "important_links": [
-    {
-      "label": "link text as printed (e.g. 'Apply Online', 'Official Website')",
-      "url": "the web address EXACTLY as it appears in the text — ONLY if a real address is present; NEVER invent, guess, complete or 'remember' one",
-      "kind": "one of: official, apply, notification, short_notice, result, admit_card, answer_key, other"
-    }
-  ],
-  "notes": [
-    {
-      "text": "an exam-stage line the notice gives WITHOUT an absolute date (e.g. 'Exam Date: To be notified', 'Admit Card: 4 Days Before Exam')",
-      "sourceQuote": "verbatim line"
-    }
-  ]
+  "vacancy": { "total": "posts total ONLY if the notice PRINTS it, integer, else null", "sourceQuote": "verbatim line", "posts": [ { "name": "post name as printed", "count": "integer, else null" } ] },
+  "important_links": [ { "label": "link text as printed", "url": "the address EXACTLY as printed — ONLY if it really appears; NEVER invent one", "kind": "one of: official, apply, notification, short_notice, result, admit_card, answer_key, other" } ],
+  "notes": [ { "text": "exam-stage line with NO absolute date", "sourceQuote": "verbatim line" } ]
 }
 
 DATE RULES (two-vocabulary contract — the site computes status from "type"):
@@ -171,23 +154,14 @@ DATE RULES (two-vocabulary contract — the site computes status from "type"):
 - A date the notice only REFERS TO as background ("पूर्व प्रकाशित विज्ञप्ति दिनांक 07.08.2026", "vide notice No. … dated …") is NOT an event of THIS notice: put it in "references" (a document reference), NEVER in "dates", never as a "Notification Release" row.
 - An extension of an earlier deadline: kind "extension", keep its label, one row.
 
-VACANCY RULES:
-- "vacancy.total" is the OVERALL posts/vacancy total ONLY if the notice PRINTS a number (e.g. "Total Posts: 3548"). Use null when it does not. NEVER compute or guess a total by adding posts up.
-- "vacancy.posts" is the post-wise breakdown ONLY when the notice lists individual posts ("Goods Train Manager: 2750"). Leave it an empty array when only a total is given. Every name/count must be copied from the text, not invented.
-- "vacancy" is OPTIONAL: omit it entirely when the notice states no vacancy figure at all.
-
-IMPORTANT-LINKS RULES:
-- Only a link whose ADDRESS literally appears in the text may be returned. A label with no address next to it → OMIT the link. A missing link is correct; an invented or guessed URL is a serious failure (the platform will discard it anyway).
-- Copy the URL exactly as printed (the platform cleans tracking parameters itself). Assign the closest "kind".
-- "important_links" is OPTIONAL — an empty array when the notice carries no addresses.
-
-NOTES RULES (relative / to-be-notified lines):
-- An exam-stage line that has NO absolute date — "Exam Date: To be notified later", "Admit Card: 4 Days Before Exam", "Exam City Intimation: 10 Days Before Exam" — goes in "notes" with its verbatim sourceQuote. NEVER put such a line in "dates" (it is not a dated event, and would pollute the status timeline).
-- "notes" is OPTIONAL — an empty array when there are none.
+VACANCY / LINKS / NOTES RULES (all three OPTIONAL — omit or send [] when the notice has none):
+- vacancy.total: ONLY a total the notice PRINTS; NEVER add the posts up. vacancy.posts: the breakdown ONLY when the notice lists individual posts; copy every name/count, invent nothing.
+- important_links: return a link ONLY when its address literally appears in the text; a label with no address is omitted, and an invented URL is a serious failure. Copy the URL exactly as printed.
+- notes: an exam-stage line with NO absolute date ("Exam Date: To be notified", "Admit Card: 4 Days Before Exam") belongs here, NEVER in "dates".
 
 SOURCE HYGIENE (aggregator pages are the expected input):
-- The text may come from a job/aggregator website, not the official PDF. IGNORE all page CHROME — navigation menus, "Trending Now", "Related Posts", comment forms, "Download App"/"Follow us"/social widgets, and the footer. Extract ONLY the notice facts; skip everything that is not part of the notification itself.
-- Do NOT reproduce the page's own descriptive prose. Every field is a FACT backed by a short verbatim "sourceQuote" (evidence of where the fact was read), not sentences to republish. Keep quotes minimal and factual.
+- IGNORE page CHROME — nav menus, "Trending Now", "Related Posts", comment forms, "Download App"/"Follow us", footer. Extract ONLY notice facts.
+- Every field is a FACT with a short verbatim "sourceQuote"; never reproduce the page's prose.
 
 NON-CONTENT: distribution lists ("प्रतिलिपि … District Magistrate / banks / DIET …"), salutations and letterhead are ADDRESSING metadata — never extract them into any field.
 

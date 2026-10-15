@@ -40,6 +40,8 @@
 //   AI_KEY_OPENAI      only if an openai provider row is enabled
 //   AI_BASE_URL_<SLUG> optional override, e.g. AI_BASE_URL_GROQ
 //   AI_MODEL           optional fallback model when no provider row is usable
+//   AI_TEMPLATE_MAX_OUTPUT_TOKENS optional completion cap for the template path
+//                      (v9 default 2500; blank/invalid/<=0 falls back to 2500)
 //   ALLOWED_ORIGINS    comma-separated CMS origins, e.g.
 //                      "https://admincms1.indianexaminfo.com,http://localhost:5177".
 //                      Missing or empty => every browser cross-origin request is
@@ -90,15 +92,21 @@ const MAX_CALLS_PER_5_MIN = 15;
 const MAX_CALLS_PER_DAY = 150;
 
 /**
- * S2.11 — template-branch reliability.
+ * S2.11 — template-branch reliability. S2.14b v9 lowers the cap 3000 -> 2500.
  * The NOTICE_EXTRACT_V1 answer is SMALL: the recorded golden answer is ~1075
  * output tokens and the last live run ~1199 (Devanagari-inflated), well under
- * 1,300. 8192 was never needed and pushed Groq's per-request token limit over
- * on long Hindi notices (HTTP 413). Cap the template call at 3000 — >2.4× the
- * largest answer we have ever recorded, with headroom for a bigger notice, and
- * far inside the provider's request budget. The LEGACY path is untouched.
+ * 1,300. 2,500 is still ~2.1x the largest answer ever recorded, but every token
+ * it gives back buys prompt headroom: Groq meters a request as prompt +
+ * max_completion_tokens against its 8,000 TPM, and the UP D.El.Ed notice hit
+ * HTTP 413 ("Limit 8000, Requested 8208") with the 3,000 cap on 14 Oct 2026.
+ * Overridable with AI_TEMPLATE_MAX_OUTPUT_TOKENS (same convention as
+ * AI_TIMEOUT_MS / AI_GEMINI_THINKING_BUDGET); blank, non-numeric or <= 0 falls
+ * back to 2500 — never silently to a huge number. The LEGACY path is untouched.
  */
-const TEMPLATE_MAX_OUTPUT_TOKENS = 3000;
+const TEMPLATE_MAX_OUTPUT_TOKENS = (() => {
+  const raw = Number(Deno.env.get("AI_TEMPLATE_MAX_OUTPUT_TOKENS"));
+  return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 2500;
+})();
 /** One short backoff for a 429 (rate limit) before trying the next provider. */
 const PROVIDER_RETRY_BACKOFF_MS = 2000;
 
@@ -162,7 +170,7 @@ function timeoutForSlug(slug: string): number {
 /**
  * S2.13c: the Gemini thinking config, overridable and NEVER silently dropped.
  * thinkingBudget:0 disables hidden reasoning for Gemini 2.5 "thinking" models so
- * a 3000-token answer cap is not eaten by reasoning. For the Gemini 3 family the
+ * a 2500-token answer cap (v9) is not eaten by reasoning. For the Gemini 3 family the
  * equivalent knob is thinkingLevel ("low"/"high"/"minimal"); budget may not apply.
  * We cannot assume which a given id honours, so:
  *   - AI_GEMINI_THINKING_BUDGET  int  (default 0; set to "-1" to omit)
@@ -372,7 +380,7 @@ async function callOne(target: Resolved, prompt: string, jsonMode: boolean, sign
   if (target.kind === "gemini") {
     // Mirror of providerCall.geminiRequestBody: jsonMode → strict JSON AND an
     // OVERRIDABLE thinking config (geminiThinking(): default {thinkingBudget:0} so
-    // a Gemini 2.5 "thinking" model does not spend the 3000-token cap on hidden
+    // a Gemini 2.5 "thinking" model does not spend the template answer cap on hidden
     // reasoning; AI_GEMINI_THINKING_BUDGET / AI_GEMINI_THINKING_LEVEL override it,
     // never silently dropped).
     const url = `${target.baseUrl}/v1beta/models/${encodeURIComponent(target.model)}:generateContent`;

@@ -241,7 +241,6 @@ describe.skipIf(process.env.LIVE !== "1")("golden: live model run (LIVE=1, after
       const got = live.fields[f]?.value ?? ""
       if (got !== exp) flags.push(`${f}: live="${got}" expected="${exp}" (field wording/choice — flag)`)
     }
-    // eslint-disable-next-line no-console
     console.table(table)
     if (live.mergedWindows.length) { console.log("LIVE PAIRINGS (S2.9 net):") ; live.mergedWindows.forEach((m) => console.log("  -", m)) }
     if (flags.length) { console.log("LIVE FLAGS:"); flags.forEach((f) => console.log("  -", f)) }
