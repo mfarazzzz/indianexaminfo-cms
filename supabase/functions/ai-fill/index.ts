@@ -61,6 +61,14 @@
 // becomes a 502 — a half-extraction the editor can see beats a failure the
 // editor can't. Design: docs/design/ai-fill-low-yield-fallback.md.
 //
+// S2.16 JSON-MODE 400 RETRY (template path, OpenAI-compatible only): when a
+// provider answers 400 with code json_validate_failed (groq gpt-oss-120b does
+// this with an EMPTY failed_generation), that provider gets ONE extra attempt
+// with no response_format and an explicit "Return ONLY the JSON object…" last
+// line, parsed tolerantly. Any other status behaves exactly as before; the
+// Gemini adapter and the legacy {prompt} branch are untouched; the extra attempt
+// spends the SAME overall wall-clock guard and never repeats per provider.
+//
 // jsonMode asks the provider for a single JSON object. The two browser callers
 // this replaces did not behave the same way: the form auto-fill used temperature
 // 0.05 and a JSON response type, the tab generators used 0.7 and plain text. Both
@@ -70,6 +78,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   TEMPLATES, buildPrompt, loadOptions, validateAnswer,
   countDistinctDates, isLowYield, lowYieldDetail, lowYieldLog,
+  isJsonValidateFailed, extractJsonObject, JSON_ONLY_REMINDER,
   type TemplateName, type Issue,
 } from "./templates.ts";
 
@@ -380,8 +389,16 @@ async function readErrorBody(res: Response): Promise<string> {
  *  REDACTED .body when the provider answered with an HTTP error) so the caller
  *  can branch on 413/429 and log the diagnosis. `maxTokens` overrides the
  *  completion budget — the template path uses a small computed cap; the legacy
- *  path passes nothing and keeps its old default. */
-async function callOne(target: Resolved, prompt: string, jsonMode: boolean, signal: AbortSignal, maxTokens?: number): Promise<string> {
+ *  path passes nothing and keeps its old default.
+ *  S2.16 `opts.omitResponseFormat`: ask this provider for the SAME generation
+ *  (same temperature, same cap, same prompt-plus-reminder) but WITHOUT the JSON
+ *  response constraint. Used once, only after a `json_validate_failed` 400, and
+ *  only on the OpenAI-compatible branch — the Gemini branch keeps
+ *  `responseMimeType` exactly as it is, because that API has no such failure. */
+async function callOne(
+  target: Resolved, prompt: string, jsonMode: boolean, signal: AbortSignal, maxTokens?: number,
+  opts?: { omitResponseFormat?: boolean },
+): Promise<string> {
   const cap = maxTokens ?? (jsonMode ? 8192 : 4096);
   // S2.13c: each attempt carries its OWN budget (target.timeoutMs, default 25s,
   // env-settable per provider). A slow provider now aborts by itself so the next
@@ -426,12 +443,14 @@ async function callOne(target: Resolved, prompt: string, jsonMode: boolean, sign
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${target.key}` },
     // Mirrors the parameters the browser used, so extraction quality does not move
     // underneath the review screen at the same time as the transport changes.
+    // S2.16: the retry drops ONLY response_format. temperature stays on jsonMode,
+    // so the fallback samples at 0.05 like the request it replaces.
     body: JSON.stringify({
       model: target.model,
       messages: [{ role: "user", content: prompt }],
       temperature: jsonMode ? 0.05 : 0.7,
       max_tokens: cap,
-      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+      ...(jsonMode && !opts?.omitResponseFormat ? { response_format: { type: "json_object" } } : {}),
     }),
   });
   if (!res.ok) throw Object.assign(new Error(`${target.provider} returned ${res.status}`), { status: res.status, body: await readErrorBody(res) });
@@ -688,17 +707,55 @@ Deno.serve(async (req) => {
         const target = providers[pi];
         const attemptStart = Date.now();
         try {
-          const content = await callOne(target, prompt, true, tcontroller.signal, TEMPLATE_MAX_OUTPUT_TOKENS);
-          // Parse: a non-JSON answer is REPORTED, never returned as empty.
+          let content: string | null = null;
           let parsed: unknown;
           try {
-            let cleaned = content.trim();
-            if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-            parsed = JSON.parse(cleaned);
-          } catch {
-            clearTimeout(ttimer);
-            await logCall(admin, target.providerId, userId, hash, "error", "template answer was not JSON", Date.now() - started, consumer);
-            return json({ error: "AI could not read part of the notice: the model did not answer in the required JSON shape. Nothing was filled in — try again, or paste a cleaner extraction." }, 502, cors.headers);
+            content = await callOne(target, prompt, true, tcontroller.signal, TEMPLATE_MAX_OUTPUT_TOKENS);
+          } catch (callErr) {
+            // ── S2.16 ── exactly one provider failure class gets a second try on
+            // the SAME provider: an OpenAI-compatible 400 whose body says the JSON
+            // mode could not be validated. 429 / 413 / 503 / 404, a timeout and
+            // every Gemini error rethrow and keep the existing fall-through.
+            if (!isJsonValidateFailed((callErr as { status?: number })?.status, (callErr as { body?: string })?.body ?? "", target.kind)) throw callErr;
+            const cMsg = callErr instanceof Error ? callErr.message : String(callErr);
+            const cBody = (callErr as { body?: string })?.body ?? "";
+            const cDetail = (cBody ? `${cMsg}: ${cBody}` : cMsg).slice(0, 500);
+            // The 400 is recorded (and shown to no one) exactly as the transport
+            // catch below would have recorded it, so the audit trail still shows
+            // what the provider actually did before the fallback was spent.
+            await logCall(admin, target.providerId, userId, hash, "error", cDetail, Date.now() - attemptStart, consumer);
+            if (target.providerId) {
+              await admin.from("ai_providers").update({ last_error: cDetail }).eq("id", target.providerId);
+            }
+            try {
+              // Same temperature, same cap, same prompt hash (the reminder is an
+              // extra LAST line, after the notice-text markers), no response_format.
+              const retryText = await callOne(
+                target, `${prompt}\n\n${JSON_ONLY_REMINDER}`, true, tcontroller.signal,
+                TEMPLATE_MAX_OUTPUT_TOKENS, { omitResponseFormat: true },
+              );
+              const objText = extractJsonObject(retryText);
+              if (!objText) throw new Error("retry answer had no complete JSON object");
+              parsed = JSON.parse(objText);
+            } catch {
+              // One retry per provider per call, never a second: this row is the
+              // marker, then the chain moves on to the NEXT provider.
+              await logCall(admin, target.providerId, userId, hash, "error", "json_mode_400_retry", Date.now() - attemptStart, consumer);
+              continue;
+            }
+            content = null; // parsed came from the retry; skip the strict parse below
+          }
+          if (content !== null) {
+            // Parse: a non-JSON answer is REPORTED, never returned as empty.
+            try {
+              let cleaned = content.trim();
+              if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+              parsed = JSON.parse(cleaned);
+            } catch {
+              clearTimeout(ttimer);
+              await logCall(admin, target.providerId, userId, hash, "error", "template answer was not JSON", Date.now() - started, consumer);
+              return json({ error: "AI could not read part of the notice: the model did not answer in the required JSON shape. Nothing was filled in — try again, or paste a cleaner extraction." }, 502, cors.headers);
+            }
           }
           const validated = validateAnswer(parsed, options);
 

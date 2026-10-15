@@ -425,3 +425,64 @@ export function lowYieldLog(rowsReturned: number, distinctDates: number): string
 export function lowYieldDetail(rowsReturned: number, distinctDates: number): string {
   return `only ${rowsReturned} of ~${distinctDates} dated events in the notice came back - some events were dropped; check the timeline before saving`;
 }
+
+// ── S2.16 — the JSON-mode 400 fallback ───────────────────────────────────────
+// groq/openai/gpt-oss-120b sometimes answers a `response_format: json_object`
+// request with HTTP 400 code `json_validate_failed` and an EMPTY
+// `failed_generation` (ai_request_logs 2026-10-15 13:27:34). The model produced
+// nothing under the constraint; the same prompt without it usually produces text
+// the platform can still read. ONE retry, same provider, same temperature, same
+// cap — and a tolerant extraction, because without JSON mode the answer may be
+// fenced or prose-wrapped.
+
+/** The explicit last line added to the prompt for the retry attempt ONLY. */
+export const JSON_ONLY_REMINDER = "Return ONLY the JSON object, no prose, no code fences.";
+
+/**
+ * Is this the failure the retry is for? ALL three conditions must hold, so no
+ * other status gets this treatment:
+ *  - the provider is OpenAI-compatible (the Gemini adapter uses responseMimeType
+ *    and has its own error shape — it is deliberately excluded);
+ *  - HTTP 400 exactly;
+ *  - the body names the JSON-mode failure by CODE or by message — never the
+ *    status alone, because a 400 for a bad key, a filtered prompt or an oversize
+ *    request must NOT be retried behind a JSON question.
+ */
+export function isJsonValidateFailed(
+  status: number | undefined,
+  body: string,
+  kind: "gemini" | "openai-compatible",
+): boolean {
+  if (kind !== "openai-compatible") return false;
+  if (status !== 400) return false;
+  return /json_validate_failed/i.test(body) || /failed to validate json/i.test(body);
+}
+
+/**
+ * The first BALANCED top-level JSON object in a model answer, or null when the
+ * text never closes one (a truncated generation must fail cleanly, not hand back
+ * half an object). Braces inside string literals and their escapes are respected,
+ * so `{ "label": "a } b" }` is one object. Fences and surrounding prose are
+ * ignored by construction — the scan starts at the first `{` and stops when the
+ * depth returns to zero.
+ */
+export function extractJsonObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) { escaped = false; continue; }
+    if (inString) {
+      if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") depth++;
+    else if (ch === "}") { depth--; if (depth === 0) return text.slice(start, i + 1); }
+  }
+  return null;
+}
