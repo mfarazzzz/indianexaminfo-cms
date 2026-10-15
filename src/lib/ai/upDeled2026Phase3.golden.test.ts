@@ -29,6 +29,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runNoticePipeline } from "./noticePipeline";
+import { countDistinctDates } from "../../../supabase/functions/ai-fill/templates.ts";
 import type { AllowedOptions } from "./extractionContract";
 
 const FIX = (name: string) =>
@@ -193,6 +194,13 @@ describe.skipIf(process.env.LIVE !== "1")("golden: live model run (LIVE=1, after
     const wire = await res.json() as { content: { fields: Record<string, unknown>; dates: Record<string, unknown>[]; references?: unknown[] }; issues?: unknown[]; provider?: string; model?: string };
     // Exactly which provider/model answered this run (D reporting).
     console.log(`LIVE ANSWERED BY: ${wire.provider ?? "?"} / ${wire.model ?? "?"}`);
+    // v10 reporting: the SERVER's own row count (N, straight off the wire), the
+    // notice's yardstick (M, the same counter the function uses) and the full
+    // issues array — so ONE live call shows whether the low-yield gate fired and
+    // what it told the editor.
+    const nRows = Array.isArray(wire.content.dates) ? wire.content.dates.length : 0;
+    console.log(`LIVE YIELD: HTTP ${res.status} | N=${nRows} server date rows | M=${countDistinctDates(pastedText.replace(/\r\n/g, "\n"))} distinct days in this notice`);
+    console.log(`LIVE ISSUES: ${JSON.stringify(wire.issues ?? [])}`);
     const liveRaw = JSON.stringify({ fields: wire.content.fields, dates: wire.content.dates, references: wire.content.references ?? [] });
     // Second recording — kept for the report's live-vs-expected comparison.
     writeFileSync(FIX("model.responses.live.json"), liveRaw + "\n");
