@@ -235,10 +235,12 @@ export function EntranceExamEditorPage() {
   // hasn't mounted/reported yet, so Save leaves the news key untouched.
   const newsRef = React.useRef<any[] | null>(null);
   // The pending action awaiting a Save/Discard/Cancel decision. `kind` distinguishes
-  // an in-editor tab switch from an in-app route navigation (they resume differently).
+  // an in-editor tab switch, an in-app route navigation and (R2.1) a switch to
+  // another cycle's year — they resume differently, but all three go through here.
   const [pendingExit, setPendingExit] = useState<
     | { kind: "tab"; to: string }
     | { kind: "nav" }
+    | { kind: "edition"; edition: ExamEdition }
     | null
   >(null);
   const [guardSaving, setGuardSaving] = useState(false);
@@ -671,6 +673,46 @@ export function EntranceExamEditorPage() {
     setActiveTab(to);
   }, [activeTab, isDirty]);
 
+  /**
+   * R2.1 — P10 closed. The ONE place that loads another cycle's data into the
+   * open editor. It writes exactly the fields the Editions "Edit" used to write,
+   * in the same order, and jumps to the same tab: what changed is WHO may do it.
+   * Both the header year switcher and the Editions list now go through
+   * guardedSwitchEdition below, so no path can swap the year under an editor
+   * with unsaved work (the old footgun saved another year's rows believing they
+   * were the ones on screen — editor-refactor P10).
+   */
+  const applyEditionSwitch = useCallback((ed: ExamEdition) => {
+    form.setValue("editionYear", ed.year);
+    form.setValue("editionSession", ed.session);
+    form.setValue("editionStatus", ed.status);
+    form.setValue("notificationDate", ed.notificationDate ?? "");
+    form.setValue("vacancy", ed.vacancy?.toString() ?? "");
+    form.setValue("importantDates", ed.importantDates ?? []);
+    form.setValue("hasNotification", ed.hasNotification);
+    form.setValue("hasApplication", ed.hasApplication);
+    form.setValue("hasAdmitCard", ed.hasAdmitCard);
+    form.setValue("hasSyllabus", ed.hasSyllabus);
+    form.setValue("hasAnswerKey", ed.hasAnswerKey);
+    form.setValue("hasResult", ed.hasResult);
+    form.setValue("hasCutoff", ed.hasCutoff);
+    form.setValue("hasCounselling", ed.hasCounselling);
+    setCurrentEdition(ed);
+    setDraftEdition(null);
+    setActiveTab("edition");
+    toast.info(`Editing edition "${ed.editionLabel}". Save to apply changes.`);
+  }, [form]);
+
+  /** Guarded entry point for a year switch: hold it when there is unsaved work. */
+  const guardedSwitchEdition = useCallback((ed: ExamEdition) => {
+    if (ed.id === currentEdition?.id) return;   // the year already on screen
+    if (isDirty) {
+      setPendingExit({ kind: "edition", edition: ed });
+      return;
+    }
+    applyEditionSwitch(ed);
+  }, [currentEdition?.id, isDirty, applyEditionSwitch]);
+
   // Clear the manual-save local dirty flags after a resolved guard. moduleDirty is
   // NOT cleared here: it's owned by ModulePanel's live autosave state (it clears
   // itself when the pending save lands, and resets to false on unmount), so forcing
@@ -684,8 +726,9 @@ export function EntranceExamEditorPage() {
     setPendingExit(null);
     if (!exit) return;
     if (exit.kind === "tab") setActiveTab(exit.to);
+    else if (exit.kind === "edition") applyEditionSwitch(exit.edition);
     else if (exit.kind === "nav" && blocker.state === "blocked") blocker.proceed();
-  }, [pendingExit, blocker]);
+  }, [pendingExit, blocker, applyEditionSwitch]);
 
   const guardCancel = useCallback(() => {
     setPendingExit(null);
@@ -1044,6 +1087,31 @@ export function EntranceExamEditorPage() {
         <div className="flex items-center gap-2">
           {!isNew && (
             <>
+              {/* R2.1: the year switcher — explicit, and the only other way in is
+                  the same guarded path the Editions list uses. */}
+              {editions.length > 0 && (
+                <label
+                  className="flex items-center gap-1.5 text-xs text-slate-600"
+                  title="Switch which cycle you are editing. Unsaved changes are asked about first."
+                >
+                  Year
+                  <select
+                    data-testid="header-year-switcher"
+                    value={currentEdition?.id ?? ""}
+                    disabled={fixingCycle || startingEdition}
+                    onChange={(e) => {
+                      const next = editions.find((ed) => ed.id === e.target.value);
+                      if (next) guardedSwitchEdition(next);
+                    }}
+                    className="rounded border border-slate-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    {!currentEdition && <option value="">— no cycle loaded —</option>}
+                    {editions.map((ed) => (
+                      <option key={ed.id} value={ed.id}>{ed.editionLabel}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {/* Publish state — workflow_status is the single source of truth
                   (draft = not on site, published = live, archived = retired).
                   is_published is derived from this by a DB trigger. */}
@@ -1193,27 +1261,7 @@ export function EntranceExamEditorPage() {
               await loadExam();
             } catch (err) { toast.error(getErrorMessage(err)); }
           }}
-          onEdit={(ed) => {
-            // Load the selected edition into the form for editing
-            form.setValue("editionYear", ed.year);
-            form.setValue("editionSession", ed.session);
-            form.setValue("editionStatus", ed.status);
-            form.setValue("notificationDate", ed.notificationDate ?? "");
-            form.setValue("vacancy", ed.vacancy?.toString() ?? "");
-            form.setValue("importantDates", ed.importantDates ?? []);
-            form.setValue("hasNotification", ed.hasNotification);
-            form.setValue("hasApplication", ed.hasApplication);
-            form.setValue("hasAdmitCard", ed.hasAdmitCard);
-            form.setValue("hasSyllabus", ed.hasSyllabus);
-            form.setValue("hasAnswerKey", ed.hasAnswerKey);
-            form.setValue("hasResult", ed.hasResult);
-            form.setValue("hasCutoff", ed.hasCutoff);
-            form.setValue("hasCounselling", ed.hasCounselling);
-            setCurrentEdition(ed);
-            setDraftEdition(null);
-            setActiveTab("edition");
-            toast.info(`Editing edition "${ed.editionLabel}". Save to apply changes.`);
-          }}
+          onEdit={(ed) => guardedSwitchEdition(ed)}
         />}
       </div>
         </div>

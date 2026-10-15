@@ -176,3 +176,76 @@ describe('R2.1 the rail navigates and does nothing else', () => {
     expect(pageSrc).toContain('<div className="flex items-start gap-4">')
   })
 })
+
+// ── R2.1 part 2: the year switcher, and P10 closed ───────────────────────────
+// Owner decision 16 Oct, second half of the sentence: "the shell must not ship two
+// ways to switch year". The Editions list's "Edit" used to do a form.setValue
+// storm + a currentEdition swap + a tab jump with nothing asked about the unsaved
+// work already on screen (editor-refactor P10). It now calls the same guarded path
+// the header switcher calls, and the values it writes are unchanged.
+
+describe('R2.1 one guarded path loads another cycle into the editor', () => {
+  it('applyEditionSwitch writes EXACTLY the fields the Editions Edit used to write', () => {
+    const start = pageSrc.indexOf('const applyEditionSwitch = useCallback')
+    expect(start, 'applyEditionSwitch is gone').toBeGreaterThan(-1)
+    const body = pageSrc.slice(start, pageSrc.indexOf('}, [form]);', start))
+    for (const key of ['editionYear', 'editionSession', 'editionStatus', 'notificationDate',
+      'vacancy', 'importantDates', 'hasNotification', 'hasApplication', 'hasAdmitCard',
+      'hasSyllabus', 'hasAnswerKey', 'hasResult', 'hasCutoff', 'hasCounselling']) {
+      expect(body, `switching cycle no longer writes ${key}`).toContain(`form.setValue("${key}"`);
+    }
+    expect(body).toContain('setCurrentEdition(ed);')
+    expect(body).toContain('setDraftEdition(null);')
+    expect(body).toContain('setActiveTab("edition");')
+    expect(body).toContain('Save to apply changes.')
+  })
+
+  it('the switch holds when there is unsaved work, and is a no-op for the year on screen', () => {
+    const start = pageSrc.indexOf('const guardedSwitchEdition = useCallback')
+    expect(start, 'guardedSwitchEdition is gone').toBeGreaterThan(-1)
+    const body = pageSrc.slice(start, pageSrc.indexOf('}, [currentEdition?.id, isDirty, applyEditionSwitch]);', start))
+    expect(body).toContain('if (ed.id === currentEdition?.id) return;')
+    expect(body).toContain('if (isDirty) {')
+    expect(body).toContain('setPendingExit({ kind: "edition", edition: ed });')
+    // it never reaches the mutation on its own — only after the guard resolves
+    expect(body).toContain('applyEditionSwitch(ed);')
+  })
+
+  it('the guard knows how to resume a held year switch (Save & continue / Discard)', () => {
+    expect(pageSrc).toContain('else if (exit.kind === "edition") applyEditionSwitch(exit.edition);')
+    expect(pageSrc).toContain('| { kind: "edition"; edition: ExamEdition }')
+  })
+
+  it('P10 CLOSED: the Editions list no longer mutates the editor by itself', () => {
+    const start = pageSrc.indexOf('{activeTab === "editions" &&')
+    expect(start).toBeGreaterThan(-1)
+    const block = pageSrc.slice(start, pageSrc.indexOf('\n      </div>\n        </div>', start))
+    expect(block, 'the Editions tab must not switch the year unguarded').toContain('onEdit={(ed) => guardedSwitchEdition(ed)}');
+    expect(block).not.toContain('setActiveTab(');
+    expect(block).not.toContain('setCurrentEdition(');
+    expect(block).not.toContain('form.setValue(');
+    expect(block).not.toContain('setDraftEdition(');
+  })
+
+  it('setCurrentEdition exists in exactly two places: the load, and the guarded switch', () => {
+    const calls = pageSrc.match(/setCurrentEdition\(/g) ?? []
+    expect(calls.length, 'a third path can swap the current edition unguarded').toBe(2);
+  })
+
+  it('the header year switcher is the guarded one, never the raw applier', () => {
+    expect(pageSrc).toContain('data-testid="header-year-switcher"')
+    const start = pageSrc.indexOf('data-testid="header-year-switcher"')
+    const block = pageSrc.slice(start, start + 700)
+    expect(block).toContain('guardedSwitchEdition(next)')
+    expect(block).not.toContain('applyEditionSwitch(')
+    // disabled while a cycle fix is in flight, so a switch cannot race it
+    expect(block).toContain('disabled={fixingCycle || startingEdition}')
+  })
+
+  it('R2.1 changed no save path: Save, the workflow select and the AI apply are untouched', () => {
+    expect(pageSrc).toContain('<button type="submit" disabled={saving}')
+    expect(pageSrc).toContain('await setExamWorkflowStatus(exam!.id, next);')
+    // the drawer still only writes the form; the editor saves (R1.6)
+    expect(pageSrc).toContain('onApply={handleApplyAccepted}')
+  })
+})
