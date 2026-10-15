@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   extractJsonObject, isJsonValidateFailed, JSON_ONLY_REMINDER,
+  classifyRetryFailure, retryFailureHeadline,
 } from '../../../supabase/functions/ai-fill/templates.ts'
 
 const indexSrc = readFileSync(
@@ -119,6 +120,64 @@ describe('S2.16 the retry reminder text', () => {
   })
 })
 
+// v12 — the retry used to log a bare marker, so a failed fallback could not be
+// told apart from any other failed provider attempt, and the 502 named whichever
+// provider last went through the ordinary transport catch (often Gemini, even
+// when Groq was the fatal one).
+describe('v12 classifyRetryFailure: what kind of failure the retry hit', () => {
+  it('an HTTP error on the retry carries its status', () => {
+    expect(classifyRetryFailure(429, 'groq returned 429')).toBe('http_429')
+    expect(classifyRetryFailure(400, 'groq returned 400')).toBe('http_400')
+    expect(classifyRetryFailure(503, 'gemini returned 503')).toBe('http_503')
+  })
+
+  it('an empty message (the failed_generation class) is no_text, not invalid_json', () => {
+    expect(classifyRetryFailure(undefined, 'groq returned no text')).toBe('no_text')
+  })
+
+  it('a truncated generation is no_json_object', () => {
+    expect(classifyRetryFailure(undefined, 'retry answer had no complete JSON object')).toBe('no_json_object')
+  })
+
+  it('a balanced object that will not parse is invalid_json', () => {
+    expect(classifyRetryFailure(undefined, '{"a": } is not valid JSON')).toBe('invalid_json')
+    expect(classifyRetryFailure(undefined, 'Unexpected token < in JSON at position 0')).toBe('invalid_json')
+  })
+
+  it('anything else (an abort, a fetch failure) is a plain error', () => {
+    expect(classifyRetryFailure(undefined, 'The operation was aborted.')).toBe('error')
+    expect(classifyRetryFailure(undefined, 'fetch failed')).toBe('error')
+  })
+
+  it('a status always wins over the message text', () => {
+    expect(classifyRetryFailure(500, 'retry answer had no complete JSON object')).toBe('http_500')
+  })
+})
+
+describe('v12 retryFailureHeadline: the 502 names the provider that actually failed', () => {
+  it('an HTTP error keeps the existing "<provider> returned <status>" shape', () => {
+    expect(retryFailureHeadline('groq', 'http_429')).toBe('groq returned 429 after a retry')
+  })
+
+  it('every other cause says no readable answer, in plain words', () => {
+    for (const kind of ['no_text', 'no_json_object', 'invalid_json', 'error']) {
+      expect(retryFailureHeadline('groq', kind)).toBe('groq returned no readable answer after a retry')
+    }
+  })
+
+  it('never says "timed out", so it cannot be mistaken for the overall guard', () => {
+    for (const kind of ['http_408', 'no_text', 'error']) {
+      expect(retryFailureHeadline('groq', kind)).not.toBe('timed out')
+    }
+  })
+
+  it('carries no body content — the diagnosis belongs in ai_request_logs', () => {
+    const line = retryFailureHeadline('groq', 'http_400')
+    expect(line).not.toContain('json_validate_failed')
+    expect(line).not.toContain('{')
+  })
+})
+
 describe('S2.16 deployed handler: structural guards on index.ts', () => {
   it('the fallback is gated on the detector, not on the status number', () => {
     expect(indexSrc).toContain('if (!isJsonValidateFailed((callErr as { status?: number })?.status, (callErr as { body?: string })?.body ?? "", target.kind)) throw callErr;')
@@ -144,19 +203,36 @@ describe('S2.16 deployed handler: structural guards on index.ts', () => {
   it('NEVER more than one retry per provider per call — the loop body has one retry and its failure path leaves the provider', () => {
     expect((indexSrc.match(/const retryText = await callOne\(/g) || []).length).toBe(1)
     const retryIdx = indexSrc.indexOf('const retryText = await callOne(')
-    const afterRetry = indexSrc.slice(retryIdx, retryIdx + 1400)
-    // its catch logs once and `continue`s — so the same provider cannot be retried twice
-    expect(afterRetry).toContain('await logCall(admin, target.providerId, userId, hash, "error", "json_mode_400_retry"')
+    // the whole retry branch, up to the strict-parse guard that follows it — no
+    // fixed-width window, which silently truncates as comments grow
+    const afterRetry = indexSrc.slice(retryIdx, indexSrc.indexOf('if (content !== null) {'))
+    // its catch logs the marker WITH its cause and `continue`s — so the same
+    // provider cannot be retried twice
+    expect(afterRetry).toContain('const rKind = classifyRetryFailure(rStatus, rMsg);')
+    expect(afterRetry).toContain('`json_mode_400_retry: ${rKind}')
+    expect(afterRetry).toContain('await logCall(admin, target.providerId, userId, hash, "error", rDetail, Date.now() - attemptStart, consumer);')
     expect(afterRetry).toContain('continue;')
-    // and there is no second callOne between that catch and the loop end
+    // and there is no second callOne between that catch and the strict-parse guard
     const callOnesInBlock = (indexSrc.slice(retryIdx, indexSrc.indexOf('if (content !== null) {')) .match(/await callOne\(/g) || [])
     expect(callOnesInBlock.length).toBe(1)
+  })
+
+  it('v12: a failed retry sets tLast, so the eventual 502 names THIS provider', () => {
+    const retryIdx = indexSrc.indexOf('const retryText = await callOne(')
+    const block = indexSrc.slice(retryIdx, indexSrc.indexOf('if (content !== null) {'))
+    expect(block).toContain('tLast = retryFailureHeadline(target.provider, rKind);')
+    // the retry branch sets it, not the ordinary transport catch below
+    expect(indexSrc.indexOf('tLast = retryFailureHeadline')).toBeLessThan(
+      indexSrc.indexOf('const aborted = tcontroller.signal.aborted;'),
+    )
   })
 
   it('a failed retry costs the caller nothing but time: it falls through, it is never a 502 of its own', () => {
     const retryIdx = indexSrc.indexOf('const retryText = await callOne(')
     const block = indexSrc.slice(retryIdx, indexSrc.indexOf('if (content !== null) {'))
-    expect(block).not.toContain('502')
+    // asserted on the RESPONSE form, not the bare digits: the comments in that
+    // block legitimately write "502" to explain the rule.
+    expect(block).not.toContain('502, cors.headers')
     expect(block).not.toContain('return json({ error')
   })
 
@@ -166,6 +242,9 @@ describe('S2.16 deployed handler: structural guards on index.ts', () => {
     expect(before).toContain('const cDetail = (cBody ? `${cMsg}: ${cBody}` : cMsg).slice(0, 500);')
     expect(before).toContain('await logCall(admin, target.providerId, userId, hash, "error", cDetail, Date.now() - attemptStart, consumer);')
     expect(before).toContain('last_error: cDetail')
+    // both the 400 row and the retry row are capped at 500 chars like every other
+    // provider error row, and neither can carry a key (readErrorBody redacts)
+    expect((indexSrc.match(/\.slice\(0, 500\)/g) || []).length).toBeGreaterThanOrEqual(3)
   })
 
   it('the retry answer still goes through validateAnswer and the v10 gate', () => {

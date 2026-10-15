@@ -68,6 +68,9 @@
 // line, parsed tolerantly. Any other status behaves exactly as before; the
 // Gemini adapter and the legacy {prompt} branch are untouched; the extra attempt
 // spends the SAME overall wall-clock guard and never repeats per provider.
+// v12 adds the two things the first cut lacked: a failed retry logs its CAUSE
+// ('json_mode_400_retry: <http_<n>|no_text|no_json_object|invalid_json|error>')
+// and sets tLast, so the 502 names the provider that actually failed last.
 //
 // jsonMode asks the provider for a single JSON object. The two browser callers
 // this replaces did not behave the same way: the form auto-fill used temperature
@@ -79,6 +82,7 @@ import {
   TEMPLATES, buildPrompt, loadOptions, validateAnswer,
   countDistinctDates, isLowYield, lowYieldDetail, lowYieldLog,
   isJsonValidateFailed, extractJsonObject, JSON_ONLY_REMINDER,
+  classifyRetryFailure, retryFailureHeadline,
   type TemplateName, type Issue,
 } from "./templates.ts";
 
@@ -737,10 +741,21 @@ Deno.serve(async (req) => {
               const objText = extractJsonObject(retryText);
               if (!objText) throw new Error("retry answer had no complete JSON object");
               parsed = JSON.parse(objText);
-            } catch {
-              // One retry per provider per call, never a second: this row is the
-              // marker, then the chain moves on to the NEXT provider.
-              await logCall(admin, target.providerId, userId, hash, "error", "json_mode_400_retry", Date.now() - attemptStart, consumer);
+            } catch (retryErr) {
+              // v12: the marker row now carries WHY the retry failed (an HTTP error,
+              // an empty message, a truncated generation, unparseable JSON) so the
+              // audit trail is diagnosable on its own. One retry per provider per
+              // call, never a second: the chain then moves to the NEXT provider.
+              const rStatus = (retryErr as { status?: number })?.status;
+              const rMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+              const rKind = classifyRetryFailure(rStatus, rMsg);
+              const rBody = (retryErr as { body?: string })?.body ?? "";
+              const rDetail = `json_mode_400_retry: ${rKind}${(rBody || rMsg) ? ` ${rBody || rMsg}` : ""}`.slice(0, 500);
+              // v12: and the caller-facing line names THIS provider, not an earlier
+              // row in the chain. The retry never 502s on its own; it only makes the
+              // eventual "all providers failed" message truthful.
+              tLast = retryFailureHeadline(target.provider, rKind);
+              await logCall(admin, target.providerId, userId, hash, "error", rDetail, Date.now() - attemptStart, consumer);
               continue;
             }
             content = null; // parsed came from the retry; skip the strict parse below

@@ -486,3 +486,38 @@ export function extractJsonObject(text: string): string | null {
   }
   return null;
 }
+
+/**
+ * v12 — WHAT kind of failure the S2.16 retry hit, so `json_mode_400_retry` is
+ * diagnosable instead of a bare marker. One value per distinguishable cause:
+ *   http_<status>   the provider answered the retry with an HTTP error (429,
+ *                   another 400, 503…);
+ *   no_text         it answered 200 with an empty message (the empty-generation
+ *                   class this fallback exists for);
+ *   no_json_object  text came back but never closed a top-level object
+ *                   (truncated generation);
+ *   invalid_json    a balanced object was extracted that does not parse;
+ *   error           anything else (a timeout abort, a fetch failure).
+ * A pure function of (status, message) so the classification is testable without
+ * a provider.
+ */
+export function classifyRetryFailure(status: number | undefined, message: string): string {
+  if (typeof status === "number") return `http_${status}`;
+  if (/returned no text/i.test(message)) return "no_text";
+  if (/no complete JSON object/i.test(message)) return "no_json_object";
+  if (/json|parse/i.test(message)) return "invalid_json";
+  return "error";
+}
+
+/**
+ * v12 — the caller-facing clause when the retry also failed. It names the
+ * provider that ACTUALLY failed last, so the 502 stops blaming an earlier row
+ * (e.g. a Gemini 503) when the fatal attempt was Groq's. Same shape as every
+ * other tLast value: "<provider> returned <something>", plain words, no key and
+ * no body content — the full diagnosis is in ai_request_logs, not here.
+ */
+export function retryFailureHeadline(provider: string, kind: string): string {
+  return kind.startsWith("http_")
+    ? `${provider} returned ${kind.slice(5)} after a retry`
+    : `${provider} returned no readable answer after a retry`;
+}
