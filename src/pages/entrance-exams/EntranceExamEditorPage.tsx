@@ -43,6 +43,10 @@ import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { ResourcesTab } from "@/components/entrance-exams/ResourcesTab";
 import { SyllabusResourcePicker } from "@/components/entrance-exams/SyllabusResourcePicker";
 import { SyllabusTab } from "@/components/entrance-exams/SyllabusTab";
+// R2.1 (editor shell, CMS only): the section rail and its registry-driven data.
+import { EditorSectionRail } from "@/components/entrance-exams/EditorSectionRail";
+import { buildRail, type RailItem } from "@/pages/entrance-exams/editorSections";
+import { getModuleRegistry } from "@/services/moduleRegistryService";
 
 /** A zeroed fill report — used wherever the drawer/provenance is opened with no
  *  extraction yet in flight (keeps the shape in one place). */
@@ -164,6 +168,10 @@ export function EntranceExamEditorPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [regions, setRegions] = useState<Region[]>([]);
   const [activeTab, setActiveTab] = useState<string>("identity");
+  // R2.1: the left rail is built from module_registry, in registry order, for
+  // THIS pillar. A failed read leaves it empty and every tab usable — the shell
+  // must never stop an editor working because a navigation list did not load.
+  const [railItems, setRailItems] = useState<RailItem[]>([]);
   const [showNewEdition, setShowNewEdition] = useState(false);
   // A1: in-flight guard so a double-click on "Create Edition" cannot fire two
   // startNewEdition calls (the second hit the unique key and toasted an error).
@@ -271,6 +279,17 @@ export function EntranceExamEditorPage() {
 
   useEffect(() => {
     getCategories(pillarFromUrl).then(setCategories).catch(() => {});
+  }, [pillarFromUrl]);
+
+  // R2.1: rail sections come from the registry, pillar-filtered by the ONE
+  // service that already does that filter (getModuleRegistry) — the rail and the
+  // Modules panel must never disagree about which sections a pillar has.
+  useEffect(() => {
+    let cancelled = false;
+    getModuleRegistry(pillarFromUrl)
+      .then((rows) => { if (!cancelled) setRailItems(buildRail(rows)); })
+      .catch(() => { if (!cancelled) setRailItems([]); });
+    return () => { cancelled = true; };
   }, [pillarFromUrl]);
 
   // Region vocabulary for the picker (states + UTs + all-india). Loaded once.
@@ -1104,6 +1123,20 @@ export function EntranceExamEditorPage() {
         </div>
       </div>
 
+      {/* R2.1 shell skeleton: section rail (registry order) beside the content.
+          The rail only NAVIGATES, through the same unsaved-changes guard the tabs
+          use, and the tab bar itself is unchanged — Save/Publish untouched (a
+          single page-level Save writing dirty sections is R2.5, by owner decision).
+          Fixed-width rail + `min-w-0` content keeps 1366x768 without horizontal
+          scroll (editor-refactor §2 rule 7). */}
+      <div className="flex items-start gap-4">
+        <EditorSectionRail
+          items={railItems}
+          activeTab={activeTab}
+          onSection={guardedSetActiveTab}
+          dirty={{ formDirty, moduleDirty, newsDirty }}
+        />
+        <div className="flex-1 min-w-0">
       {/* Tabs */}
       <div className="flex gap-0 border-b border-slate-200 bg-white rounded-t-lg overflow-x-auto">
         {tabs.map((tab) => (
@@ -1182,6 +1215,8 @@ export function EntranceExamEditorPage() {
             toast.info(`Editing edition "${ed.editionLabel}". Save to apply changes.`);
           }}
         />}
+      </div>
+        </div>
       </div>
 
       {/* New Edition Dialog */}
