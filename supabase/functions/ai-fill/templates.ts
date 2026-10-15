@@ -173,7 +173,13 @@ ${sourceText}
 
 export interface Issue {
   field: string;
-  reason: "low_confidence" | "not_an_option" | "bad_shape" | "no_value";
+  /**
+   * v10 adds "low_yield": the answer parsed and validated but carried far fewer
+   * date rows than the notice states events (see isLowYield). Consumers must
+   * tolerate a reason they do not know; the CMS drawer displays this one as its
+   * own line (src/components/entrance-exams/noticeReview.ts).
+   */
+  reason: "low_confidence" | "not_an_option" | "bad_shape" | "no_value" | "low_yield";
   detail: string;
 }
 
@@ -326,4 +332,96 @@ export function validateAnswer(parsed: unknown, opts: AllowedOptionsServer): { c
     },
     issues,
   };
+}
+
+// ── v10 — the low-yield transport gate ───────────────────────────────────────
+// Design: docs/design/ai-fill-low-yield-fallback.md. A provider can answer with
+// VALID JSON that passes validateAnswer's SHAPE check and still be materially
+// thin (the 14 Oct UP D.El.Ed runs returned 200 with 2, 4 and 3 of the expected
+// kinds missing), and because nothing failed the next provider was never tried.
+// These helpers are COUNTS only — they never judge whether a date is correct, so
+// a legitimately short notice cannot be punished for being short.
+
+/** Devanagari digits folded to ASCII so pure-Hindi notices are counted too. */
+const DEV_DIGITS = "०१२३४५६७८९";
+const foldDevDigits = (s: string): string =>
+  s.replace(/[०-९]/g, (c) => String(DEV_DIGITS.indexOf(c)));
+
+/** Month spellings -> month number. Hindi carries both the -म्बर and -ंबर
+ *  spellings (and the -क्त-/-क्ट्- variants of October) because notices print
+ *  both; English is matched in full and as a 3-letter abbreviation. */
+const MONTH_NUMBERS: Record<string, number> = {
+  january: 1, febuary: 2, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7,
+  august: 8, september: 9, october: 10, november: 11, december: 12,
+  jan: 1, feb: 2, mar: 3, apr: 4, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
+  "जनवरी": 1, "फरवरी": 2, "मार्च": 3, "अप्रैल": 4, "मई": 5, "जून": 6, "जुलाई": 7, "अगस्त": 8,
+  "सितम्बर": 9, "सितंबर": 9, "अक्तूबर": 10, "अक्टूबर": 10, "अक्टोबर": 10,
+  "नवम्बर": 11, "नवंबर": 11, "दिसम्बर": 12, "दिसंबर": 12,
+};
+const MONTH_ALTERNATIVES = Object.keys(MONTH_NUMBERS)
+  // longest first, so "september" can never be matched as "sep".
+  .sort((a, b) => b.length - a.length)
+  .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  .join("|");
+
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+const normYear = (y: number): number => (y < 100 ? 2000 + y : y);
+
+/**
+ * How many DISTINCT calendar days the notice text mentions — the yardstick the
+ * yield gate measures an answer against. Deliberately an UPPER bound: a notice
+ * can name days that are not events of this notice (an earlier advertisement's
+ * date belongs in "references"), which is why the threshold is a fraction.
+ * Recognised: dd.mm.yyyy, dd/mm/yyyy, dd.mm.yy, yyyy-mm-dd, and
+ * "D <month name> <year>" in English (full or abbreviated) and Hindi — Devanagari
+ * digits folded first. Bare years ("2026-27"), roll numbers and amounts are not
+ * dates and are ignored; a repeated day counts once.
+ */
+export function countDistinctDates(sourceText: string): number {
+  const text = foldDevDigits(sourceText);
+  const days = new Set<string>();
+  const add = (d: number, m: number, y: number): void => {
+    if (m < 1 || m > 12 || d < 1 || d > 31) return;
+    days.add(`${normYear(y)}-${pad2(m)}-${pad2(d)}`);
+  };
+  // Numeric, Indian day-first printing: 05.10.2026, 5/10/26, 07.10.2026.
+  for (const mt of text.matchAll(/\b(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})\b/g)) {
+    add(Number(mt[1]), Number(mt[2]), Number(mt[3]));
+  }
+  // ISO: 2026-10-05.
+  for (const mt of text.matchAll(/\b(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})\b/g)) {
+    add(Number(mt[3]), Number(mt[2]), Number(mt[1]));
+  }
+  // Named month, day first: "05 October 2026", "14 Oct 2026", "08 अक्टूबर 2026".
+  const named = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_ALTERNATIVES})\\s+(\\d{2,4})\\b`, "gi");
+  for (const mt of text.matchAll(named)) {
+    const month = MONTH_NUMBERS[String(mt[2]).toLowerCase()];
+    if (month) add(Number(mt[1]), month, Number(mt[3]));
+  }
+  return days.size;
+}
+
+/**
+ * The gate, exactly as designed:
+ *   T1  M >= 3 and N == 0            a dated notice produced no timeline at all
+ *   T2  M >= 6 and N <= floor(M / 3) a date-rich notice covered under a third of its days
+ *   otherwise                        accepted — behaviour unchanged
+ * M <= 2 NEVER triggers at any N, so a genuinely short notice is safe; M of 3-5
+ * only triggers at N == 0.
+ */
+export function isLowYield(distinctDates: number, rowsReturned: number): boolean {
+  if (distinctDates >= 3 && rowsReturned === 0) return true;
+  if (distinctDates >= 6 && rowsReturned <= Math.floor(distinctDates / 3)) return true;
+  return false;
+}
+
+/** The ai_request_logs marker — one greppable format, used for BOTH the refused
+ *  attempt (status error) and the accepted best answer (status success). */
+export function lowYieldLog(rowsReturned: number, distinctDates: number): string {
+  return `low_yield: got ${rowsReturned} of ~${distinctDates}`;
+}
+
+/** The editor-facing issue text (goes in issues[], never in an HTTP error). */
+export function lowYieldDetail(rowsReturned: number, distinctDates: number): string {
+  return `only ${rowsReturned} of ~${distinctDates} dated events in the notice came back - some events were dropped; check the timeline before saving`;
 }

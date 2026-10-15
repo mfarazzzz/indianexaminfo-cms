@@ -54,13 +54,24 @@
 //        legacy:   { content: string, provider: string, model: string }
 // Error: { error: string }  with 400/401/403/429/502/504
 //
+// v10 LOW-YIELD GATE (template path only): a valid-JSON answer whose DATE ROW
+// COUNT is materially below what the notice text mentions is refused to the
+// caller and the NEXT provider is tried; if every provider is thin the BEST
+// answer is returned as HTTP 200 with a "low_yield" issue. Low yield alone never
+// becomes a 502 — a half-extraction the editor can see beats a failure the
+// editor can't. Design: docs/design/ai-fill-low-yield-fallback.md.
+//
 // jsonMode asks the provider for a single JSON object. The two browser callers
 // this replaces did not behave the same way: the form auto-fill used temperature
 // 0.05 and a JSON response type, the tab generators used 0.7 and plain text. Both
 // shapes are kept - the caller says which one it is, so no behaviour moves here.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { TEMPLATES, buildPrompt, loadOptions, validateAnswer, type TemplateName } from "./templates.ts";
+import {
+  TEMPLATES, buildPrompt, loadOptions, validateAnswer,
+  countDistinctDates, isLowYield, lowYieldDetail, lowYieldLog,
+  type TemplateName, type Issue,
+} from "./templates.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -651,11 +662,20 @@ Deno.serve(async (req) => {
     // Allowed options read from the DB AT CALL TIME — the browser sends none.
     const options = await loadOptions(admin, pillar);
     const prompt = buildPrompt(templateName as TemplateName, sourceText, options);
+    // v10 yardstick for the yield gate: distinct calendar days the NOTICE TEXT
+    // mentions. Computed once, before any provider is called.
+    const distinctDates = countDistinctDates(sourceText);
 
     const hash = await promptHash(prompt);
     const started = Date.now();
     const tcontroller = new AbortController();
     let tLast = "AI could not read that notice.";
+    // v10: the thinnest-but-best answer found so far, kept so the chain can
+    // still answer with something when every provider under-delivers.
+    let bestLow: null | {
+      n: number; content: unknown; issues: Issue[];
+      provider: string; model: string; providerId: string | null;
+    } = null;
     const providers = await resolveProviders(admin);
     // S2.13c: per-attempt budgets now live inside callOne (target.timeoutMs), so
     // this outer timer is only an OVERALL guard = sum of every provider's budget
@@ -669,7 +689,6 @@ Deno.serve(async (req) => {
         const attemptStart = Date.now();
         try {
           const content = await callOne(target, prompt, true, tcontroller.signal, TEMPLATE_MAX_OUTPUT_TOKENS);
-          clearTimeout(ttimer);
           // Parse: a non-JSON answer is REPORTED, never returned as empty.
           let parsed: unknown;
           try {
@@ -677,10 +696,32 @@ Deno.serve(async (req) => {
             if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
             parsed = JSON.parse(cleaned);
           } catch {
+            clearTimeout(ttimer);
             await logCall(admin, target.providerId, userId, hash, "error", "template answer was not JSON", Date.now() - started, consumer);
             return json({ error: "AI could not read part of the notice: the model did not answer in the required JSON shape. Nothing was filled in — try again, or paste a cleaner extraction." }, 502, cors.headers);
           }
           const validated = validateAnswer(parsed, options);
+
+          // ── v10 LOW-YIELD GATE ── counts rows, never judges content. A
+          // structurally valid but materially thin answer is refused HERE, so the
+          // next provider gets a chance instead of one weak model's half-extraction
+          // becoming the reviewer's 200. The overall guard stays ARMED while we may
+          // still try another provider, so this cannot extend the request past its
+          // own budget. A low-yield answer NEVER becomes a 502.
+          const rowsReturned = ((validated.content as { dates?: unknown[] })?.dates ?? []).length;
+          if (isLowYield(distinctDates, rowsReturned)) {
+            if (!bestLow || rowsReturned > bestLow.n) {
+              bestLow = {
+                n: rowsReturned, content: validated.content, issues: validated.issues,
+                provider: target.provider, model: target.model, providerId: target.providerId,
+              };
+            }
+            await logCall(admin, target.providerId, userId, hash, "error", lowYieldLog(rowsReturned, distinctDates), Date.now() - attemptStart, consumer);
+            if (pi < providers.length - 1) continue;  // a provider is still untried
+            break;                                     // chain spent: answer with the best
+          }
+
+          clearTimeout(ttimer);
           await logCall(admin, target.providerId, userId, hash, "success", null, Date.now() - started, consumer);
           if (target.providerId) {
             await admin.from("ai_providers")
@@ -720,6 +761,20 @@ Deno.serve(async (req) => {
       }
     } finally {
       clearTimeout(ttimer);
+    }
+    // ── v10: every provider that answered at all answered THIN. Give the editor
+    // the BEST answer found plus one low_yield issue (HTTP 200) — the alternative
+    // is a 502 that hides the fact that a partial extraction exists. The audit
+    // trail carries the same marker as the refused attempts.
+    if (bestLow) {
+      await logCall(admin, bestLow.providerId, userId, hash, "success", lowYieldLog(bestLow.n, distinctDates), Date.now() - started, consumer);
+      if (bestLow.providerId) {
+        await admin.from("ai_providers")
+          .update({ last_used_at: new Date().toISOString(), last_error: null })
+          .eq("id", bestLow.providerId);
+      }
+      const issues: Issue[] = [...bestLow.issues, { field: "dates", reason: "low_yield", detail: lowYieldDetail(bestLow.n, distinctDates) }];
+      return json({ content: bestLow.content, issues, provider: bestLow.provider, model: bestLow.model, template: templateName }, 200, cors.headers);
     }
     return json({ error: tLast === "timed out"
       ? "AI took too long to read the notice and the request was stopped. Nothing was filled in — try again."
