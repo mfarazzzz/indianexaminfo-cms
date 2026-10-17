@@ -347,3 +347,24 @@ describe('R2.2 the header gates only the Published option on the selection answe
     expect(pageSrc).toContain('<button type="submit" disabled={saving}')
   })
 })
+
+// ── 2a: the duplicate toast names the list and opens the RIGHT editor ─────────
+// A create under one pillar can collide with a record under another (the UPSSSC PET
+// case). The catch must name the existing record's list and link to that list's
+// editor route, not the current editor's listPath.
+
+describe('2a duplicate toast names the list and routes to the correct editor', () => {
+  const catchBlock = pageSrc.slice(
+    pageSrc.indexOf("if (err?.code === 'DUPLICATE_SLUG'"),
+    pageSrc.indexOf("if (err?.code === 'DUPLICATE_SLUG'") + 900,
+  )
+  it('reads pillar + matched off the error and resolves the list via adminListForPillar', () => {
+    expect(pageSrc).toContain('import { adminListForPillar } from "@/config/pillarAdminLists"')
+    expect(catchBlock).toContain('adminListForPillar(existPillar)')
+    expect(catchBlock).toContain('where.label')
+  })
+  it('"Open existing" navigates to the existing record list path, not listPath', () => {
+    expect(catchBlock).toContain('navigate(`${where.path}/${existId}`)')
+    expect(catchBlock).not.toContain('navigate(`${listPath}/${existId}`)')
+  })
+})

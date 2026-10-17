@@ -345,6 +345,59 @@ export async function getEntranceExam(examId: string): Promise<{
 
 // ── Create New Exam ────────────────────────────────────────────────────────
 
+/** Escape the LIKE/ILIKE pattern metacharacters so a searched name is matched as
+ *  literal text, not wildcards (`%`, `_`, `\`). */
+function escapeIlike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Detect an existing exam that a new create would collide with — by slug (exact),
+ * or by a case-insensitive trimmed match on the exam Name or the Short Name. The
+ * slug namespace is global, so a create under one pillar can collide with a record
+ * that lives under another (e.g. an Entrance-Exam form hitting a Govt-Exam record);
+ * the result carries the existing record's `pillar` and which field matched so the
+ * UI can name the list and open the right editor. Returns null when free.
+ */
+type ExamConflict = {
+  id: string; name: string; workflow_status: string | null; pillar: string | null;
+  matched: "slug" | "name" | "short_name";
+};
+async function findExamConflict(
+  slug: string, name?: string, shortName?: string,
+): Promise<ExamConflict | null> {
+  const COLS = "id, name, workflow_status, pillar";
+  const trim = (s?: string) => (s ?? "").trim();
+
+  // 1. slug (the unique key). A failed check is NOT "free" — abort rather than
+  //    write a colliding row.
+  const { data: bySlug, error: slugErr } = await db.from("exams").select(COLS).eq("slug", slug).maybeSingle();
+  if (slugErr) {
+    console.error(`[entranceExamService] createEntranceExam slug check failed:`, slugErr);
+    throw new Error(`Could not verify slug "${slug}" — ${slugErr.message}`);
+  }
+  if (bySlug) return { ...(bySlug as object), matched: "slug" } as ExamConflict;
+
+  // 2. case-insensitive trimmed Name. A twin may already exist, so read one row
+  //    (.limit(1)) rather than maybeSingle (which errors on >1). A read failure is
+  //    treated as "no name conflict" — the slug check already guarded the unique
+  //    key, so this only widens detection and must never block a valid create.
+  const nameVal = trim(name);
+  if (nameVal) {
+    const { data, error } = await db.from("exams").select(COLS).ilike("name", escapeIlike(nameVal)).limit(1);
+    if (!error && data && data.length > 0) return { ...(data[0] as object), matched: "name" } as ExamConflict;
+  }
+
+  // 3. case-insensitive trimmed Short Name.
+  const shortVal = trim(shortName);
+  if (shortVal) {
+    const { data, error } = await db.from("exams").select(COLS).ilike("short_name", escapeIlike(shortVal)).limit(1);
+    if (!error && data && data.length > 0) return { ...(data[0] as object), matched: "short_name" } as ExamConflict;
+  }
+
+  return null;
+}
+
 export async function createEntranceExam(input: NewExamInput): Promise<{
   exam: ExamIdentity;
   edition: ExamEdition;
@@ -368,27 +421,23 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
   // Prefer short name for slug (e.g. "CAT" → "cat"), fall back to full name
   const slug = input.slug || generateSlug(input.shortName || input.name);
 
-  // Check slug uniqueness
-  const { data: existing, error: existingErr } = await db
-    .from("exams")
-    .select("id, name, workflow_status")
-    .eq("slug", slug)
-    .maybeSingle();
-  // A failed uniqueness check is NOT "slug is free" — abort the create rather
-  // than write a row that collides (or duplicates an existing exam silently).
-  if (existingErr) {
-    console.error(`[entranceExamService] createEntranceExam slug check failed:`, existingErr);
-    throw new Error(`Could not verify slug "${slug}" — ${existingErr.message}`);
-  }
-
-  if (existing) {
-    // R1.9: friendly message with the existing record's identity so the editor
-    // can link directly to it instead of guessing which record collided.
+  // R2.2-adjacent (2a): detect a collision BEFORE writing — by slug (exact) OR a
+  // case-insensitive trimmed match on the exam Name or Short Name — not slug only.
+  // The error names the existing record, WHICH field collided, and the pillar it
+  // lives in so the editor's toast can say where it is and open the right list.
+  const conflict = await findExamConflict(slug, input.name, input.shortName);
+  if (conflict) {
     const err = new Error(
-      `DUPLICATE_SLUG::${existing.id}::${existing.name}::${existing.workflow_status ?? 'draft'}`,
+      `DUPLICATE_SLUG::${conflict.id}::${conflict.name}::${conflict.workflow_status ?? 'draft'}`,
     );
     (err as any).code = 'DUPLICATE_SLUG';
-    (err as any).existingExam = { id: existing.id, name: existing.name, status: existing.workflow_status ?? 'draft' };
+    (err as any).existingExam = {
+      id: conflict.id,
+      name: conflict.name,
+      status: conflict.workflow_status ?? 'draft',
+      pillar: conflict.pillar ?? null,
+      matched: conflict.matched,
+    };
     throw err;
   }
 

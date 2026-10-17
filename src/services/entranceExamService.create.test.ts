@@ -29,7 +29,7 @@ function installChains(opts: { examRow?: Record<string, unknown> }) {
   const inserted: Record<string, Record<string, unknown>> = {}
   mockFrom.mockImplementation((table: string) => {
     const chain: Record<string, unknown> = {}
-    for (const m of ['select', 'eq', 'order', 'limit']) chain[m] = vi.fn(() => chain)
+    for (const m of ['select', 'eq', 'order', 'limit', 'ilike', 'or']) chain[m] = vi.fn(() => chain)
     chain.insert = vi.fn((payload: Record<string, unknown>) => {
       inserted[table] = payload
       return chain

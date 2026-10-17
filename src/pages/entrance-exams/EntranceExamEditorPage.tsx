@@ -31,6 +31,7 @@ import {
   answersForPillar, selectedAnswerId, selectionHelperText, isSelectionAnswered,
   SELECTION_QUESTION, SELECTION_UNANSWERED_LABEL,
 } from "@/config/selectionQuestion";
+import { adminListForPillar } from "@/config/pillarAdminLists";
 import { generateStructured } from "@/lib/ai/aiFillClient";
 import { postProcessExtraction, type PipelineResult } from "@/lib/ai/noticePipeline";
 import { loadAllowedOptions } from "@/lib/ai/allowedOptions";
@@ -604,15 +605,19 @@ export function EntranceExamEditorPage() {
       setNewsDirty(false);
       await loadExam();
     } catch (err: any) {
-      // R1.9: friendly duplicate-slug error with a link to the existing record.
+      // R1.9 / 2a: friendly duplicate error naming WHERE the existing record lives
+      // (its pillar's list) and opening the CORRECT editor, not the current one — a
+      // create under Entrance Exams can collide with a Govt Exams record.
       if (err?.code === 'DUPLICATE_SLUG' && err?.existingExam) {
-        const { id: existId, name: existName, status: existStatus } = err.existingExam;
+        const { id: existId, name: existName, status: existStatus, pillar: existPillar, matched } = err.existingExam;
         const statusLabel = existStatus === 'published' ? 'Published' : existStatus === 'archived' ? 'Archived' : 'Draft';
+        const where = adminListForPillar(existPillar);
+        const byField = matched === 'name' ? 'name' : matched === 'short_name' ? 'short name' : 'slug';
         toast.error(
-          `An exam with this name already exists: ${existName} (${statusLabel}).`,
+          `Already exists in ${where.label}: ${existName} (${statusLabel}).`,
           {
-            description: `Open it to update, or change the Short Name / Slug and try again.`,
-            action: { label: "Open existing", onClick: () => navigate(`${listPath}/${existId}`) },
+            description: `Matched on ${byField}. Open it to update, or change the Name / Short Name / Slug and try again.`,
+            action: { label: "Open existing", onClick: () => navigate(`${where.path}/${existId}`) },
             duration: 10000,
           },
         );
