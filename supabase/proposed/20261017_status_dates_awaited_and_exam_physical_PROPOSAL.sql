@@ -1,0 +1,114 @@
+-- ============================================================================
+-- PROPOSAL ONLY — DO NOT APPLY. No migration is run from this file; it awaits
+-- the owner's approval. Read-only counts below were taken 2026-10-17 against
+-- project cwbhhcqsrbuoybeaondk.
+--
+-- Two related status-engine problems, seen on the UPSSSC PET page:
+--   (A) "Dates Awaited" shown although the record has confirmed dates that are
+--       already in the PAST. 31 of 134 dates-awaited exams have ≥1 confirmed
+--       date, all in the past. The final ELSE is reached whenever no recognised
+--       window matched, even when confirmed dates exist.
+--   (B) An exam typed `exam_physical` is NOT counted as an exam window, and the
+--       label fallback maps a bare "% pet %" to `exam_physical`. A written
+--       preliminary ("Preliminary Eligibility Test", PET) is therefore invisible
+--       to the exam-window branches → it can never read result-awaited/ongoing.
+--       12 important_dates rows are typed exam_physical; 2 of them carry a
+--       written-exam label. The label fallback currently touches 0 rows (every
+--       row already has an explicit type) — it is a latent trap only.
+-- ============================================================================
+
+-- Measured (read-only), current view `exam_derived_status`:
+--   dates-awaited total .............. 134
+--   dates-awaited WITH a past confirmed date ... 31     ← problem (A)
+--   important_dates rows ............. 492
+--     typed exam_written ............. 250
+--     typed exam_physical ............. 12   (2 of them labelled PET/Prelims/Written) ← (B)
+--     no-type AND pet/rally/physical label .. 0        (fallback not firing today)
+-- Preview queries are at the bottom; run them before deciding.
+
+-- ---------------------------------------------------------------------------
+-- CHANGE 1 — (A) "all confirmed dates are in the past" is NOT "dates awaited".
+-- Insert this branch in the status_derived CASE immediately BEFORE the final
+--   WHEN combined.has_any_dates AND NOT combined.has_confirmed_dates THEN 'upcoming'
+--   ELSE 'dates-awaited'
+-- so a record that has confirmed dates but none in the future reads "completed"
+-- rather than implying the dates are still to come:
+--
+--   WHEN combined.has_confirmed_dates AND combined.next_confirmed_date IS NULL
+--       THEN 'completed'
+--
+-- Effect (before/after): the 31 exams that are 'dates-awaited' while holding a
+-- past confirmed date leave 'dates-awaited'. dates-awaited count 134 → 103.
+-- ('completed' is honest: a cycle with confirmed events and nothing ahead is
+-- over. If we would rather say 'result-awaited' when the newest past event is a
+-- genuine exam, that is CHANGE 2, which routes those to result-awaited first.)
+--
+-- ---------------------------------------------------------------------------
+-- CHANGE 2 — (B) treat a physical/practical exam as an exam window.
+-- In date_summary, the exam window currently counts only exam_written /
+-- exam_practical:
+--   min/max(date_val) FILTER (… date_type = ANY(ARRAY['exam_written','exam_practical']))
+-- Add 'exam_physical' to BOTH arrays so an exam typed exam_physical also drives
+-- exam_start_confirmed/exam_end_confirmed, i.e. a past physical exam flips the
+-- record to 'result-awaited' (exam over, no result) instead of 'dates-awaited'.
+-- The postponed guard already lists exam_physical, so this only EXTENDS the
+-- positive window to match. Affects the 12 exam_physical rows' records (2 of
+-- them the written-PET class that is mis-typed at the DATA layer).
+--
+-- ---------------------------------------------------------------------------
+-- CHANGE 3 — (B) label fallback: stop guessing "pet" means a physical test.
+-- In the date_type COALESCE CASE, the branch
+--   WHEN lower(...) LIKE '%rally%' OR lower(...) LIKE '%physical test%'
+--        OR lower(...) LIKE '% pet %' THEN 'exam_physical'
+-- maps any " … PET … " to exam_physical, but "PET" here is Preliminary
+-- ELIGIBILITY TEST — a written paper. Replace with an explicit physical test and
+-- let a written prelim fall through to exam_written:
+--
+--   WHEN lower(...) LIKE '%physical efficiency test%'
+--        OR lower(...) LIKE '%physical test%'
+--        OR lower(...) LIKE '%pet running%'
+--        OR lower(...) LIKE '%rally%'
+--        OR lower(...) LIKE '%physical standard%'          THEN 'exam_physical'
+--   WHEN lower(...) LIKE '%practical%'                     THEN 'exam_practical'
+--   -- (the existing branch below already maps %prelims%/%mains%/%written%/%exam%)
+--   WHEN lower(...) LIKE '%pet%'
+--        OR lower(...) LIKE '%prelim%'
+--        OR lower(...) LIKE '%written%'
+--        OR lower(...) LIKE '%cbt%'
+--        OR lower(...) LIKE '%mains%'
+--        OR lower(...) LIKE '%exam%'                       THEN 'exam_written'
+--
+-- This changes NO stored data (it only affects rows that carry no explicit type).
+-- Today that is 0 rows for pet/physical, so CHANGE 3 is a latent-trap fix that
+-- protects future rows; it does NOT by itself fix UPSSSC PET (that row has an
+-- explicit type='exam_physical' from the seed). The seed typing is a CONTENT
+-- fix (re-type the PET date row exam_written, or verify the record) owned by the
+-- editor workflow — not a migration in this proposal.
+
+-- ---------------------------------------------------------------------------
+-- READ-ONLY PREVIEW (run these, change nothing). They reuse the live view + a
+-- recompute to show what each change would move.
+--
+-- P1: the 31 (A) exams and which past confirmed date drives them —
+--   SELECT e.slug,
+--          (SELECT max((d->>'date')::date)
+--             FROM exam_editions ee, jsonb_array_elements(ee.important_dates) d
+--            WHERE ee.exam_id = e.exam_id AND ee.is_current
+--              AND coalesce(nullif(d->>'state',''),'confirmed') = 'confirmed'
+--              AND (d->>'date')::date < (now() AT TIME ZONE 'Asia/Kolkata')::date
+--          ) AS newest_past_confirmed
+--     FROM exam_derived_status e
+--    WHERE e.derived_status = 'dates-awaited' AND e.has_confirmed_dates
+--    ORDER BY newest_past_confirmed DESC;
+--
+-- P2: the 12 exam_physical rows, flagging the written-PET labels —
+--   SELECT ee.exam_id, d->>'label' AS label, d->>'date' AS date,
+--          (lower(d->>'label') ~ '(pet|prelim|written|cbt|mains|eligibility test)') AS looks_written
+--     FROM exam_editions ee, jsonb_array_elements(ee.important_dates) d
+--    WHERE d->>'type' = 'exam_physical'
+--    ORDER BY looks_written DESC, ee.exam_id;
+--
+-- P3: after CHANGE 1+2 only, how the exam_derived_status CASE would read for a
+--     single candidate (edit the slug) — paste the current view body, apply the
+--     two CASE edits, and diff `derived_status` old vs new for all published
+--     exams before/after. Ship only the flips that are intended.
