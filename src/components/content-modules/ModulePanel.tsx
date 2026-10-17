@@ -23,7 +23,7 @@ import { aiGenerateForModule } from "@/lib/modules/moduleAI";
 import type { ModuleDefinition, ModuleConfig, ContentModulesData, ModuleContentData, SaveStatus } from "@/types/modules";
 import type { ExamIdentity, ExamEdition } from "@/services/entranceExamService";
 import type { SelectionModel } from "@/types/selection";
-import { isModuleApplicable, hasApplicabilityRule } from "@/config/moduleRegistry";
+import { isModuleApplicable, hasApplicabilityRule, isHidingEnforced } from "@/config/moduleRegistry";
 import { getErrorMessage } from "@/lib/utils";
 import { hasData, SECTION_BY_SLUG, type HasDataView } from "@/lib/sectionRegistry";
 import { EligibilityCard, ApplicationFeeCard, SelectionProcessCard, FaqsCard } from "./ColumnBackedCards";
@@ -173,14 +173,17 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
       let registry: ModuleDefinition[];
       try { registry = await getModuleRegistry(exam?.pillar); } catch { registry = BUILT_IN_MODULES; }
       // Filter to modules that are structurally applicable given the two-axis model.
-      // R2.2 (b): a slug with NO rule in moduleRegistry.ts (the DB/TS vocabulary
-      // gap) is SHOWN, not silently failed-open — and the card FLAGS it as "no
-      // applicability rule" so the editor can see the gap. Nothing is hidden here:
-      // hiding stays only for slugs that DO have a rule and fail it. (The rule
-      // entries themselves land in R2.2 (a), with hiding kept switched off.)
+      // R2.2 (a): a slug now HAS a rule but ships with `enforceHiding: false` until
+      // the owner approves switching hiding on, so it is kept visible. Only an
+      // ENFORCED rule that the record FAILS hides a section — and the stored-data
+      // guard (isSectionHideable) means a section with content is never hidden. No
+      // NEW hiding is switched on this turn: rule-less slugs stay flagged-and-shown,
+      // newly-ruled slugs are shown, and only the pre-existing enforced rules can
+      // hide (unchanged behaviour).
       if (entityType) {
         registry = registry.filter((m) => {
-          if (!hasApplicabilityRule(m.slug)) return true; // no rule → show + flag
+          if (!hasApplicabilityRule(m.slug)) return true;   // no rule → show + flag
+          if (!isHidingEnforced(m.slug)) return true;         // rule not switched on → show
           return isModuleApplicable(m.slug, entityType, selectionModel);
         });
       }

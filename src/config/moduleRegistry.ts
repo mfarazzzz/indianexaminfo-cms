@@ -189,6 +189,15 @@ export interface ModuleDefinition {
    * Determines where content belongs and how it survives an edition rollover.
    */
   level: ModuleLevel;
+  /**
+   * R2.2 (a): when FALSE, this module's applicability rule is DOCUMENTED but not
+   * yet ALLOWED to hide the section in the CMS. The rule is present (so the coverage
+   * guard applies and the panel no longer flags it "no rule"), but the ModulePanel
+   * filter keeps the section visible. New rules ship with `enforceHiding: false`
+   * until the owner approves switching hiding on; the existing rules leave it unset
+   * (undefined) and keep hiding as they always have.
+   */
+  enforceHiding?: boolean;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -405,6 +414,147 @@ export const ENTITY_TYPE_PROFILES: Record<string, EntityTypeProfile> = {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export const MODULE_REGISTRY: ModuleDefinition[] = [
+
+  // ─── R2.2 (a): the 12 module_registry DB slugs that had NO TS rule ─────────
+  // These close the DB/TS vocabulary gap that forced the old silent fail-open.
+  // Each now DECLARES an applicability rule (so the coverage guard applies and the
+  // panel stops flagging it "no rule"), but every one ships with
+  // `enforceHiding: false` and NO fields: the rule documents where the section
+  // belongs; the owner has NOT approved switching rule-based hiding on yet, so
+  // nothing here can hide a section this turn. The applicability is set so that
+  // every entity type which CURRENTLY holds stored content for the slug is COVERED
+  // (overview / eligibility / important-dates / news cover all; application-process
+  // covers exam/university-admission/recruitment/board because one board edition
+  // stores it) — so even if enforcement were switched on, no stored data would be
+  // hidden, independent of the stored-data guard. See moduleHideReport.test.ts.
+
+  {
+    id: "overview", label: "Overview", icon: "📄",
+    description: "A short plain-language summary of the exam or admission",
+    applicableTo: ["*"], category: "meta", level: "exam-identity", displayOrder: 0.1,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: false, supportsTimeline: false, supportsDownloads: false, supportsFAQs: false, supportsSEO: true, supportsAI: true, supportsVersionHistory: true, supportsPreview: true, isRepeatable: false },
+  },
+  {
+    id: "eligibility", label: "Eligibility", icon: "✅",
+    description: "Who can apply — qualifications, conditions",
+    applicableTo: ["*"], category: "academic", level: "exam-identity", displayOrder: 0.3,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: false, supportsTimeline: false, supportsDownloads: false, supportsFAQs: true, supportsSEO: true, supportsAI: true, supportsVersionHistory: true, supportsPreview: true, isRepeatable: false },
+  },
+  {
+    id: "important-dates", label: "Important Dates", icon: "📅",
+    description: "The key dates timeline for the cycle",
+    applicableTo: ["*"], category: "lifecycle", level: "edition-cycle", displayOrder: 0.2,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: false, supportsTimeline: true, supportsDownloads: false, supportsFAQs: false, supportsSEO: true, supportsAI: true, supportsVersionHistory: true, supportsPreview: true, isRepeatable: false },
+  },
+  {
+    id: "news", label: "News & Updates", icon: "📰",
+    description: "Dated updates and announcements for the record",
+    applicableTo: ["*"], category: "meta", level: "edition-cycle", displayOrder: 0.5,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: true, supportsTimeline: true, supportsDownloads: false, supportsFAQs: false, supportsSEO: true, supportsAI: false, supportsVersionHistory: true, supportsPreview: true, isRepeatable: true },
+  },
+  {
+    id: "application-process", label: "Application Process", icon: "📝",
+    description: "How and where to apply, step by step",
+    applicableTo: ["exam", "university-admission", "recruitment", "board"],
+    entityOptOut: [{ value: "university-exam", reason: "Semester exams have no application process — students are already enrolled" }],
+    category: "lifecycle", level: "edition-cycle", displayOrder: 0.4,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: false, supportsTimeline: true, supportsDownloads: false, supportsFAQs: true, supportsSEO: true, supportsAI: true, supportsVersionHistory: true, supportsPreview: true, isRepeatable: false },
+  },
+  {
+    id: "selection-process", label: "Selection Process", icon: "🧭",
+    description: "The stages a candidate passes through to be selected",
+    applicableTo: ["recruitment", "exam", "university-admission"],
+    entityOptOut: [
+      { value: "board", reason: "Boards publish a result, not a recruitment-style selection process" },
+      { value: "university-exam", reason: "Semester exams have no selection process — enrollment is already done" },
+    ],
+    category: "academic", level: "exam-identity", displayOrder: 0.6,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: false, supportsTimeline: false, supportsDownloads: false, supportsFAQs: true, supportsSEO: true, supportsAI: true, supportsVersionHistory: true, supportsPreview: true, isRepeatable: false },
+  },
+  {
+    id: "documents-required", label: "Documents Required", icon: "📑",
+    description: "The documents a candidate must keep ready",
+    applicableTo: ["recruitment"],
+    entityOptOut: [
+      { value: "exam", reason: "Entrance exam document lists ride the application module, not this section" },
+      { value: "board", reason: "Boards issue certificates; a required-documents list is a recruitment concept" },
+      { value: "university-admission", reason: "Admission reporting documents live in the counselling module" },
+      { value: "university-exam", reason: "Enrolled students already submitted their documents at admission" },
+    ],
+    category: "resource", level: "exam-identity", displayOrder: 0.7,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: true, supportsTimeline: false, supportsDownloads: true, supportsFAQs: false, supportsSEO: true, supportsAI: true, supportsVersionHistory: true, supportsPreview: true, isRepeatable: false },
+  },
+  {
+    id: "reservation", label: "Reservation Policy", icon: "🧩",
+    description: "Category-wise reservation and quotas",
+    applicableTo: ["recruitment"],
+    entityOptOut: [
+      { value: "exam", reason: "Reservation is a government-recruitment policy, not an entrance-exam section" },
+      { value: "board", reason: "Boards grade marks; reservation is a recruitment policy concept" },
+      { value: "university-admission", reason: "Admission seat reservations live in the seat-matrix, not here" },
+      { value: "university-exam", reason: "Semester exams have no reservation policy section" },
+    ],
+    category: "academic", level: "exam-identity", displayOrder: 0.8,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: false, supportsTimeline: false, supportsDownloads: false, supportsFAQs: false, supportsSEO: true, supportsAI: false, supportsVersionHistory: true, supportsPreview: true, isRepeatable: false },
+  },
+  {
+    id: "age-limit", label: "Age Limit", icon: "🎂",
+    description: "Minimum and maximum age with relaxations",
+    applicableTo: ["recruitment"],
+    entityOptOut: [
+      { value: "exam", reason: "Entrance exam age rules are stated in eligibility, not a separate age-limit section" },
+      { value: "board", reason: "Board exams have no age-limit section" },
+      { value: "university-admission", reason: "Admission age rules live in the eligibility criteria" },
+      { value: "university-exam", reason: "Semester exams have no age-limit section" },
+    ],
+    category: "academic", level: "exam-identity", displayOrder: 0.9,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: false, supportsTimeline: false, supportsDownloads: false, supportsFAQs: false, supportsSEO: true, supportsAI: true, supportsVersionHistory: true, supportsPreview: true, isRepeatable: false },
+  },
+  {
+    id: "salary", label: "Salary & Pay Scale", icon: "💰",
+    description: "Pay scale and allowances for the post",
+    applicableTo: ["recruitment"],
+    entityOptOut: [
+      { value: "exam", reason: "Entrance exams lead to a course, not a salary — pay scale is a job concept" },
+      { value: "board", reason: "Board exams have no salary" },
+      { value: "university-admission", reason: "Admissions have no pay scale; it is a recruitment concept" },
+      { value: "university-exam", reason: "Semester exams have no salary" },
+    ],
+    category: "academic", level: "exam-identity", displayOrder: 0.95,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: false, supportsTimeline: false, supportsDownloads: false, supportsFAQs: false, supportsSEO: true, supportsAI: true, supportsVersionHistory: true, supportsPreview: true, isRepeatable: false },
+  },
+  {
+    id: "cut-off", label: "Cut-off", icon: "📊",
+    description: "Category-wise cut-off marks (the board/university slug; distinct from the recruitment 'cutoff' module)",
+    applicableTo: ["exam", "university-admission", "board", "university-exam"],
+    entityOptOut: [{ value: "recruitment", reason: "Recruitment cut-offs are the separate 'cutoff' module, not this board/university slug" }],
+    category: "lifecycle", level: "edition-cycle", displayOrder: 6.5,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: true, supportsTimeline: false, supportsDownloads: true, supportsFAQs: true, supportsSEO: true, supportsAI: true, supportsVersionHistory: true, supportsPreview: true, isRepeatable: true },
+  },
+  {
+    id: "practical-exams", label: "Practical Exams", icon: "🔬",
+    description: "Practical / lab exam schedule for board and university exams",
+    applicableTo: ["board", "university-exam"],
+    entityOptOut: [
+      { value: "exam", reason: "Entrance exams are written or computer-based, not practical exams" },
+      { value: "university-admission", reason: "Admission has no practical exam stage" },
+      { value: "recruitment", reason: "Recruitment has no practical exam section; skill tests live in the merit process" },
+    ],
+    category: "academic", level: "edition-cycle", displayOrder: 12.9,
+    enforceHiding: false, fields: [],
+    capabilities: { supportsAttachments: true, supportsTimeline: true, supportsDownloads: false, supportsFAQs: false, supportsSEO: true, supportsAI: false, supportsVersionHistory: true, supportsPreview: true, isRepeatable: false },
+  },
 
   // ─── LIFECYCLE MODULES ─────────────────────────────────────────────────────
 
@@ -1184,6 +1334,35 @@ export function isModuleApplicable(
  */
 export function hasApplicabilityRule(moduleId: string): boolean {
   return MODULE_REGISTRY.some((m) => m.id === moduleId);
+}
+
+/**
+ * Is this module's rule ALLOWED to hide the section yet? True for the established
+ * rules (enforceHiding unset) and false for the R2.2 (a) rules the owner has not
+ * yet approved for hiding. A module with no rule at all is not enforced either.
+ */
+export function isHidingEnforced(moduleId: string): boolean {
+  const m = MODULE_REGISTRY.find((x) => x.id === moduleId);
+  return !!m && m.enforceHiding !== false;
+}
+
+/**
+ * THE STORED-DATA GUARD — "a section with stored data is never hidden by
+ * applicability." Pure, so the CMS panel and the R2.2 (a) report both read ONE
+ * answer. A section is hideable ONLY when it has a rule, that rule is enforced,
+ * it is NOT applicable to the (entity type, selection model), AND it holds no
+ * stored content for THIS record. The moment there is stored data it is never
+ * hideable — an editor can always reach and edit content that exists.
+ */
+export function isSectionHideable(
+  moduleId: string,
+  entityType: string,
+  selectionModel: SelectionModel | undefined,
+  hasStoredData: boolean,
+): boolean {
+  if (hasStoredData) return false;                       // the guard: data wins
+  if (!isHidingEnforced(moduleId)) return false;         // rule not switched on
+  return !isModuleApplicable(moduleId, entityType, selectionModel);
 }
 
 /** Get the entity type profile */

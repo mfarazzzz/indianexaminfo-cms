@@ -29,21 +29,22 @@ const DB_SLUGS = [
 ];
 const INACTIVE = ['sample-papers'];
 
-/** Slugs the DB has AND moduleRegistry.ts already defines a rule for. */
-const ALREADY_RULED = [
-  'exam-pattern', 'syllabus', 'faqs', 'admit-card', 'result', 'counselling',
-  'vacancy-details', 'date-sheet', 'revaluation',
-];
-
-describe('hasApplicabilityRule reflects the live DB/TS vocabulary gap', () => {
-  it('the 9 already-ruled DB slugs have a rule', () => {
-    for (const s of ALREADY_RULED) expect(hasApplicabilityRule(s), s).toBe(true);
+describe('the DB/TS vocabulary gap is closed (R2.2 a landed)', () => {
+  it('every one of the 21 ACTIVE module_registry slugs now has a TS rule', () => {
+    expect(DB_SLUGS).toHaveLength(21);
+    for (const s of DB_SLUGS) expect(hasApplicabilityRule(s), `${s} still has no rule`).toBe(true);
   });
 
-  it('the 12 pending slugs (+ inactive sample-papers) have NO rule yet', () => {
-    const pending = DB_SLUGS.filter((s) => !ALREADY_RULED.includes(s));
-    expect(pending).toHaveLength(12);
-    for (const s of [...pending, ...INACTIVE]) expect(hasApplicabilityRule(s), s).toBe(false);
+  it('only the retired sample-papers row still has no rule', () => {
+    for (const s of INACTIVE) expect(hasApplicabilityRule(s), s).toBe(false);
+  });
+});
+
+describe('hasApplicabilityRule is the single rule-existence source', () => {
+  it('agrees with MODULE_REGISTRY membership, not isModuleApplicable', () => {
+    // a rule can exist yet not apply (correctly) — the flag is about EXISTENCE.
+    expect(hasApplicabilityRule('salary')).toBe(true);            // rule present
+    expect(hasApplicabilityRule('no-such-slug-xyz')).toBe(false); // absent
   });
 });
 
@@ -55,7 +56,8 @@ describe('the panel shows a rule-less section and flags it — it never hides it
 
   it('the panel passes the flag to the card from the same single source', () => {
     expect(panelSrc).toContain('noApplicabilityRule={!hasApplicabilityRule(mod.slug)}');
-    expect(panelSrc).toContain('import { isModuleApplicable, hasApplicabilityRule }');
+    expect(panelSrc).toContain('hasApplicabilityRule');
+    expect(panelSrc).toMatch(/import \{[^}]*isModuleApplicable[^}]*hasApplicabilityRule[^}]*\} from "@\/config\/moduleRegistry"/);
   });
 
   it('the card renders the flag ONLY when it is set', () => {
