@@ -352,55 +352,66 @@ function escapeIlike(value: string): string {
 }
 
 /**
- * Detect an existing exam that a new create would collide with — by slug (exact),
- * or by a case-insensitive trimmed match on the exam Name or the Short Name. The
- * slug namespace is global, so a create under one pillar can collide with a record
- * that lives under another (e.g. an Entrance-Exam form hitting a Govt-Exam record);
- * the result carries the existing record's `pillar` and which field matched so the
- * UI can name the list and open the right editor. Returns null when free.
+ * Detect collisions for a new create and SPLIT them into hard blocks vs soft
+ * warnings (owner follow-up #2). Short names are NOT unique across states/pillars
+ * (many "B.Ed", "CET", "PET"), so a short-name-only match must NOT block a valid
+ * create — it becomes a visible warning the editor can dismiss by saving anyway.
+ * Only an exact slug or exact Name hard-blocks, plus a short-name match whose
+ * pillar AND region are ALSO the same (that is genuinely the same exam).
  */
-type ExamConflict = {
+export type DuplicateWarning = { id: string; name: string; status: string; pillar: string | null };
+type ExamConflictBlock = {
   id: string; name: string; workflow_status: string | null; pillar: string | null;
   matched: "slug" | "name" | "short_name";
 };
-async function findExamConflict(
-  slug: string, name?: string, shortName?: string,
-): Promise<ExamConflict | null> {
-  const COLS = "id, name, workflow_status, pillar";
-  const trim = (s?: string) => (s ?? "").trim();
+type ConflictCheck = { block: ExamConflictBlock | null; warnings: DuplicateWarning[] };
 
-  // 1. slug (the unique key). A failed check is NOT "free" — abort rather than
-  //    write a colliding row.
+async function findExamConflicts(
+  slug: string, name: string | undefined, shortName: string | undefined,
+  pillar: string, region: string | undefined,
+): Promise<ConflictCheck> {
+  const COLS = "id, name, workflow_status, pillar, region";
+  const trim = (s?: string) => (s ?? "").trim();
+  const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
+
+  // 1. slug (unique key) — hard block. A failed read is NOT "free": abort.
   const { data: bySlug, error: slugErr } = await db.from("exams").select(COLS).eq("slug", slug).maybeSingle();
   if (slugErr) {
     console.error(`[entranceExamService] createEntranceExam slug check failed:`, slugErr);
     throw new Error(`Could not verify slug "${slug}" — ${slugErr.message}`);
   }
-  if (bySlug) return { ...(bySlug as object), matched: "slug" } as ExamConflict;
+  if (bySlug) return { block: { ...(bySlug as object), matched: "slug" } as ExamConflictBlock, warnings: [] };
 
-  // 2. case-insensitive trimmed Name. A twin may already exist, so read one row
-  //    (.limit(1)) rather than maybeSingle (which errors on >1). A read failure is
-  //    treated as "no name conflict" — the slug check already guarded the unique
-  //    key, so this only widens detection and must never block a valid create.
+  // 2. exact Name (case-insensitive, trimmed) — hard block.
   const nameVal = trim(name);
   if (nameVal) {
     const { data, error } = await db.from("exams").select(COLS).ilike("name", escapeIlike(nameVal)).limit(1);
-    if (!error && data && data.length > 0) return { ...(data[0] as object), matched: "name" } as ExamConflict;
+    if (!error && data && data.length > 0) {
+      return { block: { ...(data[0] as object), matched: "name" } as ExamConflictBlock, warnings: [] };
+    }
   }
 
-  // 3. case-insensitive trimmed Short Name.
+  // 3. Short Name (case-insensitive, trimmed) — NOT a hard block on its own.
+  //    Same pillar AND region ⇒ same exam ⇒ block; otherwise ⇒ warn and allow save.
   const shortVal = trim(shortName);
   if (shortVal) {
-    const { data, error } = await db.from("exams").select(COLS).ilike("short_name", escapeIlike(shortVal)).limit(1);
-    if (!error && data && data.length > 0) return { ...(data[0] as object), matched: "short_name" } as ExamConflict;
+    const { data, error } = await db.from("exams").select(COLS).ilike("short_name", escapeIlike(shortVal)).limit(20);
+    if (!error && data && data.length > 0) {
+      const rows = data as { id: string; name: string; workflow_status: string | null; pillar: string | null; region: string | null }[];
+      const sameExam = rows.find((r) => norm(r.pillar) === norm(pillar) && norm(r.region) === norm(region));
+      if (sameExam) return { block: { ...(sameExam as object), matched: "short_name" } as ExamConflictBlock, warnings: [] };
+      return { block: null, warnings: rows.map((r) => ({ id: r.id, name: r.name, status: r.workflow_status ?? "draft", pillar: r.pillar ?? null })) };
+    }
   }
-
-  return null;
+  return { block: null, warnings: [] };
 }
 
 export async function createEntranceExam(input: NewExamInput): Promise<{
   exam: ExamIdentity;
   edition: ExamEdition;
+  /** Soft duplicate signal: another exam (different pillar/region) already uses
+   *  this Short Name. The create still proceeded; the editor is warned. */
+  warnings: DuplicateWarning[];
 }> {
   const pillarForCreate = (input as any).pillar ?? "entrance-exam";
 
@@ -421,22 +432,22 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
   // Prefer short name for slug (e.g. "CAT" → "cat"), fall back to full name
   const slug = input.slug || generateSlug(input.shortName || input.name);
 
-  // R2.2-adjacent (2a): detect a collision BEFORE writing — by slug (exact) OR a
-  // case-insensitive trimmed match on the exam Name or Short Name — not slug only.
-  // The error names the existing record, WHICH field collided, and the pillar it
-  // lives in so the editor's toast can say where it is and open the right list.
-  const conflict = await findExamConflict(slug, input.name, input.shortName);
-  if (conflict) {
+  // R2.2-adjacent (2a) + follow-up #2: slug and exact Name are HARD blocks; a
+  // short-name-only match is a WARNING (different pillar/region) that still lets
+  // the create through — short names are legitimately reused across states.
+  const check = await findExamConflicts(slug, input.name, input.shortName, pillarForCreate, input.region);
+  if (check.block) {
+    const b = check.block;
     const err = new Error(
-      `DUPLICATE_SLUG::${conflict.id}::${conflict.name}::${conflict.workflow_status ?? 'draft'}`,
+      `DUPLICATE_SLUG::${b.id}::${b.name}::${b.workflow_status ?? 'draft'}`,
     );
     (err as any).code = 'DUPLICATE_SLUG';
     (err as any).existingExam = {
-      id: conflict.id,
-      name: conflict.name,
-      status: conflict.workflow_status ?? 'draft',
-      pillar: conflict.pillar ?? null,
-      matched: conflict.matched,
+      id: b.id,
+      name: b.name,
+      status: b.workflow_status ?? 'draft',
+      pillar: b.pillar ?? null,
+      matched: b.matched,
     };
     throw err;
   }
@@ -525,6 +536,7 @@ export async function createEntranceExam(input: NewExamInput): Promise<{
   return {
     exam: mapExamIdentityRow(examRow as Record<string, unknown>),
     edition: mapEditionRow(edRow as Record<string, unknown>),
+    warnings: check.warnings,
   };
 }
 

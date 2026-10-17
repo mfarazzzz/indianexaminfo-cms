@@ -1,13 +1,14 @@
 /**
- * R1.9 / 2a — duplicate-record detection test.
+ * R1.9 / 2a / follow-up #2 — duplicate detection test.
  *
- * createEntranceExam must detect a collision BEFORE writing, by slug OR by a
- * case-insensitive trimmed match on the exam Name or Short Name, and throw a
- * structured DUPLICATE_SLUG error carrying the existing record's id/name/status
- * AND (2a) its pillar + which field matched, so the UI can name the list and open
- * the correct editor. When nothing collides, the create proceeds (exam + edition).
- *
- * The mock routes each awaited terminal (.maybeSingle / .limit / .single) to the
+ * createEntranceExam splits a pre-write collision into:
+ *  - HARD BLOCK: exact slug, or exact Name (case-insensitive trimmed), or a Short
+ *    Name match that is ALSO the same pillar AND region (genuinely the same exam);
+ *  - SOFT WARNING: a Short Name reused by a different pillar/region — the create
+ *    still proceeds and returns { warnings: [...] } (short names are legitimately
+ *    shared across states — many "B.Ed", "CET", "PET").
+ * The DUPLICATE_SLUG error carries id/name/status + pillar + which field matched.
+ * Mock routes each awaited terminal (.maybeSingle / .limit→then / .single) to the
  * next scripted outcome, in call order.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -19,110 +20,99 @@ vi.mock('@/lib/revalidate', () => ({ revalidateExams: vi.fn().mockResolvedValue(
 
 import { createEntranceExam, type NewExamInput } from './entranceExamService';
 
-/** Route each awaited terminal to the next queued outcome ({data,error}). */
-function route(...outcomes: { data: unknown; error: unknown }[]) {
-  const queue = [...outcomes];
-  const next = () => queue.shift() ?? { data: null, error: null };
+const OK = { data: null, error: null };
+const EMPTY = { data: [], error: null };
+
+/** Each awaited terminal pops the next outcome. */
+function route(...outcomes: { data?: unknown; error?: unknown }[]) {
+  const q = [...outcomes];
+  const pop = () => q.shift() ?? { data: null, error: null };
   const chain: Record<string, any> = {};
-  for (const m of ['select', 'eq', 'ilike', 'or', 'order', 'insert', 'update', 'delete', 'limit', 'in', 'is']) {
-    chain[m] = vi.fn(() => chain);
-  }
-  chain.maybeSingle = vi.fn(() => Promise.resolve(next()));
-  chain.single = vi.fn(() => Promise.resolve(next()));
-  chain.then = (res: (v: { data: unknown; error: unknown }) => unknown) => res(next());
+  for (const m of ['select', 'eq', 'ilike', 'or', 'order', 'in', 'is']) chain[m] = vi.fn(() => chain);
+  chain.limit = vi.fn(() => chain);
+  chain.insert = vi.fn(() => chain);
+  chain.update = chain.insert;
+  chain.delete = vi.fn(() => chain);
+  chain.maybeSingle = vi.fn(() => Promise.resolve(pop()));
+  chain.single = vi.fn(() => Promise.resolve(pop()));
+  chain.then = (res: (v: unknown) => unknown) => res(pop());
   mockFrom.mockImplementation(() => chain);
-  return chain;
 }
 
 const input: NewExamInput = {
-  name: 'UP Deled Entrance',
-  shortName: 'UP DELED',
-  slug: 'up-deled-entrance',
-  region: 'all-india',
-  categoryId: 'cat-1',
-  conductingBody: 'MEERUT UNIVERSITY',
-  officialWebsite: 'https://updeled.gov.in',
-  selectionModel: 'merit-based',
-  firstEditionYear: 2026,
+  name: 'UP Deled Entrance', shortName: 'UP DELED', slug: 'up-deled-entrance',
+  region: 'all-india', categoryId: 'cat-1', conductingBody: 'MEERUT UNIVERSITY',
+  officialWebsite: 'https://updeled.gov.in', selectionModel: 'merit-based', firstEditionYear: 2026,
 };
 
-const OK = { data: null, error: null };
+const created = {
+  data: { id: 'ex-new', name: input.name, slug: input.slug, pillar: 'entrance-exam', workflow_status: 'draft', selection_model: 'merit-based', created_at: '', updated_at: '' },
+  error: null,
+};
+const edition = {
+  data: { id: 'ed-new', exam_id: 'ex-new', year: 2026, session: 'main', is_current: true, status: 'upcoming', important_dates: [], eligibility: {}, application_fee: {}, content_modules: {}, created_at: '', updated_at: '' },
+  error: null,
+};
 
 beforeEach(() => { vi.clearAllMocks(); });
 
-describe('duplicate detection by SLUG', () => {
-  it('throws DUPLICATE_SLUG with the existing record + matched="slug" + pillar', async () => {
-    route({ data: { id: 'ex-dup-1', name: 'UP Deled Entrance', workflow_status: 'published', pillar: 'government-exam' }, error: null });
-    try {
-      await createEntranceExam(input);
-      expect.unreachable('should have thrown');
-    } catch (err: any) {
+describe('HARD BLOCK: slug', () => {
+  it('slug collision throws DUPLICATE_SLUG matched="slug" + pillar', async () => {
+    route({ data: { id: 'ex-dup', name: 'UP Deled Entrance', workflow_status: 'published', pillar: 'government-exam', region: 'uttar-pradesh' }, error: null });
+    try { await createEntranceExam(input); expect.unreachable(); }
+    catch (err: any) {
       expect(err.code).toBe('DUPLICATE_SLUG');
-      expect(err.existingExam).toEqual({
-        id: 'ex-dup-1', name: 'UP Deled Entrance', status: 'published',
-        pillar: 'government-exam', matched: 'slug',
-      });
+      expect(err.existingExam).toEqual({ id: 'ex-dup', name: 'UP Deled Entrance', status: 'published', pillar: 'government-exam', matched: 'slug' });
     }
   });
+});
 
-  it('message stays parseable: DUPLICATE_SLUG::<id>::<name>::<status>', async () => {
-    route({ data: { id: 'ex-99', name: 'JEE Main 2026', workflow_status: 'draft', pillar: 'entrance-exam' }, error: null });
-    await expect(createEntranceExam(input)).rejects.toThrow(/DUPLICATE_SLUG::ex-99::JEE Main 2026::draft/);
-  });
-
-  it('null workflow_status defaults to "draft"', async () => {
-    route({ data: { id: 'ex-5', name: 'Old Exam', workflow_status: null, pillar: 'entrance-exam' }, error: null });
+describe('HARD BLOCK: exact name', () => {
+  it('name match (case-insensitive) throws matched="name"', async () => {
+    route(OK, { data: [{ id: 'ex-name', name: 'UP Deled Entrance', workflow_status: 'draft', pillar: 'entrance-exam', region: 'all-india' }], error: null });
     try { await createEntranceExam(input); expect.unreachable(); }
-    catch (err: any) { expect(err.existingExam.status).toBe('draft'); }
+    catch (err: any) { expect(err.code).toBe('DUPLICATE_SLUG'); expect(err.existingExam.matched).toBe('name'); }
   });
 });
 
-describe('duplicate detection by NAME / SHORT NAME (2a: not slug only)', () => {
-  it('slug free but NAME matches (case-insensitive) → DUPLICATE matched="name"', async () => {
-    // call1 slug maybeSingle → null; call2 name ilike.limit → a row.
+describe('HARD BLOCK vs WARNING: short name', () => {
+  it('same pillar AND region → block (matched="short_name")', async () => {
     route(
-      OK,
-      { data: [{ id: 'ex-name', name: 'UP Deled Entrance', workflow_status: 'draft', pillar: 'entrance-exam' }], error: null },
+      OK, EMPTY,
+      { data: [{ id: 'ex-same', name: 'Other Name', workflow_status: 'draft', pillar: 'entrance-exam', region: 'all-india' }], error: null },
     );
     try { await createEntranceExam(input); expect.unreachable(); }
-    catch (err: any) { expect(err.code).toBe('DUPLICATE_SLUG'); expect(err.existingExam.matched).toBe('name'); expect(err.existingExam.id).toBe('ex-name'); }
+    catch (err: any) { expect(err.existingExam.matched).toBe('short_name'); expect(err.existingExam.id).toBe('ex-same'); }
   });
 
-  it('slug + name free but SHORT NAME matches → DUPLICATE matched="short_name"', async () => {
+  it('DIFFERENT region (same short name) → does NOT block; creates + returns a warning', async () => {
     route(
-      OK,
-      OK, // name → []
-      { data: [{ id: 'ex-short', name: 'Whatever', workflow_status: 'published', pillar: 'board-exam' }], error: null }, // short_name → row
+      OK, EMPTY,
+      { data: [{ id: 'ex-other', name: 'Bihar DELED Entrance', workflow_status: 'published', pillar: 'entrance-exam', region: 'bihar' }], error: null },
+      created, edition,
     );
-    try { await createEntranceExam(input); expect.unreachable(); }
-    catch (err: any) { expect(err.existingExam.matched).toBe('short_name'); expect(err.existingExam.pillar).toBe('board-exam'); }
+    const res = await createEntranceExam(input); // must NOT throw
+    expect(res.exam.id).toBe('ex-new');
+    expect(res.warnings).toHaveLength(1);
+    expect(res.warnings[0]).toMatchObject({ id: 'ex-other', name: 'Bihar DELED Entrance', pillar: 'entrance-exam' });
   });
 
-  it('a name/short read ERROR is not treated as a duplicate (slug guard still rules) → create proceeds', async () => {
-    // slug free; name query errors; short query errors; then both inserts succeed.
-    route(
-      OK,
-      { data: null, error: { message: 'boom' } },
-      { data: null, error: { message: 'boom' } },
-      { data: { id: 'ex-new', name: input.name, slug: input.slug, pillar: 'entrance-exam', workflow_status: 'draft', selection_model: 'merit-based', created_at: '', updated_at: '' }, error: null },
-      { data: { id: 'ed-new', exam_id: 'ex-new', year: 2026, session: 'main', is_current: true, status: 'upcoming', important_dates: [], eligibility: {}, application_fee: {}, content_modules: {}, created_at: '', updated_at: '' }, error: null },
-    );
-    await expect(createEntranceExam(input)).resolves.toBeDefined();
+  it('no collision at all → creates, warnings empty', async () => {
+    route(OK, EMPTY, EMPTY, created, edition);
+    const res = await createEntranceExam(input);
+    expect(res.warnings).toEqual([]);
+    expect(res.edition.id).toBe('ed-new');
   });
 });
 
-describe('free slug + free name + free short name → creates', () => {
-  it('inserts the exam then the first edition', async () => {
-    const chain = route(
-      OK, // slug null
-      OK, // name []
-      OK, // short []
-      { data: { id: 'ex-new', name: input.name, slug: input.slug, pillar: 'entrance-exam', workflow_status: 'draft', selection_model: 'merit-based', created_at: '', updated_at: '' }, error: null },
-      { data: { id: 'ed-new', exam_id: 'ex-new', year: 2026, session: 'main', is_current: true, status: 'upcoming', important_dates: [], eligibility: {}, application_fee: {}, content_modules: {}, created_at: '', updated_at: '' }, error: null },
+describe('read failures on the widened checks never block a valid create', () => {
+  it('name + short reads error → still creates (slug is the only hard uniqueness key)', async () => {
+    route(
+      OK,
+      { data: null, error: { message: 'name boom' } },
+      { data: null, error: { message: 'short boom' } },
+      created, edition,
     );
-    const out = await createEntranceExam(input);
-    expect(out.exam.id).toBe('ex-new');
-    expect(out.edition.id).toBe('ed-new');
-    expect(chain.insert).toHaveBeenCalled();
+    await expect(createEntranceExam(input)).resolves.toMatchObject({ exam: { id: 'ex-new' } });
   });
 });

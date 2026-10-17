@@ -509,6 +509,22 @@ export function EntranceExamEditorPage() {
         pendingProvenanceRef.current = null;
 
         toast.success(`"${data.name}" created as Draft.`);
+        // Follow-up #2: a short-name-only clash with an exam in a DIFFERENT
+        // pillar/region is not a duplicate — the save was allowed. Warn (visible,
+        // non-blocking) so the editor can eyeball it, with a link to the other one.
+        if (result.warnings?.length) {
+          const w = result.warnings[0];
+          const wlist = adminListForPillar(w.pillar);
+          const extra = result.warnings.length > 1 ? ` (+${result.warnings.length - 1} more)` : "";
+          toast.warning(
+            `Another exam uses this short name: ${w.name} (${wlist.label})${extra}.`,
+            {
+              description: "Saved anyway — a different state/pillar may legitimately share the short name. Confirm it is not a mistake.",
+              action: { label: "Open it", onClick: () => navigate(`${wlist.path}/${w.id}`) },
+              duration: 10000,
+            },
+          );
+        }
         // Navigate to the freshly saved record (all form state is now on disk).
         const basePath = window.location.pathname.split("/new")[0] || "/entrance-exams";
         navigate(`${basePath}/${result.exam.id}`, { replace: true });
