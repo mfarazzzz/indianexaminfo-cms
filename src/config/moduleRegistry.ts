@@ -1172,6 +1172,20 @@ export function isModuleApplicable(
   return getModulesForEntityType(entityType, selectionModel).some((m) => m.id === moduleId);
 }
 
+/**
+ * Does the TS registry actually define an applicability rule for this slug?
+ *
+ * The `module_registry` DB table and this MODULE_REGISTRY config use different
+ * slug vocabularies (resolved in R2.2 step a). A DB slug with no MODULE_REGISTRY
+ * entry has NO rule here — `isModuleApplicable` would answer false simply
+ * because it cannot find the module, which is NOT the same as a real "does not
+ * apply". The ModulePanel uses this to show such a section but FLAG it, instead
+ * of silently hiding (or silently failing open) on an unknown slug.
+ */
+export function hasApplicabilityRule(moduleId: string): boolean {
+  return MODULE_REGISTRY.some((m) => m.id === moduleId);
+}
+
 /** Get the entity type profile */
 export function getEntityProfile(entityType: string): EntityTypeProfile | undefined {
   return ENTITY_TYPE_PROFILES[entityType];

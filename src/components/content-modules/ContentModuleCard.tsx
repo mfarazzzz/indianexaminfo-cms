@@ -55,12 +55,19 @@ interface Props {
    */
   dragHandleProps?: DragHandleProps;
   isDragging?: boolean;
+  /**
+   * R2.2 (b): this section's slug has NO applicability rule in moduleRegistry.ts
+   * (the DB/TS vocabulary gap). The card is still shown — nothing is hidden — but
+   * flagged so the editor sees the section is not governed by an applicability
+   * rule yet, rather than the panel silently failing open on an unknown slug.
+   */
+  noApplicabilityRule?: boolean;
 }
 
 export function ContentModuleCard({
   module, enabled, editionId, content,
   onToggle, onAIFill, onStatusChange, onPendingChange, aiLoading, forceCollapsed,
-  hasLiveContent, columnBacked, onNavigateTab, dragHandleProps, isDragging,
+  hasLiveContent, columnBacked, onNavigateTab, dragHandleProps, isDragging, noApplicabilityRule,
 }: Props) {
   // ── Column-backed module: read-only source row ─────────────────────────────
   // No toggle (it's a no-op), no "Off — has content" (false here). Just
@@ -141,6 +148,15 @@ export function ContentModuleCard({
         <button type="button" onClick={() => enabled && setExpanded(!expanded)}
           className="flex items-center gap-2 flex-1 text-left min-w-0 ml-1" disabled={!enabled}>
           <span className={`text-sm font-medium truncate ${enabled ? "text-slate-700" : "text-slate-400"}`}>{module.name}</span>
+          {noApplicabilityRule && (
+            <span
+              data-testid={`no-applicability-rule-${module.slug}`}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium shrink-0"
+              title="This section is shown but has no applicability rule yet, so it is never hidden by the entity type / selection model. Reconciling the rule is tracked in R2.2."
+            >
+              no rule yet
+            </span>
+          )}
           {/* Three-state badge:
               Off (no content)  = disabled, nothing to show anyway.
               Off (has content) = disabled, but content exists — turning it on

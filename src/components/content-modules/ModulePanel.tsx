@@ -23,7 +23,7 @@ import { aiGenerateForModule } from "@/lib/modules/moduleAI";
 import type { ModuleDefinition, ModuleConfig, ContentModulesData, ModuleContentData, SaveStatus } from "@/types/modules";
 import type { ExamIdentity, ExamEdition } from "@/services/entranceExamService";
 import type { SelectionModel } from "@/types/selection";
-import { isModuleApplicable, MODULE_REGISTRY } from "@/config/moduleRegistry";
+import { isModuleApplicable, hasApplicabilityRule } from "@/config/moduleRegistry";
 import { getErrorMessage } from "@/lib/utils";
 import { hasData, SECTION_BY_SLUG, type HasDataView } from "@/lib/sectionRegistry";
 import { EligibilityCard, ApplicationFeeCard, SelectionProcessCard, FaqsCard } from "./ColumnBackedCards";
@@ -173,15 +173,14 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
       let registry: ModuleDefinition[];
       try { registry = await getModuleRegistry(exam?.pillar); } catch { registry = BUILT_IN_MODULES; }
       // Filter to modules that are structurally applicable given the two-axis model.
-      // FAIL-OPEN: if a slug has no entry in moduleRegistry.ts (vocabulary mismatch
-      // between the DB table and the TS config — resolved in 2C), treat it as
-      // unconstrained and show it. Unknown ≠ hidden; hiding is only safe when the
-      // rule is known. This preserves all existing content access until 2C reconciles
-      // the two slug vocabularies.
+      // R2.2 (b): a slug with NO rule in moduleRegistry.ts (the DB/TS vocabulary
+      // gap) is SHOWN, not silently failed-open — and the card FLAGS it as "no
+      // applicability rule" so the editor can see the gap. Nothing is hidden here:
+      // hiding stays only for slugs that DO have a rule and fail it. (The rule
+      // entries themselves land in R2.2 (a), with hiding kept switched off.)
       if (entityType) {
         registry = registry.filter((m) => {
-          const knownInConfig = MODULE_REGISTRY.some((cm) => cm.id === m.slug);
-          if (!knownInConfig) return true; // unknown slug → unconstrained → show
+          if (!hasApplicabilityRule(m.slug)) return true; // no rule → show + flag
           return isModuleApplicable(m.slug, entityType, selectionModel);
         });
       }
@@ -438,6 +437,7 @@ export function ModulePanel({ editionId, exam, edition, legacyFlags, entityType,
         forceCollapsed={allCollapsed}
         hasLiveContent={hasLiveContent}
         columnBacked={columnSource ? { ...columnSource, live: hasLiveContent } : undefined}
+        noApplicabilityRule={!hasApplicabilityRule(mod.slug)}
         onNavigateTab={onNavigateTab}
         dragHandleProps={dragHandleProps}
         isDragging={isDragging}
