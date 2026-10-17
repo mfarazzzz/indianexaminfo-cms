@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Exam page mock — UPSSSC PET 2026 (4a target)</title>
+<!--
+  Self-contained design mock (inline CSS, no JS, no web fonts). Mobile-first,
+  must be readable at 360px and at 1366px, no horizontal scroll, large tap targets,
+  plain-words labels. Shows how the 4a page should look for the REAL UPSSSC PET
+  record using the 17-Oct admit-card notice facts. Sections marked "4b" need the
+  D-P2 / steps[] work and are shown for shape only. Verified vs unverified are two
+  variants. This is a mock, not the live site.
+-->
+<style>
+  :root{
+    --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --bg:#f8fafc; --card:#ffffff;
+    --brand:#1d4ed8; --ok:#047857; --okbg:#ecfdf5; --warn:#b45309; --warnbg:#fffbeb;
+    --chip:#f1f5f9; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Devanagari",sans-serif;
+    color:var(--ink); background:var(--bg); -webkit-text-size-adjust:100%; overflow-x:hidden;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:16px}
+  h1{font-size:1.35rem;line-height:1.25;margin:.2rem 0}
+  h2{font-size:1.05rem;margin:0 0 .55rem}
+  section{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin:12px 0}
+  a{color:var(--brand);text-decoration:none;word-break:break-word}
+  .crumbs{font-size:.8rem;color:var(--muted);margin-bottom:6px}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .chip{background:var(--chip);color:#334155;border-radius:999px;padding:5px 12px;font-size:.8rem;font-weight:600}
+  .chip.ok{background:var(--okbg);color:var(--ok)}
+  .lu{font-size:.78rem;color:var(--muted)}
+  .verified{display:inline-flex;align-items:center;gap:6px;background:var(--okbg);color:var(--ok);
+    border:1px solid #a7f3d0;border-radius:999px;padding:5px 12px;font-size:.8rem;font-weight:700}
+  .notice{background:var(--warnbg);border:1px solid #fde68a;color:#92400e;border-radius:12px;
+    padding:11px 13px;font-size:.86rem;margin:10px 0}
+  .grid{display:grid;gap:10px}
+  .k{color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.03em}
+  .v{font-weight:600}
+  /* tables become stacked cards on narrow screens, real tables from 700px */
+  table{width:100%;border-collapse:collapse;font-size:.95rem}
+  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  thead{display:none}
+  td{display:flex;justify-content:space-between;gap:12px}
+  td::before{content:attr(data-label);color:var(--muted);font-weight:600}
+  .past{color:var(--muted)}
+  .badge-row{background:#eef2ff;color:#3730a3;border-radius:8px;padding:2px 8px;font-size:.72rem;font-weight:700}
+  .btn{display:block;text-align:center;background:var(--brand);color:#fff;border-radius:12px;
+    padding:14px 16px;font-weight:700;margin:8px 0;min-height:48px}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.soon{background:#e5e7eb;color:#9ca3af;border:1px dashed #cbd5e1}
+  .steps li{margin:8px 0}
+  .upd{border-left:3px solid var(--brand);padding-left:12px;margin:12px 0}
+  .upd time{font-size:.75rem;color:var(--muted)}
+  ul.cards{list-style:none;padding:0;margin:0}
+  ul.cards li{border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0}
+  details{border-top:1px solid var(--line);padding:10px 0}
+  summary{font-weight:600;cursor:pointer;min-height:32px}
+  .pill{font-size:.66rem;font-weight:800;letter-spacing:.05em;color:#6d28d9;background:#f5f3ff;
+    border:1px solid #ddd6fe;border-radius:6px;padding:2px 7px;text-transform:uppercase}
+  .variant-label{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--muted);margin:26px 0 4px}
+  hr{border:none;border-top:1px solid var(--line);margin:26px 0}
+  @media (min-width:700px){
+    h1{font-size:1.7rem}
+    .layout{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start}
+    aside{position:sticky;top:12px}
+    thead{display:table-header-group}
+    tr{display:table-row}
+    th,td{display:table-cell}
+    td::before{content:none}
+    td{border-bottom:1px solid var(--line)}
+    .grid.info{grid-template-columns:1fr 1fr}
+    .grid.facts{grid-template-columns:1fr 1fr 1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="crumbs">Home › Sarkari Naukri › State Government Jobs › UPSSSC PET</div>
+
+  <!-- ============ VARIANT A — this record as it is today: UNVERIFIED ============ -->
+  <div class="variant-label">Variant A — unverified (real UPSSSC PET record)</div>
+  <h1>UPSSSC PET 2026 — Preliminary Eligibility Test</h1>
+  <div class="row" style="margin:.4rem 0 .2rem">
+    <span class="chip">Result Awaited</span>
+    <!-- Honest Last Updated: only shown when a trustworthy source exists. Here the
+         only human signal is a published update (17 Oct admit-card) -> shown. If
+         there were none, the line would be omitted (see Variant B note). -->
+    <span class="lu">Last updated: 17 Oct 2026</span>
+  </div>
+
+  <p class="notice">Compiled from the official notification. <b>Not yet verified by our editors.</b>
+     Always confirm dates, eligibility and fees on the official website before you apply or pay.</p>
+
+  <div class="layout">
+    <main>
+      <!-- QUICK-INFO (4a) -->
+      <section>
+        <h2>Quick information</h2>
+        <div class="grid facts">
+          <div><div class="k">Conducting body</div><div class="v">UPSSSC, Lucknow</div></div>
+          <div><div class="k">Exam mode</div><div class="v">Online (CBT)</div></div>
+          <div><div class="k">Frequency</div><div class="v">Once a year</div></div>
+          <div><div class="k">Eligibility test for</div><div class="v">Group C posts in Uttar Pradesh</div></div>
+          <div><div class="k">Official website</div><div class="v"><a href="https://upsssc.gov.in/">upsssc.gov.in</a></div></div>
+        </div>
+      </section>
+
+      <!-- IMPORTANT DATES (4a) — multi-day exam as SEPARATE rows; 17-Oct notice facts -->
+      <section>
+        <h2>Important dates</h2>
+        <table>
+          <thead><tr><th>Event</th><th>Date</th></tr></thead>
+          <tbody>
+            <tr><td data-label="Event">Exam city details released</td><td data-label="Date">12 Oct 2026</td></tr>
+            <tr><td data-label="Event">Admit card available</td><td data-label="Date">17 Oct 2026</td></tr>
+            <tr><td data-label="Event">PET exam — day 1</td><td data-label="Date">25 Oct 2026</td></tr>
+            <tr><td data-label="Event">PET exam — day 2</td><td data-label="Date">30 Oct 2026</td></tr>
+            <tr><td data-label="Event">PET exam — day 3</td><td data-label="Date">1 Nov 2026</td></tr>
+            <tr><td data-label="Event">Answer key</td><td data-label="Date"><span class="past">After the exam</span></td></tr>
+          </tbody>
+        </table>
+        <p class="lu" style="margin:.6rem 0 0">Answer key is a relative note (“after the exam”), never a made-up date.</p>
+      </section>
+
+      <!-- IMPORTANT LINKS (4a) — labels only; URL attested at publish -->
+      <section>
+        <h2>Important links</h2>
+        <table>
+          <thead><tr><th>Link</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td data-label="Link">Official website</td><td data-label="Status"><a href="https://upsssc.gov.in/">upsssc.gov.in</a></td></tr>
+            <tr><td data-label="Link">Download admit card</td><td data-label="Status">URL attested at publish</td></tr>
+            <tr><td data-label="Link">Revised exam date notice</td><td data-label="Status">URL attested at publish</td></tr>
+            <tr><td data-label="Link">Exam date notice</td><td data-label="Status">URL attested at publish</td></tr>
+            <tr><td data-label="Link">Exam city details</td><td data-label="Status">URL attested at publish</td></tr>
+            <tr><td data-label="Link">Exam city notice</td><td data-label="Status">URL attested at publish</td></tr>
+          </tbody>
+        </table>
+        <p class="lu" style="margin:.6rem 0 0">We show a working Apply/Download button only when the URL was in the
+           source. A label with no attested URL is shown as text, never a guessed link.</p>
+      </section>
+
+      <!-- ELIGIBILITY (4a, as today) -->
+      <section>
+        <h2>Eligibility</h2>
+        <table>
+          <tbody>
+            <tr><td data-label="Criteria">Age limit</td><td data-label="Details">18–40 years <span class="badge-row">unverified</span></td></tr>
+            <tr><td data-label="Criteria">Educational qualification</td><td data-label="Details">10th / 12th / Graduate (varies)</td></tr>
+            <tr><td data-label="Criteria">Nationality</td><td data-label="Details">Indian citizen</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- FEE (4a, as today) -->
+      <section>
+        <h2>Application fee</h2>
+        <table>
+          <tbody>
+            <tr><td data-label="Category">General</td><td data-label="Fee">₹185</td></tr>
+            <tr><td data-label="Category">SC</td><td data-label="Fee">₹95</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- HOW TO DOWNLOAD (marked 4b — needs steps[]) -->
+      <section>
+        <h2>How to download the admit card <span class="pill">4b · needs steps</span></h2>
+        <ol class="steps">
+          <li>Open the official UPSSSC website.</li>
+          <li>Open the “Download Admit Card” link for PET 2026.</li>
+          <li>Sign in with your registration number and date of birth.</li>
+          <li>Enter your gender and the verification code, then submit.</li>
+          <li>Download the PDF and print it.</li>
+          <li>On exam day carry: the printout, a valid photo ID, and photographs.</li>
+        </ol>
+      </section>
+
+      <!-- UPDATES TIMELINE (marked 4b — needs D-P2 content_posts) -->
+      <section>
+        <h2>Updates <span class="pill">4b · needs D-P2</span></h2>
+        <div class="upd"><time>17 Oct 2026</time><br><b>Admit card released.</b> Exam city details were released on 12 Oct.</div>
+        <div class="upd"><time>11 Oct 2026</time><br><b>Exam dates revised</b> to 25 Oct, 30 Oct and 1 Nov 2026.</div>
+      </section>
+
+      <!-- FAQ (4a) -->
+      <section>
+        <h2>Questions and answers</h2>
+        <details open><summary>What is UPSSSC PET?</summary>
+          <p>A preliminary eligibility test for Group C posts in Uttar Pradesh. Clearing it lets you apply for eligible recruitments.</p></details>
+        <details><summary>When is the exam?</summary>
+          <p>Revised to 25 Oct, 30 Oct and 1 Nov 2026 (see Important dates above).</p></details>
+        <details><summary>Is the admit card out?</summary>
+          <p>Yes — available from 17 Oct 2026. Use the official website link above.</p></details>
+      </section>
+    </main>
+
+    <!-- SIDEBAR -->
+    <aside>
+      <section>
+        <h2>Related exams</h2>
+        <ul class="cards">
+          <li><a href="#">UPSSSC Lekhpal</a><div class="lu">Result awaited · 6,000+ posts</div></li>
+          <li><a href="#">UP Police Constable</a><div class="lu">Result awaited · 60,244 posts</div></li>
+          <li><a href="#">Rajasthan Home Guard</a><div class="lu">Result awaited · 10,000 posts</div></li>
+        </ul>
+      </section>
+      <section>
+        <div class="grid">
+          <a class="btn soon" href="#" aria-disabled="true">Download admit card (URL pending)</a>
+          <a class="btn ghost" href="https://upsssc.gov.in/">Official website</a>
+        </div>
+        <p class="lu">Data source: UPSSSC official website. Not yet editor-verified.</p>
+      </section>
+    </aside>
+  </div>
+
+  <hr />
+
+  <!-- ============ VARIANT B — the SAME page once an editor verifies it ============ -->
+  <div class="variant-label">Variant B — after an editor verifies the record (what the Verified badge looks like)</div>
+  <div class="row" style="margin:.2rem 0 .6rem">
+    <span class="chip ok">Registration open</span>
+    <span class="verified">✓ Verified by our editorial team · 18 Oct 2026</span>
+    <span class="lu">Last updated: 18 Oct 2026</span>
+  </div>
+  <p class="lu">When a record is verified, the honest “not yet verified” notice is replaced by the
+     Verified badge above, and “Last Updated” can use the verification date. When there is NO
+     trustworthy source at all (no human edit, no published update, no verification), the
+     “Last Updated” line is <b>omitted entirely</b> — we never print a date we cannot stand behind.</p>
+
+</div>
+</body>
+</html>
