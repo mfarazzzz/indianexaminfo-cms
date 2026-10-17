@@ -107,37 +107,52 @@ Order is dependency-driven; earlier steps unblock later renders.
   S3.2 verify control (writes `exams.is_verified/verified_at/verified_by`) —
   locked decision §7.1. Repo: **CMS**. Migration: none (columns exist). Size: **S/M**.
 
-## Recommended order
+## Owner decisions (recorded 17 Oct 2026)
 
-1. Step 5 (Last-Updated honesty) — S, immediate trust + SEO (a stale/meaningless
-   "Last Updated" hurts E-E-A-T and freshness signals).
-2. Step 2 (HTML-paste link recovery + relative→note surfacing) — M.
-3. Step 3 (D-P2 Updates authoring) — M, no migration.
-4. Step 1 (steps[] AI slot; needs the ai-fill redeploy) — M.
-5. Step 4 (D-P3 frontend render) — L, turns 1–3 into the reader-facing page.
-6. Step 6 (verification filter) alongside, so the newly-rendered content is the
-   verified subset first.
+- **D1** — pull D-P2 (CMS Updates) AND D-P3 (frontend render) AHEAD of R2.3.
+- **D2 — "Last Updated" trust rule.** Show the line only from a trustworthy source,
+  the newest of: an edition `updated_at` whose `updated_by` is a HUMAN (not
+  `system`); a published `content_post`; `is_verified` / `verified_at`. A system or
+  bulk touch never counts. **If no trustworthy source exists, omit the line — we do
+  not show a false date.**
+- **D3 — `steps[]`.** how-to-download steps on `admit-card`; general steps on
+  `application-process`.
+- **D4 — Apply/Download buttons** render only with an attested (source) URL, never
+  invented.
+- **D5 — status engine.** Apply CHANGE 2 (count `exam_physical` as an exam window →
+  `result-awaited`) and CHANGE 3 (label fallback: PET/Prelims/Written/CBT →
+  `exam_written`) FIRST; CHANGE 1 (all-past confirmed → `completed`) ONLY after the
+  owner reviews the 31-row table. An all-past EXAM reads `result-awaited`; `completed`
+  is the last catch-all.
+- **D6 — verification.** Start with govt-vacancy + government-exam (194 current
+  editions), ordered by upcoming dates / traffic, and ship the S3.2 verify control.
+  Unverified pages stay published with the honest notice — no unpublishing.
 
-Steps 5, 2, 3 need **no migration and no AI redeploy**; only step 1 touches the
-Edge Function. Steps 4/6 make the wins visible and trustworthy.
+## Step 4 split
 
-## Decisions needed from the owner (do not build until answered)
+The old single "D-P3 frontend render" is split so the parts needing no new data ship
+first:
+- **4a — render EXISTING data (no new authoring):** quick-info box; important-dates
+  table with **multi-day exams as separate rows**; important-links table with
+  **attested URLs only**; FAQ; and the honest Last Updated (D2).
+- **4b — needs new data (after D-P2 + steps[]):** the how-to-download steps and the
+  per-notice Updates timeline.
 
-1. **D-P2/D-P3 before R2.3** — confirm pulling Updates + frontend render ahead of
-   the R2.3 drawer work (this plan's recommendation).
-2. **"Last Updated" semantics** — which timestamp is authoritative: edition
-   `updated_at` only, or newest of edition/content_post/verified? And should the
-   import stop bumping `exams.updated_at` for all 356 (fix at the source)?
-3. **`steps[]` schema** — put how-to-download steps on `admit-card` and general
-   steps on `application-process` (my proposal), or one shared `steps` shape?
-4. **Apply/Download gating** — attest-URL only (my rule) or allow a labelled
-   no-URL button that links to the official site home? (Recommend attest-only.)
-5. **Status engine** — approve or defer the `supabase/proposed/…` changes (audit
-   Part 3): the "completed vs dates-awaited" rule and counting `exam_physical` as
-   a window. This is a live-view change; it needs the read-only old-vs-new
-   simulation before any apply.
-6. **Verification priority** — start the 268-record verification at
-   govt-vacancy + government-exam (194 of the 268), and is the S3.2 verify control
-   in this push or a later one?
+## New build order (decided)
 
-**STOP here for Part 4 — no code written for any of the above.**
+1. **Last-Updated honesty + the bulk-touch investigation** — find what stamped
+   356/398 `exams.updated_at` on 25 Sep; fix at the source if it is code. (D2)
+2. **4a** frontend render of existing data (quick-info, dates incl. multi-day rows,
+   links attested-only, FAQ, honest Last Updated).
+3. **HTML-paste link recovery + relative→notes** (paste box + drawer).
+4. **D-P2** CMS Updates (`content_posts`) + create-update-from-notice.
+5. **steps[]** slot (ai-fill template change → **redeploy**).
+6. **4b** how-to steps + Updates timeline render.
+7. **Verification filter** — start the 194 govt-vacancy + government-exam records;
+   ship the S3.2 verify control.
+
+Items 1–4 and 7 need **no migration and no AI redeploy**; only item 5 touches the
+ai-fill Edge Function.
+
+**STOP — Part C is docs-only. PART 4 decisions are now recorded; nothing here is
+built without the agreed sequence above.**
