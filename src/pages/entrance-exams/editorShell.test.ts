@@ -249,3 +249,47 @@ describe('R2.1 one guarded path loads another cycle into the editor', () => {
     expect(pageSrc).toContain('onApply={handleApplyAccepted}')
   })
 })
+
+// ── R2.2: the selection question replaces the two pickers ────────────────────
+// Owner decision 17 Oct: IdentityTab shows ONE "How are candidates selected?"
+// question whose answer sets the (entity_type, selection_model) pair. The old
+// "Entity Type" and "Selection Model *" controls are gone; the two values stay
+// on the form (hidden registered inputs) so Save's required check and the DB
+// write read exactly what the question writes. No default.
+
+describe('R2.2 the identity tab asks one selection question', () => {
+  const identity = pageSrc.slice(
+    pageSrc.indexOf('function IdentityTab'),
+    pageSrc.indexOf('/**\n * A persisted important-dates row.'),
+  )
+
+  it('renders the single question control and reads the config', () => {
+    expect(identity).toContain('data-testid="selection-question"')
+    expect(identity).toContain('answersForPillar(pillar)')
+    expect(identity).toContain('selectedAnswerId(pillar, currentEntityType, watchedSelectionModel)')
+    expect(identity).toContain('SELECTION_QUESTION')
+  })
+
+  it('an answer writes BOTH axes through the guarded setValue path', () => {
+    expect(identity).toContain('form.setValue("entityType", a.entityType')
+    expect(identity).toContain('form.setValue("selectionModel", a.selectionModel')
+  })
+
+  it('keeps both values registered so Save and the DB write still see them', () => {
+    expect(identity).toContain('form.register("entityType")')
+    expect(identity).toContain('form.register("selectionModel")')
+  })
+
+  it('the two old pickers are gone — no "Entity Type" or "Selection Model *" label, no jargon imports', () => {
+    expect(pageSrc).not.toContain('SELECTION_MODEL_LABELS')
+    expect(pageSrc).not.toContain('SELECTION_MODEL_HINTS')
+    expect(pageSrc).not.toContain('ALL_SELECTION_MODELS')
+    expect(identity).not.toMatch(/>Entity Type</)
+    expect(identity).not.toMatch(/>Selection Model \*</)
+  })
+
+  it('no default: the picker starts on the unanswered option', () => {
+    expect(identity).toContain('SELECTION_UNANSWERED_LABEL')
+    expect(identity).toContain('<option value="">')
+  })
+})

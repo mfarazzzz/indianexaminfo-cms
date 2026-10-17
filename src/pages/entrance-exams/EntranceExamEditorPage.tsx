@@ -25,8 +25,12 @@ import { ModulePanel } from "@/components/content-modules/ModulePanel";
 import type { ModuleConfig } from "@/types/modules";
 import { getErrorMessage } from "@/lib/utils";
 import { validateField } from "@/lib/fields/fieldTypes";
-import { ALL_SELECTION_MODELS, SELECTION_MODEL_LABELS, SELECTION_MODEL_HINTS, type SelectionModel } from "@/types/selection";
+import { type SelectionModel } from "@/types/selection";
 import { getModulesForEntityType, entityTypeForPillar, resolveEntityType, ENTRANCE_EXAM_ENTITY_CHOICES } from "@/config/moduleRegistry";
+import {
+  answersForPillar, selectedAnswerId, selectionHelperText,
+  SELECTION_QUESTION, SELECTION_UNANSWERED_LABEL,
+} from "@/config/selectionQuestion";
 import { generateStructured } from "@/lib/ai/aiFillClient";
 import { postProcessExtraction, type PipelineResult } from "@/lib/ai/noticePipeline";
 import { loadAllowedOptions } from "@/lib/ai/allowedOptions";
@@ -1310,15 +1314,19 @@ export function EntranceExamEditorPage() {
 // ── Tab Components ─────────────────────────────────────────────────────────
 
 function IdentityTab({ form, categories, regions, watchFrequency, watchedSelectionModel, isNew, pillar }: { form: any; categories: Category[]; regions: Region[]; watchFrequency: CycleFrequency; watchedSelectionModel: SelectionModel; isNew: boolean; pillar: string }) {
-  // The pillar decides the entity type. Only entrance-exam offers a choice.
-  const pillarIsFixed = entityTypeForPillar(pillar) !== null;
+  // R2.2: ONE question replaces the old "Entity Type" + "Selection Model *"
+  // pickers. An answer sets BOTH axes as a matched pair, so they can never
+  // disagree the way two independent dropdowns could. No default: it starts on
+  // "— Select —"; Save's own required-model check and the Publish gate both key
+  // off the selectionModel value this question writes.
   const currentEntityType: string = form.watch("entityType");
-  const ENTITY_TYPE_LABELS: Record<string, string> = {
-    recruitment: "🏛️ Government Recruitment",
-    exam: "📝 Entrance / Competitive Exam",
-    board: "🏫 Board Exam",
-    "university-admission": "🎓 University Admission",
-    "university-exam": "📚 University Exam",
+  const answers = answersForPillar(pillar);
+  const selectedId = selectedAnswerId(pillar, currentEntityType, watchedSelectionModel);
+  const chooseAnswer = (id: string) => {
+    const a = answers.find((x) => x.id === id);
+    if (!a) { form.setValue("selectionModel", "", { shouldDirty: true, shouldValidate: true }); return; }
+    form.setValue("entityType", a.entityType, { shouldDirty: true, shouldValidate: true });
+    form.setValue("selectionModel", a.selectionModel, { shouldDirty: true, shouldValidate: true });
   };
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1358,34 +1366,28 @@ function IdentityTab({ form, categories, regions, watchFrequency, watchedSelecti
           {CYCLE_FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
       </div>
-      {/* Entity Type — Axis 1: what this entity is. Decided by the pillar. */}
-      <div>
-        <label className="block text-xs font-medium text-slate-600 mb-1">Entity Type</label>
-        {pillarIsFixed ? (
-          <>
-            <input type="text" readOnly value={ENTITY_TYPE_LABELS[currentEntityType] ?? currentEntityType} className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-500 cursor-not-allowed" />
-            <p className="text-xs text-slate-400 mt-0.5">Set by the pillar for this section</p>
-          </>
-        ) : (
-          <>
-            <select {...form.register("entityType")} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
-              <option value="exam">📝 Entrance / Competitive Exam</option>
-              <option value="university-admission">🎓 University Admission</option>
-            </select>
-            <p className="text-xs text-slate-400 mt-0.5">Entrance exams only: an entrance exam or a university admission</p>
-          </>
-        )}
-      </div>
-      {/* Selection Model — Axis 2: how candidates are selected. REQUIRED, no default. */}
-      <div>
-        <label className="block text-xs font-medium text-slate-600 mb-1">Selection Model *</label>
-        <select {...form.register("selectionModel")} className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm">
-          <option value="">— Select —</option>
-          {ALL_SELECTION_MODELS.map((m) => (
-            <option key={m} value={m}>{SELECTION_MODEL_LABELS[m]}</option>
+      {/* R2.2 — one question sets both axes (entity_type + selection_model).
+          The hidden registered inputs keep the pair on the form so Save's
+          required-model check (data.selectionModel) and the DB write
+          (resolveEntityType(pillar, data.entityType)) read the same values the
+          question writes. No default: the picker starts unanswered. */}
+      <input type="hidden" {...form.register("entityType")} />
+      <input type="hidden" {...form.register("selectionModel")} />
+      <div className="md:col-span-2">
+        <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="selection-question">{SELECTION_QUESTION} *</label>
+        <select
+          id="selection-question"
+          data-testid="selection-question"
+          className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm"
+          value={selectedId}
+          onChange={(e) => chooseAnswer(e.target.value)}
+        >
+          <option value="">{SELECTION_UNANSWERED_LABEL}</option>
+          {answers.map((a) => (
+            <option key={a.id} value={a.id}>{a.label}</option>
           ))}
         </select>
-        <p className="text-xs text-slate-400 mt-0.5">{SELECTION_MODEL_HINTS[watchedSelectionModel]}</p>
+        <p className="text-xs text-slate-400 mt-0.5">{selectionHelperText(pillar, currentEntityType, watchedSelectionModel)}</p>
       </div>
       <div className="flex items-center gap-2 pt-5">
         <input type="checkbox" {...form.register("isFeatured")} id="isFeatured" className="rounded" />
