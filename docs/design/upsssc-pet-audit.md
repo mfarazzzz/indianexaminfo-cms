@@ -452,43 +452,60 @@ unverified `system`-seeded eligibility (`LAUNCH_READINESS.md:50`).
   ([`vite.config.ts:19-34`, `buildStampPlugin` `:64-89`]); the value is injected as
   `__BUILD_SHA__/__BUILD_SYNC__` and shown by `buildInfo.ts` (`:38 dirty → "built
   with uncommitted changes"`).
-- Live read (this audit): the deployed CMS `<meta name="build">` content is
-  **`142db3f dirty 2026-10-17T08:16:15.604Z`** — sha `142db3f`, sync **dirty**.
-- The stamp itself is behaving correctly; "dirty" simply means the **build host's
-  working tree had uncommitted changes** when `vite build` ran. It is *not* proof
-  the code differs from a clean `142db3f` in any particular way, and it is *not*
-  reliable as a "this is a released commit" signal — the flag can be triggered by
-  build artifacts / generated files / local edits on the host, and a build can be
-  `clean` yet stale relative to `origin/main`.
-- The real problem it exposes: `deploy-cms.sh:17` builds by **`git pull origin
-  main` on the VPS**, but `142db3f` is **unpushed** (`main…origin/main [ahead 5]`)
-  — so a standard `git pull origin main` deploy could **not** have produced
-  `142db3f`. The running artifact was therefore built from a working copy that
-  already carried the unpushed commits **and** a dirty tree. Conclusion: the
-  deployed bundle is **not reproducible from `origin/main`** and cannot be trusted
-  to equal any clean commit. That is the honest reason the "which commit is
-  deployed?" answer is unreliable here.
-- Recommended guardrail (no code now): treat any non-`clean` stamp as "not a
-  release"; build only from a pushed, clean `origin/main`; keep the `git status
-  --porcelain` file list (the plugin already prints it, `vite.config.ts:74-76`) in
-  the build log so the offending paths are inspectable.
+- Live read (this audit): the deployed CMS `<meta name="build">` content was
+  **`142db3f dirty 2026-10-17T08:16:15.604Z`** — sha `142db3f`, sync flag `dirty`.
+- Deploy source, **proved from the Hostinger build log** (read via the Hostinger
+  MCP): the CMS is a **Hostinger managed Node.js site** (`website_type=nodejs`,
+  username `u600737149`) — NOT the pm2/VPS path in `deploy-cms.sh`. The build
+  clones the connected GitHub repo `mfarazzzz/indianexaminfo-cms`, **branch `main`**,
+  and checks out the pinned commit. Build `01a148ee…` = commit **`142db3f`**
+  (`Checked out commit 142db3f "R2.2 (5/5)…"`), completed `2026-10-17T08:16:28Z`,
+  published 08:16 — exactly the deployed meta time. A later build `01a14962…`
+  deployed `c3ca8c9`. The owner had pushed `main` first.
+- **WITHDRAWN:** the earlier claim that the artifact was "built from a dirty working
+  copy … not reproducible from `origin/main`". That was wrong: it rested on a stale
+  local `main…origin/main [ahead 5]` reading taken before the owner pushed. After
+  `git fetch`, `origin/main` contains `142db3f` and the build log shows a clean
+  `git clone` + checkout of `142db3f`. The running bundle **does** equal a clean,
+  pushed `origin/main` commit.
+- **Why the stamp still says "dirty" — proven, not assumed.** The build log's own
+  build-stamp line reads:
+  `[plugin build-stamp] working tree DIRTY — 1 uncommitted file(s) (git status --porcelain): ?? vite.config.ts.timestamp-1792224975586-3b8bd94820c95.mjs`.
+  `gitStamp()` runs `git status --porcelain` while `vite build` loads the config; by
+  then Vite has written its **own transient config-bundle file**
+  `vite.config.ts.timestamp-*.mjs` into the repo root, and `.gitignore` does not
+  cover that pattern — so porcelain is non-empty on **every** build, even a clean
+  checkout. `npm install` ran (not `npm ci`) but did **not** rewrite
+  `package-lock.json` (absent from the list). The `dirty` flag is a **cosmetic stamp
+  bug**, not uncommitted source.
+- One-line fix (proposal, not applied): add `vite.config.ts.timestamp-*.mjs` (or
+  `*.timestamp-*.mjs`) to `.gitignore`, and/or compute sync from tracked
+  modifications only (`git status --porcelain -uno`), so a clean pushed checkout
+  stamps `clean`.
 
-### I2 — admincms1 "1 threat detected and cleaned" + "Vulnerabilities" warning
-- **No Hostinger MCP is available in this session.** The only MCP servers
-  configured are `supabase`, `browser-use`, `genui` (verified by listing the MCP
-  directory). There is **no read-only Hostinger tool** to query deployment status,
-  build info, or the malware/vulnerability scan results, so I could not read those
-  panels. I made **no hosting changes** and did not log into the control panel.
-- What I *could* read, read-only: the deployed CMS build meta (I1: `142db3f dirty
-  …`) via `browser-use` on the public admin origin, and the live frontend page via
-  HTTP (D/G). Both confirm the sites are up.
-- The "1 threat cleaned" / "Vulnerabilities" notices are Hostinger-panel scan
-  findings that need a scan surface I do not have here. To close this properly the
-  owner (or a session with a Hostinger MCP) should read the hPanel Malware Scan +
-  Vulnerabilities pages and the CMS Deployments log. **Flagged as unverified — not
-  guessed.** (Note the same bulk-touch/seed and dirty-build themes above are the
-  kind of thing a "vulnerabilities" scan sometimes reflects for a Node/PM2 VPS,
-  but I have no data to assert that.)
+### I2 — admincms1 "Vulnerabilities" warning + "1 threat detected and cleaned"
+- **MCP servers connected in this session:** `browser-use`, `genui`, `hostinger`,
+  `supabase`. The Hostinger MCP **is** connected now (the earlier note that it was
+  absent is corrected), so deployment/build/vulnerability data was read from it
+  read-only. No hosting change was made and the control panel was not logged into.
+- "Vulnerabilities" = the **Node.js dependency advisories** for admincms1
+  (`hosting_nodejs_list-vulnerabilities`): **46 advisories — 17 high, 26 moderate,
+  3 low**; the same build's `npm install` reported `59 vulnerabilities (43 moderate,
+  16 high)`. **Only 7 are direct dependencies** — `postcss` 8.5.16 (high, fix
+  8.5.18/8.5.23), `vite` 5.4.21 (high, needs a 6.x bump), `react-router-dom` 6.30.4
+  (moderate, fix 6.30.6), `vitest` 4.1.9 (moderate). The other 39 are transitive
+  build tooling (esbuild, undici, js-yaml, brace-expansion, browserslist,
+  source-map-js, prosemirror-view, linkify-it). All 46 report `is_patchable=false`
+  (Hostinger's auto-fix PR path is unavailable for them). This is dependency
+  hygiene on an admin SPA, not by itself evidence of a compromise.
+- "1 threat detected and cleaned in the last 30 days" is a **malware-scan** event,
+  a different surface. The only malware-scan operation in the connected Hostinger
+  MCP is VPS Monarx (`vps_monarx_scan-metrics`, needs a `virtualMachineId`);
+  admincms1 and indianexaminfo.com are Node hosting, not VPS, and there is **no
+  read-only operation available here that returns that account-level "threat
+  cleaned" event**. It is reported as **not retrievable via the connected tools**,
+  not asserted. The owner should open hPanel → Malware/Scanner for that single
+  event.
 
 ---
 
@@ -503,7 +520,9 @@ unverified `system`-seeded eligibility (`LAUNCH_READINESS.md:50`).
   created and **deleted**, `git status --short` verified empty.
 
 ## What this audit changes vs R2.2
-Nothing was built here (read-only). R2.2's five commits are untouched and the tree
-is clean at `142db3f`. The PET findings feed a **separate** plan (H), and surface
-two defects that likely outrank R2.3: the frontend `exams.status` nav bug (I/A2)
-and the unverified bulk-seeded facts (B).
+Nothing was built here (read-only). R2.2's five commits are untouched. The build
+does deploy cleanly (I1) — the `dirty` flag is a stamp bug, not a code problem. The
+PET findings feed a **separate** plan (H), and surface two defects that likely
+outrank R2.3: the frontend `exams.status` nav bug (A2) — which also leaves the
+mega-menu category lists and in-pillar search empty — and the unverified bulk-seeded
+facts (B).
