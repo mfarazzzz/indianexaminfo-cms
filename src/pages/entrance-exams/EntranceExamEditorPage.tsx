@@ -28,7 +28,7 @@ import { validateField } from "@/lib/fields/fieldTypes";
 import { type SelectionModel } from "@/types/selection";
 import { getModulesForEntityType, entityTypeForPillar, resolveEntityType, ENTRANCE_EXAM_ENTITY_CHOICES } from "@/config/moduleRegistry";
 import {
-  answersForPillar, selectedAnswerId, selectionHelperText,
+  answersForPillar, selectedAnswerId, selectionHelperText, isSelectionAnswered,
   SELECTION_QUESTION, SELECTION_UNANSWERED_LABEL,
 } from "@/config/selectionQuestion";
 import { generateStructured } from "@/lib/ai/aiFillClient";
@@ -280,6 +280,10 @@ export function EntranceExamEditorPage() {
   const watchFrequency = form.watch("cycleFrequency");
   const watchedEntityType = form.watch("entityType");
   const watchedSelectionModel = form.watch("selectionModel") as SelectionModel;
+  // R2.2 publish gate: the record cannot go live until the selection question is
+  // answered (which sections apply is decided by the answer). Save keeps its own
+  // required-model check; this only disables the Published option + says why.
+  const selectionAnswered = isSelectionAnswered(watchedSelectionModel);
   // FX1.3: the form's cycle year, used by the no-cycle empty states.
   const watchedEditionYear = form.watch("editionYear") || new Date().getFullYear();
 
@@ -1132,6 +1136,13 @@ export function EntranceExamEditorPage() {
                   disabled={publishing}
                   onChange={async (e) => {
                     const next = e.target.value as ExamWorkflowStatus;
+                    // R2.2 publish gate: an unanswered selection question must not
+                    // go live. The option is disabled below; this guard also stops a
+                    // keyboard/programmatic change from slipping past it.
+                    if (next === "published" && !selectionAnswered) {
+                      toast.error("Answer \u201CHow are candidates selected?\u201D before publishing.");
+                      return;
+                    }
                     setPublishing(true);
                     try {
                       await setExamWorkflowStatus(exam!.id, next);
@@ -1151,10 +1162,24 @@ export function EntranceExamEditorPage() {
                   className="bg-transparent text-xs font-medium focus:outline-none disabled:opacity-50 cursor-pointer"
                 >
                   <option value="draft">Draft</option>
-                  <option value="published">Published ✓</option>
+                  <option
+                    value="published"
+                    data-testid="workflow-published-option"
+                    disabled={!selectionAnswered}
+                    title={selectionAnswered ? undefined : "Answer \u201CHow are candidates selected?\u201D on the Identity tab first."}
+                  >Published ✓</option>
                   <option value="archived">Archived</option>
                 </select>
               </div>
+              {!selectionAnswered && (
+                <span
+                  data-testid="publish-gate-hint"
+                  title="A record cannot go live until you answer how candidates are selected — that answer decides which sections apply."
+                  className="text-[11px] text-amber-600"
+                >
+                  Answer the selection question to publish
+                </span>
+              )}
               {exam?.slug && (
                 <ViewOnSiteButton
                   pillar={exam.pillar}

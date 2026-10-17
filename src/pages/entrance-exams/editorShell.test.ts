@@ -293,3 +293,57 @@ describe('R2.2 the identity tab asks one selection question', () => {
     expect(identity).toContain('<option value="">')
   })
 })
+
+// ── R2.2: the Publish gate ───────────────────────────────────────────────────
+// Owner decision 17 Oct (option a): the Published option is disabled until the
+// selection question is answered, with a plain-words reason (tooltip + visible
+// hint). Save's required-model check is unchanged, and Draft/Archived are NOT
+// touched. The full Checklist-based gate stays for R2.5.
+
+describe('R2.2 the header gates only the Published option on the selection answer', () => {
+  const header = pageSrc.slice(
+    pageSrc.indexOf('<option value="draft">Draft</option>'),
+    pageSrc.indexOf('data-testid="publish-gate-hint"') + 200,
+  )
+
+  it('published is disabled exactly when the question is unanswered', () => {
+    expect(pageSrc).toContain('const selectionAnswered = isSelectionAnswered(watchedSelectionModel)')
+    expect(header).toContain('disabled={!selectionAnswered}')
+    // the disable sits on the published option, not the whole select
+    const publishedOpt = header.slice(header.indexOf('value="published"'), header.indexOf('>Published'))
+    expect(publishedOpt).toContain('disabled={!selectionAnswered}')
+  })
+
+  it('draft and archived are untouched — no conditional disabled on either', () => {
+    expect(header).toContain('<option value="draft">Draft</option>')
+    expect(header).toContain('<option value="archived">Archived</option>')
+    // neither plain option carries a disabled binding
+    expect(header).not.toMatch(/value="draft"[^>]*disabled/)
+    expect(header).not.toMatch(/value="archived"[^>]*disabled/)
+  })
+
+  it('a plain-words reason is shown as a tooltip and a visible hint', () => {
+    // tooltip on the disabled option
+    const publishedOpt = header.slice(header.indexOf('value="published"'), header.indexOf('>Published'))
+    expect(publishedOpt).toContain('title={selectionAnswered ? undefined :')
+    expect(publishedOpt).toContain('How are candidates selected')
+    // visible hint, only while unanswered
+    expect(pageSrc).toContain('{!selectionAnswered && (')
+    expect(pageSrc).toContain('data-testid="publish-gate-hint"')
+    expect(pageSrc).toContain('Answer the selection question to publish')
+  })
+
+  it('the change handler refuses to publish while unanswered (defensive guard)', () => {
+    const onChange = pageSrc.slice(
+      pageSrc.indexOf('const next = e.target.value as ExamWorkflowStatus'),
+      pageSrc.indexOf('await setExamWorkflowStatus'),
+    )
+    expect(onChange).toContain('if (next === "published" && !selectionAnswered)')
+    expect(onChange).toContain('return;')
+  })
+
+  it('Save itself is unchanged — still gated only on its own required-model check', () => {
+    expect(pageSrc).toContain('Selection Model is required')
+    expect(pageSrc).toContain('<button type="submit" disabled={saving}')
+  })
+})
