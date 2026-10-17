@@ -54,3 +54,9 @@ test-output.txt
 git-check.txt
 git-status.txt
 qa/screenshots/
+
+# Vite writes a transient ESM bundle of vite.config.ts ("vite.config.ts.timestamp-<epoch>-<hash>.mjs")
+# into the repo root during build. It is a build byproduct, not source; ignore it so the
+# build-stamp's `git status --porcelain` (vite.config.ts gitStamp) reports a clean tree as
+# clean instead of always "built with uncommitted changes".
+*.timestamp-*.mjs
