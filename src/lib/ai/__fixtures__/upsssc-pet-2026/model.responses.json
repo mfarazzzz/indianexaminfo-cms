@@ -1,0 +1,28 @@
+{
+  "answer": {
+    "fields": {
+      "name": { "value": "UPSSSC Preliminary Eligibility Test (PET) 2026", "confidence": 1, "sourceQuote": "Name of Exam: UPSSSC Preliminary Eligibility Test (PET) Admit Card 2026" },
+      "shortName": { "value": "UPSSSC PET 2026", "confidence": 1, "sourceQuote": "Short Information: The Uttar Pradesh Subordinate Service Selection Commission (UPSSSC)" },
+      "conductingBody": { "value": "UPSSSC, Lucknow", "confidence": 1, "sourceQuote": "Conducting Body: UPSSSC, Lucknow" },
+      "officialWebsite": { "value": "https://upsssc.gov.in/", "confidence": 1, "sourceQuote": "Visit the official UPSSSC website at upsssc.gov.in." },
+      "region": { "value": "uttar-pradesh", "confidence": 1, "sourceQuote": "Uttar Pradesh Subordinate Service Selection Commission (UPSSSC)" },
+      "categorySlug": { "value": "state-government-jobs", "confidence": 1, "sourceQuote": "Uttar Pradesh Subordinate Service Selection Commission (UPSSSC)" },
+      "selectionModel": { "value": "written-exam", "confidence": 1, "sourceQuote": "The written examination is scheduled to be held on 25, 30 October 2026 & 1 November 2026." },
+      "entityType": { "value": "recruitment", "confidence": 1, "sourceQuote": "Exam Name: Preliminary Eligibility Test (PET) 2026" },
+      "noticeReference": { "value": "Post Date / Update: 17 October 2026", "confidence": 1, "sourceQuote": "Post Date / Update: 17 October 2026 by Sarkari Result" }
+    },
+    "dates": [
+      { "label": "Revised PET Written Exam Dates", "dateText": "30 October 2026", "kind": "exam_written", "confidence": 1, "sourceQuote": "Revised PET Written Exam Dates: 25, 30 October 2026 & 01 November 2026" }
+    ],
+    "references": [],
+    "important_links": [
+      { "label": "Official Website", "url": "https://upsssc.gov.in/", "kind": "official" },
+      { "label": "Download Admit Card", "url": "https://upsssc.gov.in/admit-card", "kind": "admit_card" },
+      { "label": "Download Revised Exam Date Notice", "url": "https://upsssc.gov.in/revised-exam-date-notice", "kind": "notification" },
+      { "label": "Download Exam Date Notice", "url": "https://upsssc.gov.in/exam-date-notice", "kind": "notification" },
+      { "label": "Download Exam City Details", "url": "https://upsssc.gov.in/exam-city-details", "kind": "other" },
+      { "label": "Download Exam City Notice", "url": "https://upsssc.gov.in/exam-city-notice", "kind": "notification" }
+    ],
+    "notes": []
+  }
+}
