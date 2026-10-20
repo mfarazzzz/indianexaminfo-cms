@@ -1,7 +1,16 @@
 -- ============================================================================
--- PROPOSAL ONLY — DO NOT APPLY. No migration is run from this file; it awaits
--- the owner's approval. Read-only counts below were taken 2026-10-17 against
--- project cwbhhcqsrbuoybeaondk.
+-- RESOLVED 17-20 Oct — kept as the record. CHANGE 1 (all-past confirmed ->
+-- 'completed') was REJECTED by the owner: 20 of the 31 had a last confirmed date
+-- of type application_start / walkin / counselling, so 'completed' would be false
+-- (e.g. BHEL Engineer — the exam date is simply unannounced). CHANGE 2 (exam_physical
+-- counts as an exam window) and CHANGE 3 (label fallback: PET/Prelims/Written/CBT ->
+-- exam_written) were APPLIED as migration 20261020071100_status_result_awaited_exam_physical.sql.
+-- Read-only simulation before apply: the prior view was reproduced with 0 mismatch;
+-- the ONLY transitions were 11 exams dates-awaited -> result-awaited, nothing else.
+-- Verified live after: dates-awaited 134 -> 123, result-awaited 158 -> 169, others
+-- unchanged. The applied view body is in supabase/migrations/20261020071100_*.sql.
+-- ============================================================================
+-- Original proposal text retained below for provenance.
 --
 -- Two related status-engine problems, seen on the UPSSSC PET page:
 --   (A) "Dates Awaited" shown although the record has confirmed dates that are
@@ -27,7 +36,7 @@
 -- Preview queries are at the bottom; run them before deciding.
 
 -- ---------------------------------------------------------------------------
--- CHANGE 1 — (A) "all confirmed dates are in the past" is NOT "dates awaited".
+-- CHANGE 1 — REJECTED (kept for the record; see the resolution above).
 -- Insert this branch in the status_derived CASE immediately BEFORE the final
 --   WHEN combined.has_any_dates AND NOT combined.has_confirmed_dates THEN 'upcoming'
 --   ELSE 'dates-awaited'
@@ -44,7 +53,7 @@
 -- genuine exam, that is CHANGE 2, which routes those to result-awaited first.)
 --
 -- ---------------------------------------------------------------------------
--- CHANGE 2 — (B) treat a physical/practical exam as an exam window.
+-- CHANGE 2 — APPLIED (migration 20261020071100): treat a physical exam as an exam window.
 -- In date_summary, the exam window currently counts only exam_written /
 -- exam_practical:
 --   min/max(date_val) FILTER (… date_type = ANY(ARRAY['exam_written','exam_practical']))
@@ -56,7 +65,7 @@
 -- them the written-PET class that is mis-typed at the DATA layer).
 --
 -- ---------------------------------------------------------------------------
--- CHANGE 3 — (B) label fallback: stop guessing "pet" means a physical test.
+-- CHANGE 3 — APPLIED (migration 20261020071100): label fallback stops guessing "pet".
 -- In the date_type COALESCE CASE, the branch
 --   WHEN lower(...) LIKE '%rally%' OR lower(...) LIKE '%physical test%'
 --        OR lower(...) LIKE '% pet %' THEN 'exam_physical'
