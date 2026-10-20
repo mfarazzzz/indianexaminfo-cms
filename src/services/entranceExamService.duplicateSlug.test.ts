@@ -89,19 +89,47 @@ describe('HARD BLOCK vs WARNING: short name', () => {
     route(
       OK, EMPTY,
       { data: [{ id: 'ex-other', name: 'Bihar DELED Entrance', workflow_status: 'published', pillar: 'entrance-exam', region: 'bihar' }], error: null },
+      EMPTY, // A.4 name-core scan → no extra matches
       created, edition,
     );
     const res = await createEntranceExam(input); // must NOT throw
     expect(res.exam.id).toBe('ex-new');
     expect(res.warnings).toHaveLength(1);
-    expect(res.warnings[0]).toMatchObject({ id: 'ex-other', name: 'Bihar DELED Entrance', pillar: 'entrance-exam' });
+    expect(res.warnings[0]).toMatchObject({ id: 'ex-other', name: 'Bihar DELED Entrance', pillar: 'entrance-exam', reason: 'short_name' });
   });
 
   it('no collision at all → creates, warnings empty', async () => {
-    route(OK, EMPTY, EMPTY, created, edition);
+    route(OK, EMPTY, EMPTY, EMPTY, created, edition);
     const res = await createEntranceExam(input);
     expect(res.warnings).toEqual([]);
     expect(res.edition.id).toBe('ed-new');
+  });
+
+  it('A.4: same exam worded differently (different short name) → soft warning reason=same_name', async () => {
+    route(
+      OK, EMPTY, EMPTY,
+      { data: [{ id: 'ex-core', name: 'UPSC Combined Medical Services CMS Examination 2026', slug: 'upsc-cms-examination-2026', pillar: 'government-exam', workflow_status: 'published' }], error: null },
+      created, edition,
+    );
+    const res = await createEntranceExam({
+      ...input, name: 'UPSC Combined Medical Services', shortName: 'UPSC CMS', slug: 'upsc-cms', pillar: 'government-exam' as never,
+    });
+    const w = res.warnings.find((x) => x.reason === 'same_name');
+    expect(w).toBeTruthy();
+    expect(w!.id).toBe('ex-core');
+    expect(w!.slug).toBe('upsc-cms-examination-2026');
+  });
+
+  it('A.4: a genuinely different exam (AIIMS entrance vs officer) → NO same_name warning', async () => {
+    route(
+      OK, EMPTY, EMPTY,
+      { data: [{ id: 'ex-officer', name: 'AIIMS Nursing Officer Recruitment', slug: 'aiims-nursing-officer', pillar: 'government-exam', workflow_status: 'published' }], error: null },
+      created, edition,
+    );
+    const res = await createEntranceExam({
+      ...input, name: 'AIIMS B.Sc and M.Sc Nursing Entrance', shortName: 'AIIMS Nursing', slug: 'aiims-nursing', pillar: 'entrance-exam' as never,
+    });
+    expect(res.warnings.filter((x) => x.reason === 'same_name')).toHaveLength(0);
   });
 });
 
@@ -111,6 +139,7 @@ describe('read failures on the widened checks never block a valid create', () =>
       OK,
       { data: null, error: { message: 'name boom' } },
       { data: null, error: { message: 'short boom' } },
+      EMPTY, // A.4 name-core scan
       created, edition,
     );
     await expect(createEntranceExam(input)).resolves.toMatchObject({ exam: { id: 'ex-new' } });

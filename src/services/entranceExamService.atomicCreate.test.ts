@@ -31,6 +31,7 @@ describe('createEntranceExam FX1.5 compensating delete', () => {
       { data: null, error: null },
       { data: [], error: null },
       { data: [], error: null },
+      { data: [], error: null }, // A.4 name-core scan → no matches
       { data: { id: 'ex-new', slug: 'test-exam', name: 'Test Exam', pillar: 'entrance-exam', workflow_status: 'draft', created_at: '', updated_at: '' }, error: null },
       { data: null, error: { message: 'edition boom' } },
       { data: null, error: null }, // compensating delete awaited result
@@ -61,6 +62,7 @@ describe('createEntranceExam FX1.5 compensating delete', () => {
       { data: null, error: null },        // slug free
       { data: [], error: null },          // name free
       { data: [], error: null },          // short free
+      { data: [], error: null },          // A.4 name-core scan → no matches
       { data: { id: 'ex-new', slug: 'test-exam', name: 'Test Exam', pillar: 'entrance-exam', workflow_status: 'draft', created_at: '', updated_at: '' }, error: null }, // exam insert
       { data: null, error: { message: 'edition boom' } },  // edition insert FAIL
       { data: null, error: { message: 'delete boom' } },   // compensating delete FAILS too

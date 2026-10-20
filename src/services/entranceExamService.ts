@@ -13,6 +13,7 @@ import { revalidateExams } from "@/lib/revalidate";
 import { normalizeUrlOrThrow } from "@/lib/utils";
 import { getModuleRegistry } from "@/services/moduleRegistryService";
 import { assertAffected } from "@/lib/auth/permissionGuard";
+import { isSameExamNameCore } from "@/lib/exams/sameExamName";
 import type { Pillar, ExamWorkflowStatus } from "@/types/exam";
 import type { SelectionModel } from "@/types/selection";
 
@@ -359,7 +360,14 @@ function escapeIlike(value: string): string {
  * Only an exact slug or exact Name hard-blocks, plus a short-name match whose
  * pillar AND region are ALSO the same (that is genuinely the same exam).
  */
-export type DuplicateWarning = { id: string; name: string; status: string; pillar: string | null };
+export type DuplicateWarning = {
+  id: string; name: string; status: string; pillar: string | null;
+  /** The exam's slug — lets the editor link straight to the existing page. */
+  slug?: string;
+  /** WHY we warn: a reused Short Name, or a near-identical normalized NAME core
+   *  (the same exam under a differently-worded name — A.4). */
+  reason?: "short_name" | "same_name";
+};
 type ExamConflictBlock = {
   id: string; name: string; workflow_status: string | null; pillar: string | null;
   matched: "slug" | "name" | "short_name";
@@ -394,16 +402,55 @@ async function findExamConflicts(
   // 3. Short Name (case-insensitive, trimmed) — NOT a hard block on its own.
   //    Same pillar AND region ⇒ same exam ⇒ block; otherwise ⇒ warn and allow save.
   const shortVal = trim(shortName);
+  const warnings: DuplicateWarning[] = [];
   if (shortVal) {
     const { data, error } = await db.from("exams").select(COLS).ilike("short_name", escapeIlike(shortVal)).limit(20);
     if (!error && data && data.length > 0) {
       const rows = data as { id: string; name: string; workflow_status: string | null; pillar: string | null; region: string | null }[];
       const sameExam = rows.find((r) => norm(r.pillar) === norm(pillar) && norm(r.region) === norm(region));
       if (sameExam) return { block: { ...(sameExam as object), matched: "short_name" } as ExamConflictBlock, warnings: [] };
-      return { block: null, warnings: rows.map((r) => ({ id: r.id, name: r.name, status: r.workflow_status ?? "draft", pillar: r.pillar ?? null })) };
+      for (const r of rows) warnings.push({ id: r.id, name: r.name, status: r.workflow_status ?? "draft", pillar: r.pillar ?? null, reason: "short_name" });
     }
   }
-  return { block: null, warnings: [] };
+
+  // 4. Normalized NAME-CORE scan (A.4) — catches the same exam worded differently
+  //    ("UPSC Combined Medical Services" vs "...CMS Examination 2026", the RPF
+  //    pair with different short names). NON-BLOCKING: it only adds warnings, and
+  //    a failed read yields none. Never invents a block.
+  const nameCoreVal = trim(name);
+  if (nameCoreVal) {
+    const seen = new Set(warnings.map((w) => w.id));
+    for (const m of await findSameExamNameMatches(nameCoreVal, slug)) {
+      if (seen.has(m.id)) continue;
+      warnings.push({ id: m.id, name: m.name, status: m.workflow_status ?? "draft", pillar: m.pillar, slug: m.slug, reason: "same_name" });
+    }
+  }
+  return { block: null, warnings };
+}
+
+/**
+ * A.4 — read every published/draft exam name once and return the ones whose
+ * IDENTITY CORE matches `name` (see sameExamName.ts). Excludes the record being
+ * created (same slug). A failed/oversized read returns [] — a soft warning must
+ * never block or break a valid create.
+ */
+async function findSameExamNameMatches(
+  name: string, excludeSlug: string,
+): Promise<{ id: string; name: string; slug: string; pillar: string | null; workflow_status: string | null }[]> {
+  try {
+    const { data, error } = await db
+      .from("exams")
+      .select("id, name, slug, pillar, workflow_status")
+      .limit(2000);
+    if (error || !Array.isArray(data)) return [];
+    const rows = data as { id: string; name: string | null; slug: string; pillar: string | null; workflow_status: string | null }[];
+    return rows
+      .filter((r) => r.slug !== excludeSlug && r.name && isSameExamNameCore(name, r.name))
+      .slice(0, 5)
+      .map((r) => ({ id: r.id, name: r.name ?? "", slug: r.slug, pillar: r.pillar, workflow_status: r.workflow_status }));
+  } catch {
+    return [];
+  }
 }
 
 export async function createEntranceExam(input: NewExamInput): Promise<{

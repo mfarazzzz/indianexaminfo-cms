@@ -513,13 +513,20 @@ export function EntranceExamEditorPage() {
         // pillar/region is not a duplicate — the save was allowed. Warn (visible,
         // non-blocking) so the editor can eyeball it, with a link to the other one.
         if (result.warnings?.length) {
-          const w = result.warnings[0];
+          // Prefer a same-exam NAME-core match (the more serious signal) over a
+          // reused short name; both link straight to the existing page.
+          const sameName = result.warnings.find((w) => w.reason === "same_name");
+          const w = sameName ?? result.warnings[0];
           const wlist = adminListForPillar(w.pillar);
           const extra = result.warnings.length > 1 ? ` (+${result.warnings.length - 1} more)` : "";
           toast.warning(
-            `Another exam uses this short name: ${w.name} (${wlist.label})${extra}.`,
+            sameName
+              ? `A page with a very similar name already exists: ${w.name} (${wlist.label})${extra}.`
+              : `Another exam uses this short name: ${w.name} (${wlist.label})${extra}.`,
             {
-              description: "Saved anyway — a different state/pillar may legitimately share the short name. Confirm it is not a mistake.",
+              description: sameName
+                ? "Saved anyway — this may be the same exam under different wording. Confirm it is not a duplicate before publishing."
+                : "Saved anyway — a different state/pillar may legitimately share the short name. Confirm it is not a mistake.",
               action: { label: "Open it", onClick: () => navigate(`${wlist.path}/${w.id}`) },
               duration: 10000,
             },
