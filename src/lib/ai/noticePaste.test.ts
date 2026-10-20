@@ -5,7 +5,7 @@
  * only recovers what the paste already carried and never deletes a fact line.
  */
 import { describe, expect, it } from "vitest";
-import { extractAnchors, preCleanNotice } from "./noticePaste";
+import { extractAnchors, preCleanNotice, looksLikeItHasLinks } from "./noticePaste";
 
 describe("extractAnchors — recover real hrefs from a pasted page", () => {
   it("reads label+url from anchors and de-duplicates by URL", () => {
@@ -83,5 +83,27 @@ describe("preCleanNotice — strip obvious chrome, never a fact line", () => {
     const src = ["Home", "Latest Jobs", "Tools", "More", "Search", "Login", "Subscribe Now"].join("\n");
     const { cleaned } = preCleanNotice(src);
     expect(cleaned.trim()).toBe("");
+  });
+});
+
+describe("looksLikeItHasLinks — nudge a linkless plain-text paste", () => {
+  it("true for anchor-style phrases that a plain paste stripped of its href", () => {
+    expect(looksLikeItHasLinks("UP Police — Apply Online: Click Here to register")).toBe(true);
+    expect(looksLikeItHasLinks("Download the Notification PDF for details")).toBe(true);
+    expect(looksLikeItHasLinks("Correction link is active till 12 Oct")).toBe(true);
+    expect(looksLikeItHasLinks("Visit official website for the short notice")).toBe(true);
+  });
+
+  it("false for a bare URL — it survives a plain paste and needs no HTML re-paste", () => {
+    expect(looksLikeItHasLinks("Form: https://rrbapply.gov.in/ntpc")).toBe(false);
+  });
+
+  it("false for a fact-only notice with no link placeholders", () => {
+    expect(looksLikeItHasLinks("RRB NTPC Graduate Level 2026 — 3548 posts, apply by 10 Oct 2026")).toBe(false);
+  });
+
+  it("false for empty / non-text", () => {
+    expect(looksLikeItHasLinks("")).toBe(false);
+    expect(looksLikeItHasLinks(undefined as unknown as string)).toBe(false);
   });
 });

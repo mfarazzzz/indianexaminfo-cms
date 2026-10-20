@@ -49,6 +49,23 @@ export function extractAnchors(html: string): SourceLink[] {
   return out;
 }
 
+/** Anchor-style phrases: in an aggregator notice these almost always wrapped a
+ *  real <a href>, so a plain-text paste would have dropped the address. A bare
+ *  URL is deliberately NOT here — it survives a plain-text paste and is attestable
+ *  as-is, so it needs no HTML re-paste. Used only to nudge the editor; it never
+ *  decides what is stored. */
+const LINK_HINT =
+  /(click\s+here|apply\s+online|online\s+apply|apply\s*now|download\s+(the\s+)?(notification|pdf|form|advt|link)|official\s+(website|site|portal)|notification\s+pdf|short\s+notice|correction\s+link|registration\s+link|apply\s+link|(link|apply)\s+(is\s+)?(active|here))/i;
+
+/**
+ * True when pasted plain text reads as if it referenced hyperlinks ("click here",
+ * "apply online", "download notification pdf"…). The dialog uses this to suggest an
+ * HTML re-paste only when zero addresses came with the text — never on its own.
+ */
+export function looksLikeItHasLinks(text: string): boolean {
+  return LINK_HINT.test(text || "");
+}
+
 /** A line that is clearly aggregator chrome. */
 const CHROME_LINE = /^\s*(home|latest jobs|results?|admit card|tools|more|search|login|sign ?up|follow (us|now)|join now|subscribe now|get daily job alerts|trending now|quick links|related posts?|submit your question|comments?\b|designed (&|and) maintained|copyright|all rights reserved|share|whatsapp|telegram|instagram|twitter|facebook|koo|youtube|android app|apple ios app|windows app)\b/i;
 

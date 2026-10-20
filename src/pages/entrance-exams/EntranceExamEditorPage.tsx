@@ -36,7 +36,7 @@ import { generateStructured } from "@/lib/ai/aiFillClient";
 import { postProcessExtraction, type PipelineResult } from "@/lib/ai/noticePipeline";
 import { loadAllowedOptions } from "@/lib/ai/allowedOptions";
 import { findLikelyExamMatch, NOTICE_HANDOFF_KEY, type LikelyMatch } from "@/lib/ai/noticeMatch";
-import { extractAnchors, preCleanNotice, type SourceLink } from "@/lib/ai/noticePaste";
+import { extractAnchors, preCleanNotice, looksLikeItHasLinks, type SourceLink } from "@/lib/ai/noticePaste";
 import { buildNoticeAiMetadata } from "@/lib/ai/noticeProvenance";
 import { mergeAcceptedDateRows } from "@/lib/dates/dateRowMerge";
 import { NoticeReviewDrawer } from "@/components/entrance-exams/NoticeReviewDrawer";
@@ -2199,12 +2199,20 @@ function AIFillDialog({ onGenerate, onCancel }: { onGenerate: (rawContent?: stri
   const [sourceLinks, setSourceLinks] = useState<SourceLink[]>([]);
   // S2.14b: opt-in chrome strip; the raw text is always available (leave off).
   const [cleanChrome, setCleanChrome] = useState(false);
+  // S2.14b: paste referenced links but carried no addresses (plain-text paste).
+  const [pasteMissingLinks, setPasteMissingLinks] = useState(false);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const html = e.clipboardData?.getData("text/html") || "";
-    if (html) {
-      const anchors = extractAnchors(html);
-      if (anchors.length) setSourceLinks(anchors);
+    const plain = e.clipboardData?.getData("text/plain") || "";
+    const anchors = html ? extractAnchors(html) : [];
+    if (anchors.length) {
+      setSourceLinks(anchors);
+      setPasteMissingLinks(false);
+    } else {
+      // No addresses came with this paste. If the text clearly points at links,
+      // nudge toward an HTML re-paste so Important Links can carry real URLs.
+      setPasteMissingLinks(looksLikeItHasLinks(plain));
     }
     // No preventDefault — the textarea still receives the plain text unchanged.
   };
@@ -2246,6 +2254,11 @@ function AIFillDialog({ onGenerate, onCancel }: { onGenerate: (rawContent?: stri
           {sourceLinks.length > 0 && (
             <p className="mt-1 text-[11px] text-emerald-600" data-testid="paste-links-detected">
               {sourceLinks.length} link{sourceLinks.length === 1 ? "" : "s"} with addresses detected from the paste — the AI can attach real URLs to Important Links.
+            </p>
+          )}
+          {pasteMissingLinks && sourceLinks.length === 0 && (
+            <p className="mt-1 text-[11px] text-amber-600" data-testid="paste-links-missing">
+              This notice seems to link out, but no addresses came with the paste — a plain-text paste drops them. Select-all on the notice page and paste again so Important Links can carry real URLs.
             </p>
           )}
         </div>
