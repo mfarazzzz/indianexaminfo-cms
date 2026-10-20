@@ -212,25 +212,51 @@ export interface ExistingRow { label: string; date: string; type?: string; kind?
 const EXAM_WINDOW_TYPES = new Set(["exam_written", "exam_practical", "exam_physical"]);
 
 /**
- * 2c — revision supersede. For a revised exam-window kind, the existing rows of
- * the SAME type whose DATE differs from the new set are candidates to remove.
- * Default-checked only when the old row was system-seeded (not human-verified);
- * a human-confirmed row requires an explicit tick (defaultRemove false).
+ * 2c — revision supersede. A revised exam window (written/practical/physical) is
+ * ONE family: when the notice restates the exam date(s), an EXISTING row of any
+ * exam-window type whose date is not in the new set is a removal candidate —
+ * default-checked only when it was system-seeded / not human-verified; a
+ * human-confirmed row needs an explicit tick. Rows already carrying a new date
+ * are left alone.
  */
 export function supersedeCandidates(existing: ExistingRow[], detRows: PipelineDateRow[]): { row: ExistingRow; replacedBy: string[]; defaultRemove: boolean }[] {
   const out: { row: ExistingRow; replacedBy: string[]; defaultRemove: boolean }[] = [];
-  const revisedTypes = new Set(detRows.filter((r) => EXAM_WINDOW_TYPES.has(r.type)).map((r) => r.type));
-  if (revisedTypes.size === 0) return out;
-  for (const type of revisedTypes) {
-    const newDates = detRows.filter((r) => r.type === type).map((r) => r.date);
-    const set = new Set(newDates);
-    for (const row of existing) {
-      if (row.type !== type) continue;
-      if (set.has(row.date)) continue; // same date — not superseded
-      out.push({ row, replacedBy: newDates, defaultRemove: !row.verified });
-    }
+  const newExamDates = new Set(detRows.filter((r) => EXAM_WINDOW_TYPES.has(r.type)).map((r) => r.date));
+  if (newExamDates.size === 0) return out;
+  const replacedBy = Array.from(newExamDates).sort();
+  for (const row of existing) {
+    if (!EXAM_WINDOW_TYPES.has(row.type ?? "")) continue;
+    if (newExamDates.has(row.date)) continue; // already carries a current exam date
+    out.push({ row, replacedBy, defaultRemove: !row.verified });
   }
   return out;
+}
+
+/** The drawer's full apply-plan for the deterministic rows against the record's
+ *  existing timeline — what will be treated as already-present, what fills an
+ *  empty standard slot, what is a genuinely new row, and what a revision
+ *  supersedes. Pure; the editor renders this. Matches the form's "never
+ *  duplicate a date already on the timeline" rule (keyed on the date). */
+export interface DateMergePlan {
+  alreadyPresent: PipelineDateRow[];
+  fillSlots: { row: PipelineDateRow; slotIndex: number }[];
+  addCustom: PipelineDateRow[];
+  supersede: { row: ExistingRow; replacedBy: string[]; defaultRemove: boolean }[];
+}
+export function planDateMerge(existing: ExistingRow[], detRows: PipelineDateRow[]): DateMergePlan {
+  const existingDates = new Set(existing.map((r) => r.date).filter(Boolean));
+  const emptySlotByType = new Map<string, number>();
+  existing.forEach((r, i) => {
+    if (!r.date && r.type && !emptySlotByType.has(r.type)) emptySlotByType.set(r.type, i);
+  });
+  const plan: DateMergePlan = { alreadyPresent: [], fillSlots: [], addCustom: [], supersede: supersedeCandidates(existing, detRows) };
+  for (const row of detRows) {
+    if (existingDates.has(row.date)) { plan.alreadyPresent.push(row); continue; }
+    const slot = emptySlotByType.get(row.type);
+    if (slot !== undefined) { emptySlotByType.delete(row.type); plan.fillSlots.push({ row, slotIndex: slot }); }
+    else plan.addCustom.push(row);
+  }
+  return plan;
 }
 
 /**
