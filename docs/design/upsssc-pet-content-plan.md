@@ -145,6 +145,11 @@ first:
 2. **4a** frontend render of existing data (quick-info, dates incl. multi-day rows,
    links attested-only, FAQ, honest Last Updated).
 3. **HTML-paste link recovery + relative→notes** (paste box + drawer).
+3b. **S2.15 — deterministic date-line extraction (DONE this turn).** The Important-Dates
+   block is parsed straight from the pasted text so a flaky/low-yield model can never
+   drop a date; conflicts resolved with a visible warning; supersede/slot-fill/identity
+   guardrails added. Reason it leads D-P2: **reliable extraction does not depend on a
+   flaky free model** — every later step (updates, render) trusts these rows.
 4. **D-P2** CMS Updates (`content_posts`) + create-update-from-notice.
 5. **steps[]** slot (ai-fill template change → **redeploy**).
 6. **4b** how-to steps + Updates timeline render.
