@@ -95,6 +95,8 @@ export interface NewExamUpdate {
   isPinned?: boolean;
   quickLinks?: UpdateLink[];
   attachmentUrls?: UpdateLink[];
+  /** The update's own display dates (label + ISO date), stored as content_posts.important_dates. */
+  importantDates?: { label: string; date: string; isUrgent: boolean }[];
   status?: ExamUpdate["status"];
   pillar?: string;
   slug: string;
@@ -120,6 +122,7 @@ export async function createExamUpdate(input: NewExamUpdate): Promise<ExamUpdate
     is_pinned: input.isPinned ?? false,
     quick_links: sanitizeLinks(input.quickLinks),
     attachment_urls: sanitizeLinks(input.attachmentUrls),
+    important_dates: input.importantDates ?? [],
     status,
     published_at: status === "published" ? new Date().toISOString() : null,
     created_by: input.createdBy ?? null,
@@ -154,6 +157,7 @@ export async function updateExamUpdate(id: string, patch: ExamUpdatePatch): Prom
   if (patch.examEditionId !== undefined) updates.exam_edition_id = patch.examEditionId;
   if (patch.quickLinks !== undefined) updates.quick_links = sanitizeLinks(patch.quickLinks);
   if (patch.attachmentUrls !== undefined) updates.attachment_urls = sanitizeLinks(patch.attachmentUrls);
+  if (patch.importantDates !== undefined) updates.important_dates = patch.importantDates;
   if (patch.status !== undefined) {
     updates.status = patch.status;
     if (patch.status === "published") updates.published_at = new Date().toISOString();
