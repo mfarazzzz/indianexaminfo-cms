@@ -31,6 +31,8 @@ interface Props {
   onClose: () => void;
   /** Apply the accepted rows to the FORM (no DB write — the editor saves). */
   onApply: (accepted: ReviewRow[]) => void;
+  /** D-P2: open the Updates panel prefilled from this notice (a draft update). */
+  onCreateUpdate?: (result: PipelineResult) => void;
 }
 
 const ConfidenceTag: React.FC<{ value: number }> = ({ value }) => {
@@ -39,7 +41,7 @@ const ConfidenceTag: React.FC<{ value: number }> = ({ value }) => {
   return <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${cls}`}>{pct}%</span>;
 };
 
-export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result, providerNote, match, onOpenMatch, onClose, onApply }) => {
+export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result, providerNote, match, onOpenMatch, onClose, onApply, onCreateUpdate }) => {
   const [accepted, setAccepted] = useState<Record<string, boolean>>({});
   // S2.5: "Review here anyway" hides the match banner without losing the rows.
   const [matchDismissed, setMatchDismissed] = useState(false);
@@ -238,14 +240,25 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
           <p className="text-[11px] text-slate-400">
             Applying writes to the form only — you save. Nothing goes live by itself.
           </p>
-          <button
-            onClick={() => onApply(acceptedRows)}
-            disabled={acceptedRows.length === 0}
-            className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-semibold disabled:bg-slate-300"
-            data-testid="drawer-apply"
-          >
-            Apply accepted ({acceptedRows.length})
-          </button>
+          <div className="flex items-center gap-2">
+            {onCreateUpdate && result && (
+              <button
+                onClick={() => onCreateUpdate(result)}
+                className="px-3 py-1.5 rounded border border-blue-300 text-blue-700 text-xs font-semibold hover:bg-blue-50"
+                data-testid="drawer-create-update"
+              >
+                Create an update from this notice
+              </button>
+            )}
+            <button
+              onClick={() => onApply(acceptedRows)}
+              disabled={acceptedRows.length === 0}
+              className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-semibold disabled:bg-slate-300"
+              data-testid="drawer-apply"
+            >
+              Apply accepted ({acceptedRows.length})
+            </button>
+          </div>
         </footer>
       </aside>
     </div>

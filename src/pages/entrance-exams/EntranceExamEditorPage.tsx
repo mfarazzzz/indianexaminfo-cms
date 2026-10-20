@@ -22,6 +22,9 @@ import { RichEditor } from "@/components/shared/RichEditor";
 import { ImageUploader } from "@/components/shared/ImageUploader";
 import { DraggableList } from "@/components/shared/DraggableList";
 import { ModulePanel } from "@/components/content-modules/ModulePanel";
+import { ExamUpdatesPanel } from "@/components/entrance-exams/ExamUpdatesPanel";
+import { buildUpdateDraftFromNotice } from "@/lib/exams/updateFromNotice";
+import type { NewExamUpdate } from "@/services/examUpdatesService";
 import type { ModuleConfig } from "@/types/modules";
 import { getErrorMessage } from "@/lib/utils";
 import { validateField } from "@/lib/fields/fieldTypes";
@@ -174,6 +177,9 @@ export function EntranceExamEditorPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [regions, setRegions] = useState<Region[]>([]);
   const [activeTab, setActiveTab] = useState<string>("identity");
+  // D-P2 commit 4: a draft update prefilled from a reviewed notice, consumed by
+  // the Updates panel when the editor opens the News & Updates section.
+  const [updateDraft, setUpdateDraft] = useState<NewExamUpdate | null>(null);
   // R2.1: the left rail is built from module_registry, in registry order, for
   // THIS pillar. A failed read leaves it empty and every tab usable — the shell
   // must never stop an editor working because a navigation list did not load.
@@ -1300,7 +1306,7 @@ export function EntranceExamEditorPage() {
           }}
         />}
         {activeTab === "modules" && <ModulePanel editionId={currentEdition?.id ?? null} exam={exam} edition={currentEdition} onNavigateTab={setActiveTab} onDirtyChange={setModuleDirty} entityType={watchedEntityType} selectionModel={watchedSelectionModel} editionYear={watchedEditionYear} onCycleCreated={loadExam} existingDraftLabel={a5Draft?.editionLabel ?? null} onActivateDraft={a5Draft ? () => handleActivateDraft(a5Draft.id, a5Draft.editionLabel) : undefined} legacyFlags={{ hasNotification: form.getValues("hasNotification"), hasApplication: form.getValues("hasApplication"), hasAdmitCard: form.getValues("hasAdmitCard"), hasSyllabus: form.getValues("hasSyllabus"), hasAnswerKey: form.getValues("hasAnswerKey"), hasResult: form.getValues("hasResult"), hasCutoff: form.getValues("hasCutoff"), hasCounselling: form.getValues("hasCounselling") }} />}
-        {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} examId={exam?.id ?? null} editionYear={watchedEditionYear} onCycleCreated={loadExam} contentModules={currentEdition?.contentModules ?? {}} onDirtyChange={setNewsDirty} onNewsChange={(n) => { newsRef.current = n; }} />}
+        {activeTab === "news" && <NewsTab editionId={currentEdition?.id ?? null} examId={exam?.id ?? null} editionYear={watchedEditionYear} pillar={pillarFromUrl} updateDraft={updateDraft} onCycleCreated={loadExam} contentModules={currentEdition?.contentModules ?? {}} onDirtyChange={setNewsDirty} onNewsChange={(n) => { newsRef.current = n; }} />}
         {activeTab === "seo" && <SEOTab form={form} faqFields={faqFields} appendFaq={appendFaq} removeFaq={removeFaq} />}
         {activeTab === "editions" && <HistoryTab editions={editions}
           onDelete={async (edId, label) => {
@@ -1343,6 +1349,11 @@ export function EntranceExamEditorPage() {
         onOpenMatch={handleOpenMatch}
         onClose={() => setReviewState(null)}
         onApply={handleApplyAccepted}
+        onCreateUpdate={exam?.id ? (res) => {
+          setUpdateDraft(buildUpdateDraftFromNotice(res, { examId: exam.id, examEditionId: currentEdition?.id ?? null, pillar: pillarFromUrl, slug: `${exam.slug ?? "exam"}-update-${Date.now().toString(36)}` }));
+          setActiveTab("news");
+          setReviewState(null);
+        } : undefined}
       />
 
       {/* Delete Dialog */}
@@ -1862,7 +1873,7 @@ function readNewsSection(contentModules: Record<string, unknown>): any[] {
   return [];                                                   // nothing yet
 }
 
-function NewsTab({ editionId, examId, editionYear, onCycleCreated, contentModules, onNewsChange, onDirtyChange }: { editionId: string | null; examId?: string | null; editionYear?: number; onCycleCreated?: () => void | Promise<void>; contentModules: Record<string, unknown>; onNewsChange?: (news: any[] | null) => void; onDirtyChange?: (dirty: boolean) => void }) {
+function NewsTab({ editionId, examId, editionYear, pillar, updateDraft, onCycleCreated, contentModules, onNewsChange, onDirtyChange }: { editionId: string | null; examId?: string | null; editionYear?: number; pillar?: string; updateDraft?: NewExamUpdate | null; onCycleCreated?: () => void | Promise<void>; contentModules: Record<string, unknown>; onNewsChange?: (news: any[] | null) => void; onDirtyChange?: (dirty: boolean) => void }) {
   const [news, setNews] = React.useState<any[]>(() => readNewsSection(contentModules));
   const [editingIdx, setEditingIdx] = React.useState<number | null>(null);
   const [draft, setDraft] = React.useState({ title: "", content: "", excerpt: "", tags: "", isFeatured: false, featureImage: "" });
@@ -2020,6 +2031,13 @@ function NewsTab({ editionId, examId, editionYear, onCycleCreated, contentModule
           </div>
         ))}
       </div>
+
+      {/* D-P2: exam Updates authored as content_posts (immediate save, own life). */}
+      {examId && (
+        <div className="pt-2 border-t border-slate-100">
+          <ExamUpdatesPanel examId={examId} examEditionId={editionId} pillar={pillar} initialDraft={updateDraft} />
+        </div>
+      )}
     </div>
   );
 }
