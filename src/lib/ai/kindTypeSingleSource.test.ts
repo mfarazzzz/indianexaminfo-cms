@@ -18,6 +18,9 @@ import { join, relative } from 'node:path'
 const SRC = join(process.cwd(), 'src')
 const NORM = join('lib', 'dates', 'normalizeLabel.ts')
 const PIPELINE = join('lib', 'ai', 'noticePipeline.ts')
+// S2.15: the deterministic date-line parser is a sanctioned pipeline-layer caller
+// of the SHARED typeForKind (it must not re-implement the mapping).
+const DATELINES = join('lib', 'ai', 'noticeDateLines.ts')
 
 function walk(dir: string, acc: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -37,11 +40,11 @@ describe('kind/type derivation lives in ONE shared function (S2.10)', () => {
     expect(offenders, `type-mapping defined outside normalizeLabel.ts: ${offenders.join(', ')}`).toEqual([NORM])
   })
 
-  it('the low-level typeForKind( is CALLED only by normalizeLabel and the pipeline', () => {
+  it('the low-level typeForKind( is CALLED only by normalizeLabel, the pipeline and the date-line parser', () => {
     const callers = walk(SRC)
       .filter((f) => /\btypeForKind\s*\(/.test(readFileSync(f, 'utf8')))
       .map((f) => relative(SRC, f))
-      .filter((rel) => rel !== NORM && rel !== PIPELINE)
+      .filter((rel) => rel !== NORM && rel !== PIPELINE && rel !== DATELINES)
     expect(callers, `typeForKind called outside the shared pipeline: ${callers.join(', ')}`).toEqual([])
   })
 
@@ -52,11 +55,16 @@ describe('kind/type derivation lives in ONE shared function (S2.10)', () => {
     expect(f).not.toMatch(/\btoProposedRow\b/)
   })
 
-  it('the editor page runs the server answer through postProcessExtraction before buildReviewRows', () => {
+  it('the editor page runs the server answer through the deterministic pipeline before buildReviewRows', () => {
     const f = readFileSync(join(SRC, 'pages', 'entrance-exams', 'EntranceExamEditorPage.tsx'), 'utf8')
-    const idx = f.indexOf('postProcessExtraction(')
+    // S2.15: buildNoticeResult is the pipeline entry — it runs postProcessExtraction
+    // (the S2.10 authority) and layers the deterministic date-line rows under it.
+    const idx = f.indexOf('buildNoticeResult(')
     const buildIdx = f.indexOf('buildReviewRows(')
-    expect(idx, 'editor must call postProcessExtraction').toBeGreaterThan(-1)
+    expect(idx, 'editor must call buildNoticeResult').toBeGreaterThan(-1)
     expect(buildIdx, 'editor must call buildReviewRows').toBeGreaterThan(idx)
+    // The wrap must be real: buildNoticeResult itself calls postProcessExtraction.
+    const res = readFileSync(join(SRC, 'lib', 'ai', 'noticeResult.ts'), 'utf8')
+    expect(res, 'buildNoticeResult must run postProcessExtraction').toMatch(/postProcessExtraction\(/)
   })
 })

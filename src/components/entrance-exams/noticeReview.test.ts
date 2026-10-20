@@ -227,3 +227,79 @@ describe('summarizeFill — the report on top of the drawer', () => {
     expect(gate![1]).toContain('yieldWarning')
   })
 })
+
+describe('buildReviewRows — S2.15 (2e) noise + identity guardrails', () => {
+  it('a proposal identical to the current value is collapsed as no-change, not a decision', () => {
+    const rows = buildReviewRows(
+      resultWithFields({ region: pf('uttar-pradesh', 1, 'UPSSSC'), selectionModel: pf('written-exam', 1, 'written') }),
+      { region: 'uttar-pradesh', selectionModel: 'written-exam' } as ReviewCurrentValues,
+      categories,
+    )
+    expect(rows.find((r) => r.id === 'region')!.noChange).toBe(true)
+    expect(rows.find((r) => r.id === 'selectionModel')!.noChange).toBe(true)
+    expect(rows.find((r) => r.id === 'region')!.defaultAccept).toBe(false)
+  })
+
+  it('an officialWebsite differing only by a trailing slash is a no-change', () => {
+    const rows = buildReviewRows(
+      resultWithFields({ officialWebsite: pf('https://upsssc.gov.in/', 1, 'upsssc.gov.in') }),
+      { officialWebsite: 'https://upsssc.gov.in' } as ReviewCurrentValues,
+      categories,
+    )
+    expect(rows.find((r) => r.id === 'officialWebsite')!.noChange).toBe(true)
+  })
+
+  it('an EXISTING record never takes a name/short-name that only adds a year or a lifecycle word', () => {
+    const rows = buildReviewRows(
+      resultWithFields({
+        name: pf('UPSSSC Preliminary Eligibility Test (PET) 2026', 1, 'Name of Exam: ... PET Admit Card 2026'),
+        shortName: pf('UPSSSC PET 2026', 1, 'Short Information'),
+      }),
+      { name: 'UPSSSC PET (Preliminary Eligibility Test)', shortName: 'UPSSSC PET' } as ReviewCurrentValues,
+      categories,
+      { isNew: false },
+    )
+    const name = rows.find((r) => r.id === 'name')!
+    const short = rows.find((r) => r.id === 'shortName')!
+    expect(name.noChange).toBe(true)
+    expect(short.noChange).toBe(true)
+    expect(short.flagReason).toMatch(/identity stays evergreen/)
+  })
+
+  it('a NEW record is allowed to set a first name even with a year (no evergreen collapse)', () => {
+    const rows = buildReviewRows(
+      resultWithFields({ name: pf('UPSSSC PET 2026', 1, 'q') }),
+      { name: '' } as ReviewCurrentValues,
+      categories,
+      { isNew: true },
+    )
+    expect(rows.find((r) => r.id === 'name')!.noChange).toBe(false)
+  })
+
+  it('a category slug that resolves to the CURRENT category is a no-change', () => {
+    const cats: CategoryLookup[] = [{ slug: 'state-government-jobs', id: 'cat-sgj', name: 'State Government Jobs' }]
+    const rows = buildReviewRows(
+      resultWithFields({ categorySlug: pf('state-government-jobs', 1, 'UPSSSC') }),
+      { categoryId: 'cat-sgj' } as ReviewCurrentValues,
+      cats,
+    )
+    expect(rows.find((r) => r.id === 'categorySlug')!.noChange).toBe(true)
+  })
+
+  it('summarizeFill counts no-change separately and keeps it out of the flagged count', () => {
+    const rows = buildReviewRows(
+      resultWithFields({ region: pf('uttar-pradesh', 1, 'q') }),
+      { region: 'uttar-pradesh' } as ReviewCurrentValues,
+      categories,
+    )
+    const report = summarizeFill(rows, [])
+    expect(report.noChange).toBe(1)
+    expect(report.flagged).toBe(0) // the only row is a no-change, not a decision
+  })
+
+  it('the drawer renders the collapsed no-change section and the date-conflict block', () => {
+    const src = readFileSync(resolve(__dirname, 'NoticeReviewDrawer.tsx'), 'utf8')
+    expect(src).toContain('data-testid="drawer-no-change"')
+    expect(src).toContain('data-testid="drawer-date-conflicts"')
+  })
+})

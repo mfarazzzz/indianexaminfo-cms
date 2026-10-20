@@ -60,6 +60,10 @@ export interface PipelineDateRow {
    *  buildReviewRows refuses to default-accept a flagged row. */
   flagged?: boolean;
   flagReason?: string;
+  /** S2.15: provenance of the row. "notice-line" = produced by the deterministic
+   *  date-line parser straight from the pasted text (never from the model), so it
+   *  survives a flaky/low-yield answer. Absent = a model row (unchanged shape). */
+  source?: "notice-line";
 }
 
 /** S2.14b — one post in a vacancy breakdown. `count` null when the source gave
@@ -90,6 +94,9 @@ export interface PipelineResult {
   vacancy?: PipelineVacancy;
   importantLinks?: PipelineLink[];
   notes?: PipelineNote[];
+  /** S2.15 (2b): human lines naming a date conflict the deterministic parser
+   *  resolved (a header/summary date overridden by the revised / dated block). */
+  dateConflicts?: string[];
 }
 
 /** The structural marker for addressing metadata on UP-style notices. */

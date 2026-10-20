@@ -41,6 +41,9 @@ export interface ReviewRow {
   defaultAccept: boolean;
   /** No form slot for this fact (S3 will add the field) — never auto-applied. */
   noFieldYet: boolean;
+  /** S2.15 (2e): the proposal equals the current value (or only re-dates an
+   *  evergreen identity) — shown collapsed as "No change", never a decision. */
+  noChange?: boolean;
   /** Set when the pipeline flagged this item; explains WHY it is not trusted. */
   flagReason?: string;
   /** For kind === "field": the form path to setValue on apply. */
@@ -95,6 +98,28 @@ export function describeDateRow(r: ProposedDateRow): string {
   return parts.join(" ");
 }
 
+// ── S2.15 (2e) — noise + identity guardrails ────────────────────────────────
+const normEq = (a: string, b: string): boolean =>
+  (a ?? "").replace(/\s+/g, " ").trim().toLowerCase() === (b ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/** URL equality ignoring case and a trailing slash (the PET "…gov.in" vs
+ *  "…gov.in/" no-op). Empty on either side is NOT equal (nothing to compare). */
+const urlEq = (a: string, b: string): boolean => {
+  const clean = (s: string) => (s ?? "").trim().toLowerCase().replace(/\/+$/, "");
+  const ca = clean(a), cb = clean(b);
+  return ca !== "" && ca === cb;
+};
+
+/** Identity core: drop years + lifecycle words so a name that differs ONLY by
+ *  them reads as unchanged — an evergreen identity must not be re-dated. */
+const IDENTITY_NOISE = /\b(?:19|20)\d{2}\b|\badmit\s*card\b|\bresult\b|\bnotification\b|\bexam\s*date\b|\banswer\s*key\b|\bcut[\s-]*off\b|\bmerit\s*list\b|\bstatus\b/gi;
+const identityCore = (s: string): string =>
+  (s ?? "").toLowerCase().replace(IDENTITY_NOISE, " ").replace(/[^\p{L}\p{N}]+/gu, " ").split(/\s+/).filter(Boolean).sort().join(" ");
+const identityOnlyYearOrLifecycle = (current: string, proposed: string): boolean => {
+  const a = identityCore(current), b = identityCore(proposed);
+  return a !== "" && a === b;
+};
+
 /**
  * Build every review row from a PipelineResult. Ordering: identity/classification
  * first (they decide the record's shape), then dates, then the "no field yet"
@@ -105,9 +130,13 @@ export function buildReviewRows(
   result: PipelineResult,
   current: ReviewCurrentValues,
   categories: CategoryLookup[],
+  /** S2.15 (2e): an EXISTING record never takes a name/short-name that only
+   *  differs by a year or a lifecycle word (identity is evergreen). */
+  opts: { isNew?: boolean } = {},
 ): ReviewRow[] {
   const rows: ReviewRow[] = [];
   const fields = result.fields;
+  const isNew = opts.isNew ?? false;
 
   const pushField = (
     id: string,
@@ -116,12 +145,19 @@ export function buildReviewRows(
     currentStr: string,
     apply: { formPath: string; formValue: unknown } | null,
     noFieldYet = false,
+    noChangeOverride = false,
   ) => {
     if (!pf) return;
     const value = fmt(pf.value);
     if (!value) return; // pipeline emptied it (rejected option / not stated) — belongs to the report, not a row
     const conf = pf.confidence;
     const flagged = !!pf.flagged;
+    // 2e — a proposal that changes nothing (or only re-dates an evergreen
+    // identity on an existing record) is collapsed, never a decision.
+    const same = id === "officialWebsite" ? urlEq(currentStr, value) : normEq(currentStr, value);
+    const evergreen = !isNew && (id === "name" || id === "shortName") && identityOnlyYearOrLifecycle(currentStr, value);
+    const noChange = same || evergreen || noChangeOverride;
+    const noChangeReason = evergreen ? "not applied: identity stays evergreen (the year belongs to the edition)" : undefined;
     rows.push({
       id,
       label,
@@ -130,10 +166,11 @@ export function buildReviewRows(
       proposed: value,
       sourceQuote: pf.sourceQuote,
       confidence: conf,
-      // A flagged field is NEVER default-accepted, whatever its confidence.
-      defaultAccept: !noFieldYet && !flagged && isBlank(currentStr) && conf >= OPTION_CONFIDENCE_FLOOR && !!apply,
+      // A flagged or no-change field is NEVER default-accepted.
+      defaultAccept: !noFieldYet && !flagged && !noChange && isBlank(currentStr) && conf >= OPTION_CONFIDENCE_FLOOR && !!apply,
       noFieldYet,
-      flagReason: flagged ? pf.flagReason : undefined,
+      noChange,
+      flagReason: flagged ? pf.flagReason : noChangeReason,
       formPath: apply?.formPath,
       formValue: apply?.formValue,
     });
@@ -159,8 +196,11 @@ export function buildReviewRows(
     const currentCatLabel = currentCatId
       ? (categories.find((c) => c.id === currentCatId)?.name ?? currentCatId)
       : "";
+    // 2e — a slug proposal that resolves to the record's CURRENT category is a
+    // no-op ("state-government-jobs" while the field already holds that label).
+    const resolvesToCurrent = !!hit && !!currentCatId && hit.id === currentCatId;
     pushField("categorySlug", "Category", catProposal, currentCatLabel,
-      hit ? { formPath: "categoryId", formValue: hit.id } : null, !hit);
+      hit ? { formPath: "categoryId", formValue: hit.id } : null, !hit, resolvesToCurrent);
   }
 
   pushField("selectionModel", "How are candidates selected?", fields.selectionModel, fmt(current.selectionModel),
@@ -289,6 +329,8 @@ export interface FillReport {
   defaultAccepted: number;
   flagged: number;          // server issues + below floor + no field yet + pipeline-flagged
   noFieldYet: number;
+  /** S2.15 (2e): proposals that change nothing (equal value / evergreen identity). */
+  noChange?: number;
   rejected: number;         // rows the pipeline dropped as not exam data (S2.10)
   mergedWindows: number;    // window pairs the net collapsed into one row (S2.9)
   lowConfidence: string[];  // labels
@@ -321,8 +363,9 @@ export function summarizeFill(rows: ReviewRow[], issues: ExtractionIssue[], resu
   return {
     proposed: rows.length,
     defaultAccepted: rows.filter((r) => r.defaultAccept).length,
-    flagged: rows.filter((r) => !r.defaultAccept).length + issues.length,
+    flagged: rows.filter((r) => !r.defaultAccept && !r.noChange).length + issues.length,
     noFieldYet: rows.filter((r) => r.noFieldYet).length,
+    noChange: rows.filter((r) => r.noChange).length,
     rejected: result ? result.rejected.length : 0,
     mergedWindows: result ? result.mergedWindows.length : 0,
     lowConfidence: Array.from(new Set(lowConfidence)),

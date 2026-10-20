@@ -33,7 +33,8 @@ import {
 } from "@/config/selectionQuestion";
 import { adminListForPillar } from "@/config/pillarAdminLists";
 import { generateStructured } from "@/lib/ai/aiFillClient";
-import { postProcessExtraction, type PipelineResult } from "@/lib/ai/noticePipeline";
+import { type PipelineResult } from "@/lib/ai/noticePipeline";
+import { buildNoticeResult } from "@/lib/ai/noticeResult";
 import { loadAllowedOptions } from "@/lib/ai/allowedOptions";
 import { findLikelyExamMatch, NOTICE_HANDOFF_KEY, type LikelyMatch } from "@/lib/ai/noticeMatch";
 import { extractAnchors, preCleanNotice, looksLikeItHasLinks, type SourceLink } from "@/lib/ai/noticePaste";
@@ -895,7 +896,7 @@ export function EntranceExamEditorPage() {
       // allowed options are loaded the same way the pipeline's server twin does.
       const currentVals = form.getValues() as ReviewCurrentValues;
       const allowed = await loadAllowedOptions(pillarFromUrl || "entrance-exam");
-      const result = postProcessExtraction(
+      const result = buildNoticeResult(
         ext.content as unknown as Record<string, unknown>,
         allowed,
         rawContent,
@@ -903,7 +904,7 @@ export function EntranceExamEditorPage() {
         currentVals.selectionModel || null,
         sourceLinks,
       );
-      const rows = buildReviewRows(result, currentVals, categories.map((c) => ({ slug: c.slug, id: c.id, name: c.name })));
+      const rows = buildReviewRows(result, currentVals, categories.map((c) => ({ slug: c.slug, id: c.id, name: c.name })), { isNew });
 
       // S2.5: on a NEW record, check whether the notice belongs to an exam
       // that already exists — one record per cycle, many notices. The drawer

@@ -59,7 +59,10 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
   if (!open) return null;
 
   const acceptedRows = rows.filter((r) => accepted[r.id] && !r.noFieldYet);
-  const flagged = rows.filter((r) => !r.defaultAccept);
+  // 2e — no-change proposals are collapsed, never counted as a decision.
+  const decisionRows = rows.filter((r) => !r.noChange);
+  const noChangeRows = rows.filter((r) => r.noChange);
+  const flagged = decisionRows.filter((r) => !r.defaultAccept);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label="Review AI changes">
@@ -123,7 +126,7 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
         )}
 
         {/* S2.10: read-only pipeline output the editor must SEE but never apply */}
-        {(result?.mergedWindows.length || result?.warnings.length || result?.rejected.length || result?.notes?.length || result?.provenance?.noticeIssueDate) ? (
+        {(result?.mergedWindows.length || result?.warnings.length || result?.dateConflicts?.length || result?.rejected.length || result?.notes?.length || result?.provenance?.noticeIssueDate) ? (
           <div className="px-4 py-2 border-b border-slate-100 bg-slate-50 space-y-2 text-[11px]">
             {result?.provenance?.noticeIssueDate && (
               <div data-testid="drawer-provenance">
@@ -141,6 +144,12 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
               <div data-testid="drawer-warnings">
                 <p className="font-semibold text-slate-600">Warnings ({result.warnings.length})</p>
                 <ul className="list-disc pl-4 text-amber-700">{result.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+              </div>
+            )}
+            {result && result.dateConflicts && result.dateConflicts.length > 0 && (
+              <div data-testid="drawer-date-conflicts">
+                <p className="font-semibold text-amber-700">Date conflicts resolved ({result.dateConflicts.length}) — never picked silently</p>
+                <ul className="list-disc pl-4 text-amber-700">{result.dateConflicts.map((c, i) => <li key={i}>{c}</li>)}</ul>
               </div>
             )}
             {result && result.rejected.length > 0 && (
@@ -172,7 +181,7 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
               {flagged.length} item(s) need a deliberate decision
             </p>
           )}
-          {rows.map((r) => (
+          {decisionRows.map((r) => (
             <div key={r.id} className={`rounded border p-3 ${r.noFieldYet ? "border-rose-200 bg-rose-50/40" : "border-slate-200"}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -209,6 +218,19 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
               </label>
             </div>
           ))}
+          {noChangeRows.length > 0 && (
+            <details className="text-[11px] text-slate-500" data-testid="drawer-no-change">
+              <summary className="cursor-pointer select-none">No change: {noChangeRows.length} item(s) — already matches the record</summary>
+              <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                {noChangeRows.map((r) => (
+                  <li key={r.id}>
+                    {r.label}: {r.proposed}
+                    {r.flagReason ? <span className="text-amber-600"> — {r.flagReason}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
 
         {/* Footer */}
