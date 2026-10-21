@@ -18,6 +18,7 @@ import { resolve } from "node:path";
 import { buildReviewRows, summarizeFill, type ReviewCurrentValues, type CategoryLookup } from "./noticeReview";
 import { buildNoticeResult } from "@/lib/ai/noticeResult";
 import type { PipelineResult } from "@/lib/ai/noticePipeline";
+import { isTooCloseToSource, detectHowToSteps } from "@/lib/ai/noticeSteps";
 import type { AllowedOptions } from "@/lib/ai/extractionContract";
 
 const categories: CategoryLookup[] = [{ slug: "state-government-jobs", id: "cat-sgj", name: "State Government Jobs" }];
@@ -139,5 +140,72 @@ describe("B2 — the drawer + editor really wire the steps (guards against a dea
     expect(page).toContain("pendingModuleEditsRef");
     // steps land on Save through the merged content_modules, not on Apply
     expect(page).toContain("withPendingModuleEdits");
+  });
+});
+
+// ── COPY GUARD — tested at the APPLY layer; the detector's own goldens untouched ──
+describe("B2 copy guard — a step that still copies the notice wording is not appliable", () => {
+  const drawerSrc = readFileSync(resolve(__dirname, "NoticeReviewDrawer.tsx"), "utf8");
+  const pageSrc = readFileSync(resolve(__dirname, "../../pages/entrance-exams/EntranceExamEditorPage.tsx"), "utf8");
+
+  it("identical text is blocked", () => {
+    expect(isTooCloseToSource("Visit the official website", "Visit the official website")).toBe(true);
+  });
+
+  it("case, whitespace, numbering or a trailing full stop do not disguise a copy", () => {
+    expect(isTooCloseToSource("  visit   THE official website ", "Visit the official website")).toBe(true);
+    expect(isTooCloseToSource("Visit the official website.", "2) Visit the official website")).toBe(true);
+    expect(isTooCloseToSource("- Visit the official website", "\u2022 Visit the official website")).toBe(true);
+  });
+
+  it("near-verbatim is blocked at the conservative 90% bar; a real rewrite passes", () => {
+    // one inserted filler word, all source tokens still in order → blocked
+    expect(isTooCloseToSource("Visit the official website now", "Visit the official website")).toBe(true);
+    // 9 of 10 shared in order = 0.9 → blocked
+    expect(isTooCloseToSource(
+      "one two three four five six seven eight nine X",
+      "one two three four five six seven eight nine ten",
+    )).toBe(true);
+    // 8 of 10 = 0.8 → allowed
+    expect(isTooCloseToSource(
+      "one two three four five six seven X Y ten",
+      "one two three four five six seven eight nine ten",
+    )).toBe(false);
+  });
+
+  it("a light rewrite with the facts intact is allowed", () => {
+    expect(isTooCloseToSource(
+      "Enter roll no and your DOB today",
+      "Enter roll no and date of birth",
+    )).toBe(false);
+    expect(isTooCloseToSource(
+      "Open upsssc.gov.in, sign in with your roll number and DOB, then save the hall ticket",
+      "Visit the official UPSSSC website and enter registration number and date of birth to download the admit card",
+    )).toBe(false);
+  });
+
+  it("nothing to compare: empty source or empty draft never trips the guard", () => {
+    expect(isTooCloseToSource("Anything at all", "")).toBe(false);
+    expect(isTooCloseToSource("", "Visit the official website")).toBe(false);
+  });
+
+  it("the guard lives at BOTH layers — drawer UI and Apply handler — not the detector", () => {
+    // UI: Accept stays disabled beside the hint, and the source line stays shown
+    // next to the input (the blockquote under the draft).
+    expect(drawerSrc).toContain("isTooCloseToSource");
+    expect(drawerSrc).toContain("drawer-step-rewrite-hint-");
+    expect(drawerSrc).toContain("disabled={r.noFieldYet || tooClose}");
+    expect(drawerSrc).toContain("Rewrite in your own words (facts only)");
+    expect(drawerSrc).toContain("Verbatim from the notice");
+    expect(drawerSrc).toContain("\u201c{r.sourceQuote}\u201d");
+    // Apply: re-filters whatever reaches the handler, and tells the editor.
+    expect(pageSrc).toContain("stepCandidates.filter((r) => !isTooCloseToSource(r.proposed, r.sourceQuote))");
+    expect(pageSrc).toContain("still copy the notice wording");
+  });
+
+  it("the detector is unchanged — it still hands back the verbatim source lines", () => {
+    const blocks = detectHowToSteps("How to download admit card:\nVisit the official website");
+    expect(blocks[0].steps[0].text).toBe("Visit the official website");
+    expect(blocks[0].steps[0].sourceQuote).toBe("Visit the official website");
   });
 });

@@ -14,6 +14,7 @@ import React, { useMemo, useState } from "react";
 import type { ReviewRow, FillReport } from "./noticeReview";
 import type { LikelyMatch } from "@/lib/ai/noticeMatch";
 import type { PipelineResult } from "@/lib/ai/noticePipeline";
+import { isTooCloseToSource } from "@/lib/ai/noticeSteps";
 
 interface Props {
   open: boolean;
@@ -67,11 +68,14 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
 
   // Accepted rows feed Apply. A step row sends the editor's current text (its
   // verbatim source line unless they reworded it), trimmed; empty after trim means
-  // the editor deleted it, so it is NOT applied.
+  // the editor deleted it, so it is NOT applied. COPY GUARD (UI layer — the Apply
+  // handler enforces it again): a step still wording-identical to its notice line
+  // (or ≥90% token overlap in order) is not appliable — the editor must rewrite it
+  // in their own words; verbatim notice text is a copyright risk on the live page.
   const acceptedRows = rows
     .filter((r) => accepted[r.id] && !r.noFieldYet)
     .map((r) => (r.kind === "step" ? { ...r, proposed: (stepEdits[r.id] ?? r.proposed).trim() } : r))
-    .filter((r) => r.kind !== "step" || r.proposed !== "");
+    .filter((r) => r.kind !== "step" || (r.proposed !== "" && !isTooCloseToSource(r.proposed, r.sourceQuote)));
   // 2e — no-change proposals are collapsed, never counted as a decision.
   const decisionRows = rows.filter((r) => !r.noChange);
   const noChangeRows = rows.filter((r) => r.noChange);
@@ -194,7 +198,11 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
               {flagged.length} item(s) need a deliberate decision
             </p>
           )}
-          {decisionRows.map((r) => (
+          {decisionRows.map((r) => {
+            // Live copy-guard check on the CURRENT draft text — the Accept box
+            // stays disabled until the editor rewrites the notice wording.
+            const tooClose = r.kind === "step" && isTooCloseToSource((stepEdits[r.id] ?? r.proposed).trim(), r.sourceQuote);
+            return (
             <div key={r.id} className={`rounded border p-3 ${r.noFieldYet ? "border-rose-200 bg-rose-50/40" : "border-slate-200"}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -218,6 +226,11 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
                       proposed: <span className="text-slate-800 font-medium">{r.proposed}</span>
                     </p>
                   )}
+                  {r.kind === "step" && tooClose && (
+                    <p className="mt-1 text-[11px] text-amber-700" data-testid={`drawer-step-rewrite-hint-${r.id}`}>
+                      Rewrite in your own words (facts only) — this line still copies the notice wording, so it cannot be applied.
+                    </p>
+                  )}
                 </div>
                 <ConfidenceTag value={r.confidence} />
               </div>
@@ -235,15 +248,16 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
               <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
                 <input
                   type="checkbox"
-                  disabled={r.noFieldYet}
-                  checked={!!accepted[r.id] && !r.noFieldYet}
+                  disabled={r.noFieldYet || tooClose}
+                  checked={!!accepted[r.id] && !r.noFieldYet && !tooClose}
                   onChange={(e) => setAccepted((prev) => ({ ...prev, [r.id]: e.target.checked }))}
                   className="rounded"
                 />
                 Accept
               </label>
             </div>
-          ))}
+            );
+          })}
           {noChangeRows.length > 0 && (
             <details className="text-[11px] text-slate-500" data-testid="drawer-no-change">
               <summary className="cursor-pointer select-none">No change: {noChangeRows.length} item(s) — already matches the record</summary>

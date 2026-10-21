@@ -38,6 +38,7 @@ import { adminListForPillar } from "@/config/pillarAdminLists";
 import { generateStructured } from "@/lib/ai/aiFillClient";
 import { type PipelineResult } from "@/lib/ai/noticePipeline";
 import { buildNoticeResult } from "@/lib/ai/noticeResult";
+import { isTooCloseToSource } from "@/lib/ai/noticeSteps";
 import { loadAllowedOptions } from "@/lib/ai/allowedOptions";
 import { findLikelyExamMatch, NOTICE_HANDOFF_KEY, type LikelyMatch } from "@/lib/ai/noticeMatch";
 import { extractAnchors, preCleanNotice, looksLikeItHasLinks, type SourceLink } from "@/lib/ai/noticePaste";
@@ -1034,7 +1035,15 @@ export function EntranceExamEditorPage() {
     // unchecked). Group by module + field, keep the detector's order, and APPEND to
     // whatever the module already stores (dedup on normalized text) so a curated
     // step is never clobbered. The editor's next Save persists content_modules.
-    const stepRows = accepted.filter((r) => r.kind === "step" && r.stepTarget);
+    const stepCandidates = accepted.filter((r) => r.kind === "step" && r.stepTarget);
+    // COPY GUARD, enforced HERE too — not only in the drawer UI. A step whose text
+    // still copies the notice wording (identical after normalisation, or ≥90% of
+    // the shorter line's tokens shared in order — isTooCloseToSource) is NEVER
+    // staged into content_modules: verbatim notice text is a copyright risk on the
+    // live page, facts go in OUR words. A stale checkbox state or a programmatic
+    // call to this handler cannot get past this line.
+    const stepRows = stepCandidates.filter((r) => !isTooCloseToSource(r.proposed, r.sourceQuote));
+    const blockedSteps = stepCandidates.length - stepRows.length;
     if (stepRows.length > 0) {
       const baseModules = (currentEdition?.contentModules ?? {}) as Record<string, Record<string, unknown>>;
       const norm = (s: string): string => s.replace(/\s+/g, " ").trim().toLowerCase();
@@ -1062,6 +1071,9 @@ export function EntranceExamEditorPage() {
       }
       pendingModuleEditsRef.current = staged;
       applied += stepRows.length;
+    }
+    if (blockedSteps > 0) {
+      toast.warning(`${blockedSteps} step(s) were NOT applied — they still copy the notice wording. Rewrite in your own words (facts only).`);
     }
 
     // S2.6: stage the provenance run (metadata + document references). It only

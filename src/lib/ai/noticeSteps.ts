@@ -89,3 +89,55 @@ export function stepNounsInSource(stepText: string, sourceText: string): boolean
 export function filterModelSteps(steps: StepDraft[], sourceText: string): StepDraft[] {
   return (steps ?? []).filter((s) => s && s.text && stepNounsInSource(s.text, sourceText));
 }
+
+/**
+ * COPY GUARD (applied at the drawer + Apply layers, NOT in the detector — the
+ * detector's rows are BY CONSTRUCTION the source line, which is exactly why the
+ * editor must rewrite them before they may be applied).
+ *
+ * Reproducing a third-party notice's wording verbatim is the classic aggregator
+ * copyright problem; the platform's rule is FACTS in OUR words. A drafted step is
+ * "too close to the source" when, after normalisation (leading list marker
+ * stripped, whitespace folded, case lowered, token punctuation trimmed — so a
+ * bare "1. " or a trailing full stop never disguises a copy):
+ *   • the token sequences are identical, or
+ *   • ≥ COPY_GUARD_THRESHOLD of the SHORTER line's tokens are shared IN THE SAME
+ *     ORDER (token LCS ratio). 0.9 is conservative: one inserted filler word in
+ *     a short line is still effectively the notice's sentence, while a genuine
+ *     light rewrite ("Enter registration number and date of birth" → "Type your
+ *     roll number and DOB to sign in") passes easily.
+ * With no source line to compare against the guard never fires (nothing to copy).
+ */
+const COPY_GUARD_THRESHOLD = 0.9;
+
+/** Normalise a line into comparable tokens (see the guard doc above). */
+function guardTokens(s: string): string[] {
+  return (s ?? "")
+    .replace(/^\s*\d+[.)]\s*/, "")
+    .replace(/^\s*[-•*]\s*/, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .map((t) => t.replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, ""))
+    .filter(Boolean);
+}
+
+export function isTooCloseToSource(text: string, sourceQuote: string): boolean {
+  const a = guardTokens(text);
+  const b = guardTokens(sourceQuote);
+  if (a.length === 0 || b.length === 0) return false;
+  if (a.length === b.length && a.every((t, i) => t === b[i])) return true;
+  // Token LCS — rows are short, plain DP is fine.
+  const m = a.length;
+  const n = b.length;
+  let prev = new Array<number>(n + 1).fill(0);
+  for (let i = 1; i <= m; i++) {
+    const cur = new Array<number>(n + 1).fill(0);
+    for (let j = 1; j <= n; j++) {
+      cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+    }
+    prev = cur;
+  }
+  return prev[n] / Math.min(m, n) >= COPY_GUARD_THRESHOLD;
+}
