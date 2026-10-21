@@ -99,6 +99,9 @@ export interface ExamIdentity {
   workflowStatus: ExamWorkflowStatus;
   isPublished: boolean;
   isVerified: boolean;
+  /** S3.2 verification date (exams.verified_at). The verified_by uuid is never
+   *  mapped — the CMS and the public page show team + date only (D6 decision 3). */
+  verifiedAt: string | null;
   /** S2.6 provenance (jsonb convention in supabase/proposed/a1_ai_fill_options.sql):
    *  fill_source, notice {reference,date}, extracted_at, template, report,
    *  field_quotes, pending_documents, verified:false, published_by_ai:false.
@@ -233,6 +236,7 @@ function mapExamIdentityRow(row: Record<string, unknown>): ExamIdentity {
     workflowStatus: (row.workflow_status as ExamWorkflowStatus) ?? "draft", // fail-closed: an unknown state reads as DRAFT, never as live
     isPublished: (row.is_published as boolean) ?? false,
     isVerified: (row.is_verified as boolean) ?? false,
+    verifiedAt: (row.verified_at as string) ?? null,
     aiMetadata: (row.ai_metadata as Record<string, unknown>) ?? {},
     faqs: (row.faqs as { question: string; answer: string }[]) ?? [],
     currentEditionId: (row.current_edition_id as string) ?? null,

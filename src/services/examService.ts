@@ -8,6 +8,10 @@ import { revalidateExams } from "@/lib/revalidate";
 import { normalizeUrlOrThrow } from "@/lib/utils";
 import { assertPermission, assertAffected } from "@/lib/auth/permissionGuard";
 import { P } from "@/config/permissions";
+import {
+  buildQueueRow, sortQueueRows, RECHECK_AFTER_DAYS,
+  type VerificationQueueRow, type QueueSourceRow,
+} from "@/lib/exams/verification";
 import type { ExamEntity, ExamStatus, Pillar, ExamWorkflowStatus } from "@/types/exam";
 
 // ── Row mapper: Supabase snake_case → camelCase ────────────────────────────
@@ -51,6 +55,9 @@ function mapRow(row: Record<string, unknown>): ExamEntity {
     tags: (row.tags as string[]) ?? [],
     lastUpdated: (row.last_updated as string) ?? (row.updated_at as string) ?? "",
     isFeatured: (row.is_featured as boolean) ?? false,
+    // S3.2 verification — verified_by is never mapped (internal uuid only).
+    isVerified: Boolean(row.is_verified),
+    verifiedAt: (row.verified_at as string) ?? null,
     searchKeywords: (row.search_keywords as string[]) ?? [],
     seoTitle: (row.seo_title as string) ?? undefined,
     seoDescription: (row.seo_description as string) ?? undefined,
@@ -314,6 +321,58 @@ export async function publishExam(id: string): Promise<ExamEntity> {
 
 export async function unpublishExam(id: string): Promise<ExamEntity> {
   return setExamWorkflowStatus(id, "draft");
+}
+
+// ── S3.2 verification (D6) ───────────────────────────────────────────────────
+
+/**
+ * Stamp or clear the editor verification on the RECORD (per-exam — D6
+ * decision 4; the UI labels it "Verify this edition" because the editor always
+ * works on the current cycle). verified_by is the acting user's uuid and stays
+ * internal — the public page shows the team label, never a name.
+ *
+ * The app-layer assert is the FIRST layer. The database-level gate is the
+ * owner-approved trigger (supabase/proposed/20261021_exam_verify_publish_rls_
+ * PROPOSAL.sql); until it is applied, no UI copy may claim DB enforcement.
+ */
+export async function setExamVerification(id: string, verified: boolean, actorId: string | null): Promise<ExamEntity> {
+  assertPermission(P.PUBLISH_EXAM, "verify an exam");
+  if (verified && !actorId) {
+    throw new Error("A verification needs the signed-in user's id — sign out and in again, then retry.");
+  }
+  const stamp = verified ? new Date().toISOString() : null;
+  const { data, error } = await db
+    .from("exams")
+    .update({ is_verified: verified, verified_at: stamp, verified_by: verified ? actorId : null })
+    .eq("id", id)
+    .select(LIST_SELECT);
+  if (error) throw error;
+  // Zero rows under RLS = permission refusal, not success.
+  assertAffected(data as unknown[] | null, "verify this exam");
+  revalidateExams().catch(() => {});
+  return mapRow((data as Record<string, unknown>[])[0]);
+}
+
+/**
+ * The D6 triage queue: every exam that still needs verification, plus any
+ * verification older than RECHECK_AFTER_DAYS (the "re-check" rows). One read;
+ * the readiness math lives in lib/exams/verification.buildQueueRow — the SAME
+ * rules the editor's Verify button uses, so the list can never disagree with
+ * the control. Sorted: nearest upcoming date first, featured tie-break.
+ */
+export async function getVerificationQueue(): Promise<VerificationQueueRow[]> {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - RECHECK_AFTER_DAYS * 86_400_000).toISOString();
+  const { data, error } = await db
+    .from("exams")
+    .select(
+      "id, slug, name, pillar, conducting_body, official_website, selection_model, is_featured, is_verified, verified_at, current_ed:exam_editions!current_edition_id(important_dates)",
+    )
+    .or(`is_verified.is.null,is_verified.eq.false,verified_at.lt.${cutoff}`);
+  if (error) throw error;
+  const todayISO = now.toISOString().slice(0, 10);
+  const rows = ((data ?? []) as unknown as QueueSourceRow[]).map((r) => buildQueueRow(r, todayISO));
+  return sortQueueRows(rows);
 }
 
 // ── Slug check ─────────────────────────────────────────────────────────────

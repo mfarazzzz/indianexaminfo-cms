@@ -59,6 +59,7 @@ function mapIdentity(row: any): ExamIdentity {
     workflowStatus: row.workflow_status ?? "published",
     isPublished: row.is_published ?? false,
     isVerified: row.is_verified ?? false,
+    verifiedAt: row.verified_at ?? null,
     faqs: row.faqs ?? [],
     currentEditionId: row.current_edition_id ?? null,
     createdAt: row.created_at,

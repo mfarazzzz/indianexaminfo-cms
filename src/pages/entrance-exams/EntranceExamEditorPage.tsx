@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useBlocker, type BlockerFunction } from "react-router-dom";
-import { ArrowLeft, Save, Plus, Trash2, History, Sparkles, Loader2, Globe, ExternalLink } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, History, Sparkles, Loader2, Globe, ExternalLink, ShieldCheck } from "lucide-react";
 import { UnsavedChangesDialog } from "@/components/shared/UnsavedChangesDialog";
 import { FaqAnswerWarning } from "@/components/shared/FaqAnswerWarning";
 import { toast } from "sonner";
@@ -13,7 +13,7 @@ import {
 } from "@/services/entranceExamService";
 import { getCategories, type Category } from "@/services/categoryService";
 import { NoCurrentCycle } from "@/components/entrance-exams/NoCurrentCycle";
-import { deleteExam, setExamWorkflowStatus } from "@/services/examService";
+import { deleteExam, setExamWorkflowStatus, setExamVerification } from "@/services/examService";
 import { getRegions, type Region } from "@/services/regionService";
 import { getDerivedStatus, derivedStatusLabel, type DerivedStatusRow } from "@/services/derivedStatusService";
 import type { ExamWorkflowStatus } from "@/types/exam";
@@ -35,6 +35,8 @@ import {
   SELECTION_QUESTION, SELECTION_UNANSWERED_LABEL,
 } from "@/config/selectionQuestion";
 import { adminListForPillar } from "@/config/pillarAdminLists";
+import { useAuth } from "@/contexts/AuthContext";
+import { verifyBlockReasons } from "@/lib/exams/verification";
 import { generateStructured } from "@/lib/ai/aiFillClient";
 import { type PipelineResult } from "@/lib/ai/noticePipeline";
 import { buildNoticeResult } from "@/lib/ai/noticeResult";
@@ -177,7 +179,12 @@ export function EntranceExamEditorPage() {
   const [editions, setEditions] = useState<ExamEdition[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [regions, setRegions] = useState<Region[]>([]);
-  const [activeTab, setActiveTab] = useState<string>("identity");
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    // The D6 triage page deep-links here with ?tab=edition — a whitelisted tab
+    // only; anything else (or nothing) falls back to Identity, never a blank.
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return t && ["identity", "resources", "syllabus", "edition", "modules", "news", "seo", "editions"].includes(t) ? t : "identity";
+  });
   // D-P2 commit 4: a draft update prefilled from a reviewed notice, consumed by
   // the Updates panel when the editor opens the News & Updates section.
   const [updateDraft, setUpdateDraft] = useState<NewExamUpdate | null>(null);
@@ -212,6 +219,12 @@ export function EntranceExamEditorPage() {
   const [isPublished, setIsPublished] = useState(true);
   const [workflowStatus, setWorkflowStatus] = useState<ExamWorkflowStatus>("published");
   const [publishing, setPublishing] = useState(false);
+  // S3.2 verification (D6): per-exam editor stamp shown on the public page as
+  // "Verified by IndianExamInfo editorial team · <date>" — never a person.
+  const { user, permissions } = useAuth();
+  const canPublishExam = permissions.includes("publish_exam");
+  const [verifying, setVerifying] = useState(false);
+  const [verifiedStamp, setVerifiedStamp] = useState<string | null>(null);
   // ── Unsaved-changes guard state ────────────────────────────────────────────
   // Local-state tabs (Modules/News) hold edits outside react-hook-form,
   // so they report their own dirty flag up here. Aggregated with form dirtiness
@@ -318,6 +331,11 @@ export function EntranceExamEditorPage() {
   const selectionAnswered = isSelectionAnswered(watchedSelectionModel);
   // FX1.3: the form's cycle year, used by the no-cycle empty states.
   const watchedEditionYear = form.watch("editionYear") || new Date().getFullYear();
+  // S3.2 verify preconditions (live form state — the button un-blocks the
+  // moment the editor fills the gap; the reason text names the exact gap).
+  const watchedName = (form.watch("name") as string) ?? "";
+  const watchedConductingBody = (form.watch("conductingBody") as string) ?? "";
+  const watchedOfficialWebsite = (form.watch("officialWebsite") as string) ?? "";
 
   useEffect(() => {
     getCategories(pillarFromUrl).then(setCategories).catch(() => {});
@@ -362,6 +380,7 @@ export function EntranceExamEditorPage() {
       setExam(data.exam);
       setIsPublished(data.exam.isPublished);
       setWorkflowStatus(data.exam.workflowStatus);
+      setVerifiedStamp(data.exam.verifiedAt ?? null);
       setCurrentEdition(data.currentEdition);
       setEditions(data.editions);
       // Populate form with exam identity
@@ -695,6 +714,18 @@ export function EntranceExamEditorPage() {
   // NOT dirty), plus the local-state tabs report their own compared-to-seed flags.
   const formDirty = form.formState.isDirty;
   const isDirty = formDirty || moduleDirty || newsDirty;
+
+  // S3.2 — why (if) the Verify action is blocked right now. Same rules the D6
+  // triage list shows (lib/exams/verification is the single source).
+  const verifyReasons = verifyBlockReasons({
+    name: watchedName,
+    conductingBody: watchedConductingBody,
+    officialWebsite: watchedOfficialWebsite,
+    selectionAnswered,
+    dates: dateFields as { date?: string | null }[],
+    hasUnsavedChanges: isDirty,
+    canPublish: canPublishExam,
+  });
 
   // Human label for the surface that's dirty — named in the dialog so the editor
   // knows what they'd lose. Prefer the active tab when it's the dirty one.
@@ -1121,6 +1152,32 @@ export function EntranceExamEditorPage() {
 
 
 
+  /** S3.2 verify / un-verify (one exam, never bulk). The CMS-layer
+   *  assertPermission inside setExamVerification is the FIRST gate; the
+   *  database-level trigger is the separate owner-approved proposal — until it
+   *  is applied no copy here claims DB enforcement. */
+  const handleVerifyToggle = async (wantVerify: boolean) => {
+    if (!exam?.id) return;
+    if (wantVerify && verifyReasons.length > 0) {
+      toast.error(`Cannot verify yet: ${verifyReasons[0]}`);
+      return;
+    }
+    setVerifying(true);
+    try {
+      const updated = await setExamVerification(exam.id, wantVerify, user?.id ?? null);
+      setVerifiedStamp(wantVerify ? (updated.verifiedAt ?? new Date().toISOString()) : null);
+      toast.success(
+        wantVerify
+          ? "Verified — the public page now shows \u201CVerified by IndianExamInfo editorial team\u201D with today's date."
+          : "Verification removed — the honest \u201CNot yet verified\u201D notice is back.",
+      );
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -1282,6 +1339,53 @@ export function EntranceExamEditorPage() {
                   <option value="archived">Archived</option>
                 </select>
               </div>
+              {/* S3.2 verify control (D6): one exam at a time, never bulk. The
+                  reader claim it turns on names the TEAM, never a person. */}
+              <div
+                className="flex items-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium"
+                data-testid="verify-control"
+              >
+                <ShieldCheck size={14} className={verifiedStamp ? "text-emerald-600" : "text-slate-400"} />
+                {verifiedStamp ? (
+                  <span className="text-emerald-700" data-testid="verified-stamp">
+                    Verified {new Date(verifiedStamp).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
+                ) : (
+                  <span className="text-slate-500">Not verified</span>
+                )}
+                {verifiedStamp ? (
+                  <button
+                    type="button"
+                    data-testid="unverify-edition-btn"
+                    disabled={verifying}
+                    title="Remove the verification — the honest notice returns on the public page"
+                    onClick={() => void handleVerifyToggle(false)}
+                    className="rounded border border-slate-300 px-2 py-0.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    Un-verify
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    data-testid="verify-edition-btn"
+                    disabled={verifying || verifyReasons.length > 0}
+                    title={verifyReasons.length === 0 ? "Confirms an editor checked this record against the official notification" : `Blocked: ${verifyReasons[0]}`}
+                    onClick={() => void handleVerifyToggle(true)}
+                    className="rounded bg-emerald-600 px-2 py-0.5 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    Verify this edition
+                  </button>
+                )}
+              </div>
+              {!verifiedStamp && verifyReasons.length > 0 && (
+                <span
+                  data-testid="verify-blocked-reason"
+                  className="text-[11px] text-amber-600 max-w-[190px]"
+                  title={verifyReasons.join(" · ")}
+                >
+                  {verifyReasons[0]}
+                </span>
+              )}
               {!selectionAnswered && (
                 <span
                   data-testid="publish-gate-hint"

@@ -74,6 +74,12 @@ export type ExamEntity = {
   tags: string[];
   lastUpdated: string;
   isFeatured: boolean;
+  // S3.2 verification (exams.is_verified / verified_at). verified_by is an
+  // internal uuid and is NOT mapped onto the entity — the CMS and the public
+  // page show the date only (D6 decision 3: the team, never a person).
+  // Optional: selects that do not include the columns leave them undefined.
+  isVerified?: boolean;
+  verifiedAt?: string | null;
   searchKeywords: string[];
 
   seoTitle?: string;
