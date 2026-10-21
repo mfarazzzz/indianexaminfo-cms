@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileText, BookOpen, Users, Tag, Link2,
   FileCode, Image, BarChart2, Megaphone, Palette, MapPin,
   TrendingUp, Settings, ClipboardList, LogOut, ExternalLink,
-  X, Shield, Building2, GraduationCap, Navigation, Briefcase, Inbox, Mail,
+  X, Shield, ShieldCheck, Building2, GraduationCap, Navigation, Briefcase, Inbox, Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -50,6 +50,8 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Govt Vacancy Exams", to: "/govt-vacancy", icon: <Shield size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
       { label: "Board Exams", to: "/board-exams", icon: <BookOpen size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
       { label: "University Exams", to: "/university-exams", icon: <Building2 size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      // S3.2 / D6 — verification triage: every unverified exam, soonest first.
+      { label: "Needs Verification", to: "/needs-verification", icon: <ShieldCheck size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
       { label: "Content", to: "/content", icon: <FileCode size={ICON_SIZE} />, permissions: [P.CREATE_POST, P.EDIT_ANY_POST] },
       { label: "Blog Authors", to: "/blog/authors", icon: <Users size={ICON_SIZE} />, permissions: [P.CREATE_POST] },
       { label: "Messages", to: "/messages", icon: <Mail size={ICON_SIZE} />, permissions: [P.HANDLE_MESSAGES] },

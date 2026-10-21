@@ -153,6 +153,8 @@ const VacancyEditPage = lazyPage(() => import("@/pages/sarkari-naukri/SarkariNau
 const UniversityExamsListPage = lazyPage(() => import("@/pages/university-exams/UniversityExamsListPage"), "UniversityExamsListPage");
 // Board Exams
 const BoardExamsListPage = lazyPage(() => import("@/pages/board-exams/BoardExamsListPage"), "BoardExamsListPage");
+// S3.2 / D6 — exam verification triage ("Needs verification")
+const NeedsVerificationPage = lazyPage(() => import("@/pages/verification/NeedsVerificationPage"), "NeedsVerificationPage");
 // Navigation Settings
 const NavigationSettingsPage = lazyPage(() => import("@/pages/navigation/NavigationSettingsPage"), "NavigationSettingsPage");
 
@@ -247,6 +249,11 @@ export const router = createBrowserRouter([
           { path: "/board-exams",          element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><BoardExamsListPage /></RequirePermission> },
           { path: "/board-exams/new",      element: <RequirePermission anyOf={[P.CREATE_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
           { path: "/board-exams/:id",      element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><EntranceExamEditorPage /></RequirePermission> },
+          // S3.2 verification triage (D6): every unverified exam + 90-day
+          // re-check flags. Viewing the list needs exam-edit rights; the
+          // verify WRITE itself additionally requires publish_exam (asserted
+          // in the service). One record at a time — there is no bulk action.
+          { path: "/needs-verification",   element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><NeedsVerificationPage /></RequirePermission> },
           { path: "/users",             element: <RequirePermission anyOf={[P.MANAGE_USERS]}><UsersListPage /></RequirePermission> },
           { path: "/messages",          element: <RequirePermission anyOf={[P.HANDLE_MESSAGES]}><MessagesListPage /></RequirePermission> },
           { path: "/settings",          element: <RequirePermission anyOf={[P.MANAGE_SETTINGS]}><SettingsPage /></RequirePermission> },
