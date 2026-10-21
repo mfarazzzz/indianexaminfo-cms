@@ -25,6 +25,7 @@
  */
 import { resolveOption, type AllowedOptions, type FieldProposal } from "@/lib/ai/extractionContract";
 import { typeForKind, normalizeLabel, isStatusWindowType, TENTATIVE_SIGNALS, type DateEventKind } from "@/lib/dates/normalizeLabel";
+import type { DetectedSteps } from "./noticeSteps";
 import { parseDateWindow } from "@/lib/utils/indianDateParser";
 import { normalizeUrl } from "@/lib/utils";
 
@@ -97,6 +98,13 @@ export interface PipelineResult {
   /** S2.15 (2b): human lines naming a date conflict the deterministic parser
    *  resolved (a header/summary date overridden by the revised / dated block). */
   dateConflicts?: string[];
+  /** B2 (client): the deterministic "How to …" step blocks read straight from the
+   *  pasted notice (noticeSteps.detectHowToSteps) — NOT from the model, so a
+   *  flaky answer cannot drop the how-to-download / how-to-apply instructions.
+   *  Absent when the notice carries no how-to section, so every existing consumer
+   *  (and the byte-identical goldens) is untouched. The editor authors these; the
+   *  drawer never auto-applies a step. */
+  steps?: DetectedSteps[];
 }
 
 /** The structural marker for addressing metadata on UP-style notices. */

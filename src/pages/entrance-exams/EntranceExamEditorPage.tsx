@@ -232,6 +232,29 @@ export function EntranceExamEditorPage() {
   // them into the single updateEdition call after create, so one Save persists everything.
   const pendingModulesRef = React.useRef<Record<string, unknown> | null>(null);
 
+  // B2 (client): how-to / carry step lines the editor ACCEPTED and applied from the
+  // notice drawer. Staged here (never a DB write), then merged module-by-module into
+  // content_modules on the editor's next Save — same "Apply touches the form only;
+  // the editor saves" rule as R1.6 (never auto-applied). Per-module partials, e.g.
+  // { "admit-card": { steps: ["…"], carry: ["…"] } }.
+  const pendingModuleEditsRef = React.useRef<Record<string, Record<string, unknown>> | null>(null);
+
+  const hasPendingModuleEdits = (): boolean =>
+    !!pendingModuleEditsRef.current && Object.keys(pendingModuleEditsRef.current).length > 0;
+
+  /** Overlay the staged module edits onto a base content_modules object, merging at
+   *  the FIELD level inside each touched module so the module's other stored keys
+   *  (releaseDate, downloadLink, body, …) survive an apply of only its steps/carry. */
+  const withPendingModuleEdits = (base: Record<string, unknown>): Record<string, unknown> => {
+    const edits = pendingModuleEditsRef.current;
+    if (!edits) return base;
+    const out = { ...base };
+    for (const [mod, partial] of Object.entries(edits)) {
+      out[mod] = { ...((out[mod] as Record<string, unknown> | undefined) ?? {}), ...partial };
+    }
+    return out;
+  };
+
   const [moduleDirty, setModuleDirty] = useState(false);
   // Mirror of moduleDirty readable synchronously inside guard callbacks (so
   // "Save & continue" can wait for the pending module autosave to land before
@@ -479,10 +502,10 @@ export function EntranceExamEditorPage() {
         //   - Overlay the News tab's items if the tab was mounted (newsRef).
         const baseContentModules: Record<string, unknown> =
           (result.edition as any)?.content_modules ?? {};
-        const finalContentModules: Record<string, unknown> = {
+        const finalContentModules: Record<string, unknown> = withPendingModuleEdits({
           ...baseContentModules,
           ...(pendingModulesRef.current ?? {}),
-        };
+        });
         if (newsRef.current !== null) {
           // R0.10: canonical news shape { items: [...] }.
           finalContentModules.news = { items: newsRef.current };
@@ -504,13 +527,14 @@ export function EntranceExamEditorPage() {
           hasCutoff: data.hasCutoff,
           hasCounselling: data.hasCounselling,
           // Only write content_modules if there's something beyond the seeded _config.
-          ...(Object.keys(finalContentModules).length > 1 || pendingModulesRef.current || newsRef.current !== null
+          ...(Object.keys(finalContentModules).length > 1 || pendingModulesRef.current || newsRef.current !== null || hasPendingModuleEdits()
             ? { contentModules: finalContentModules }
             : {}),
         });
 
         // Clear the pending modules now that they've been persisted.
         pendingModulesRef.current = null;
+        pendingModuleEditsRef.current = null; // B2 drawer steps landed with the create
         // S2.6: create already carried the provenance through the insert — drop the
         // staged copy so the post-create navigation cannot re-apply it.
         pendingProvenanceRef.current = null;
@@ -580,10 +604,14 @@ export function EntranceExamEditorPage() {
       // FX1.2: when the exam has NO current edition, the base is the AI-pending
       // modules (if any), not a stale snapshot.
       const buildMergedContentModules = (baseModules?: Record<string, unknown> | null): Record<string, unknown> | undefined => {
-        const base = (baseModules ?? currentEdition?.contentModules ?? pendingModulesRef.current ?? {}) as Record<string, unknown>;
+        const rawBase = (baseModules ?? currentEdition?.contentModules ?? pendingModulesRef.current ?? {}) as Record<string, unknown>;
+        // B2: overlay any drawer-authored module steps the editor applied this session.
+        const base = withPendingModuleEdits(rawBase);
         if (newsRef.current === null) {
           // No news reported. Still carry AI-pending modules if this is a fresh cycle.
-          if (!currentEdition && pendingModulesRef.current) return { ...pendingModulesRef.current };
+          if (!currentEdition && pendingModulesRef.current) return { ...base };
+          // …and persist drawer steps even with no news and an existing edition.
+          if (hasPendingModuleEdits()) return base;
           return undefined;
         }
         return { ...base, news: { items: newsRef.current } };
@@ -632,6 +660,7 @@ export function EntranceExamEditorPage() {
       }
       // Unified Save persisted News too — clear its local dirty flag.
       // (loadExam() below re-seeds the child tabs from the freshly saved edition.)
+      pendingModuleEditsRef.current = null; // B2 drawer steps landed in content_modules
       setNewsDirty(false);
       await loadExam();
     } catch (err: any) {
@@ -999,6 +1028,41 @@ export function EntranceExamEditorPage() {
     }
     const dateRows = accepted.filter((r) => r.kind === "date" && r.row).map((r) => r.row!);
     if (dateRows.length > 0 && mergeProposedDates(dateRows)) applied += dateRows.length;
+
+    // B2 (client): accepted how-to / carry step lines stage into the pending module
+    // edits — NEVER a DB write, and NEVER auto-applied (the drawer left them all
+    // unchecked). Group by module + field, keep the detector's order, and APPEND to
+    // whatever the module already stores (dedup on normalized text) so a curated
+    // step is never clobbered. The editor's next Save persists content_modules.
+    const stepRows = accepted.filter((r) => r.kind === "step" && r.stepTarget);
+    if (stepRows.length > 0) {
+      const baseModules = (currentEdition?.contentModules ?? {}) as Record<string, Record<string, unknown>>;
+      const norm = (s: string): string => s.replace(/\s+/g, " ").trim().toLowerCase();
+      const byModule: Record<string, { steps: { order: number; text: string }[]; carry: { order: number; text: string }[] }> = {};
+      for (const r of stepRows) {
+        const t = r.stepTarget!;
+        (byModule[t.module] ??= { steps: [], carry: [] })[t.field].push({ order: t.order, text: r.proposed });
+      }
+      const staged = { ...(pendingModuleEditsRef.current ?? {}) };
+      for (const [mod, groups] of Object.entries(byModule)) {
+        const existingModule = { ...(baseModules[mod] ?? {}), ...(staged[mod] ?? {}) };
+        const partial: Record<string, unknown> = { ...(staged[mod] ?? {}) };
+        for (const field of ["steps", "carry"] as const) {
+          const incoming = groups[field].sort((a, b) => a.order - b.order).map((g) => g.text).filter((s) => s.trim() !== "");
+          if (incoming.length === 0) continue;
+          const currentList = Array.isArray(existingModule[field]) ? (existingModule[field] as unknown[]).map(String) : [];
+          const seen = new Set(currentList.map(norm));
+          const next = [...currentList];
+          for (const text of incoming) {
+            if (!seen.has(norm(text))) { next.push(text); seen.add(norm(text)); }
+          }
+          partial[field] = next;
+        }
+        staged[mod] = partial;
+      }
+      pendingModuleEditsRef.current = staged;
+      applied += stepRows.length;
+    }
 
     // S2.6: stage the provenance run (metadata + document references). It only
     // reaches the database when the editor SAVES — Apply alone touches the form.

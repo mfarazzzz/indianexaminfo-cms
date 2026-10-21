@@ -31,8 +31,9 @@ export interface ReviewRow {
   id: string;
   /** Human field name shown in the drawer. */
   label: string;
-  /** "proposal" = goes to provenance (ai_metadata), never to the form (S2.6). */
-  kind: "field" | "date" | "proposal";
+  /** "proposal" = goes to provenance (ai_metadata), never to the form (S2.6).
+   *  "step" = a how-to / carry line the editor authors into a content module. */
+  kind: "field" | "date" | "proposal" | "step";
   current: string;
   proposed: string;
   sourceQuote: string;
@@ -54,6 +55,10 @@ export interface ReviewRow {
   row?: ProposedDateRow;
   /** For kind === "proposal": the document reference being recorded. */
   documentReference?: { label: string; date: string; sourceQuote: string };
+  /** B2 kind === "step": where this authored line lands on apply — the content
+   *  module (admit-card / application-process), the array (steps / carry) and the
+   *  original order so a mid-list edit still writes back in sequence. */
+  stepTarget?: { module: "admit-card" | "application-process"; field: "steps" | "carry"; order: number };
 }
 
 export interface ReviewCurrentValues {
@@ -319,6 +324,45 @@ export function buildReviewRows(
       documentReference: { label: "Notice issue date", date: result.provenance.noticeIssueDate, sourceQuote: result.provenance.noticeIssueQuote ?? "" },
     });
   }
+
+  // B2 (client): the deterministic how-to steps. Each step / carry line is offered
+  // beside its verbatim source line, EDITABLE in the drawer, and starts UNCHECKED —
+  // the editor authors, never auto-applied. Target module by kind: an admit-card
+  // how-to lands in contentModules["admit-card"].steps (and .carry for the
+  // documents-to-carry list); an application how-to lands in
+  // contentModules["application-process"].steps. confidence is 1 because the
+  // detector's lines are the source itself (attested by construction), NOT a model
+  // paraphrase — but that never makes them default-accepted.
+  (result.steps ?? []).forEach((block) => {
+    block.steps.forEach((s, i) => {
+      rows.push({
+        id: `step:${block.module}:steps:${i}`,
+        label: `Step ${i + 1} — ${block.heading}`,
+        kind: "step",
+        current: "",
+        proposed: s.text,
+        sourceQuote: s.sourceQuote,
+        confidence: 1,
+        defaultAccept: false,
+        noFieldYet: false,
+        stepTarget: { module: block.module, field: "steps", order: i },
+      });
+    });
+    block.carry.forEach((c, i) => {
+      rows.push({
+        id: `step:${block.module}:carry:${i}`,
+        label: `To carry ${i + 1} — ${block.heading}`,
+        kind: "step",
+        current: "",
+        proposed: c.text,
+        sourceQuote: c.sourceQuote,
+        confidence: 1,
+        defaultAccept: false,
+        noFieldYet: false,
+        stepTarget: { module: block.module, field: "carry", order: i },
+      });
+    });
+  });
 
   return rows;
 }

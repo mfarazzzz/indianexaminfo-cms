@@ -43,6 +43,10 @@ const ConfidenceTag: React.FC<{ value: number }> = ({ value }) => {
 
 export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result, providerNote, match, onOpenMatch, onClose, onApply, onCreateUpdate }) => {
   const [accepted, setAccepted] = useState<Record<string, boolean>>({});
+  // B2: editor-authored overrides for the editable how-to / carry step lines, keyed
+  // by row id. Empty means "keep the detector's verbatim source line"; the editor
+  // may reword. Only accepted step rows carry their edit through to Apply.
+  const [stepEdits, setStepEdits] = useState<Record<string, string>>({});
   // S2.5: "Review here anyway" hides the match banner without losing the rows.
   const [matchDismissed, setMatchDismissed] = useState(false);
   // Seed per-open from the row defaults (Accept only where empty + confident).
@@ -55,12 +59,19 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
   if (initialisedFor !== rows) {
     setInitialisedFor(rows);
     setAccepted(seed);
+    setStepEdits({});
     setMatchDismissed(false);
   }
 
   if (!open) return null;
 
-  const acceptedRows = rows.filter((r) => accepted[r.id] && !r.noFieldYet);
+  // Accepted rows feed Apply. A step row sends the editor's current text (its
+  // verbatim source line unless they reworded it), trimmed; empty after trim means
+  // the editor deleted it, so it is NOT applied.
+  const acceptedRows = rows
+    .filter((r) => accepted[r.id] && !r.noFieldYet)
+    .map((r) => (r.kind === "step" ? { ...r, proposed: (stepEdits[r.id] ?? r.proposed).trim() } : r))
+    .filter((r) => r.kind !== "step" || r.proposed !== "");
   // 2e — no-change proposals are collapsed, never counted as a decision.
   const decisionRows = rows.filter((r) => !r.noChange);
   const noChangeRows = rows.filter((r) => r.noChange);
@@ -191,9 +202,22 @@ export const NoticeReviewDrawer: React.FC<Props> = ({ open, rows, report, result
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     current: <span className="text-slate-600">{r.current || "—"}</span>
                   </p>
-                  <p className="text-[11px] text-slate-400">
-                    proposed: <span className="text-slate-800 font-medium">{r.proposed}</span>
-                  </p>
+                  {r.kind === "step" ? (
+                    <label className="block mt-0.5 text-[11px] text-slate-400">
+                      proposed step (editable)
+                      <input
+                        type="text"
+                        value={stepEdits[r.id] ?? r.proposed}
+                        onChange={(e) => setStepEdits((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                        className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-[12px] text-slate-800"
+                        data-testid={`drawer-step-input-${r.id}`}
+                      />
+                    </label>
+                  ) : (
+                    <p className="text-[11px] text-slate-400">
+                      proposed: <span className="text-slate-800 font-medium">{r.proposed}</span>
+                    </p>
+                  )}
                 </div>
                 <ConfidenceTag value={r.confidence} />
               </div>

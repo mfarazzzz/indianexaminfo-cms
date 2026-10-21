@@ -12,6 +12,7 @@
 import { postProcessExtraction, type PipelineResult } from "./noticePipeline";
 import type { AllowedOptions } from "./extractionContract";
 import { extractNoticeDateLines, mergeNoticeRows } from "./noticeDateLines";
+import { detectHowToSteps } from "./noticeSteps";
 
 export function buildNoticeResult(
   parsed: Record<string, unknown>,
@@ -29,10 +30,17 @@ export function buildNoticeResult(
   const seen = new Set((base.notes ?? []).map((n) => n.text));
   const notes = [...(base.notes ?? []), ...det.notes.filter((n) => !seen.has(n.text))];
 
+  // B2 (client): the deterministic how-to detector reads the pasted text directly,
+  // so a flaky/low-yield model cannot drop the "How to download / apply" steps the
+  // notice clearly carried. Absent when there is no how-to block, keeping every
+  // pre-existing result byte-identical. The editor authors these; never auto-applied.
+  const steps = detectHowToSteps(sourceText);
+
   return {
     ...base,
     rows,
     ...(notes.length ? { notes } : {}),
     ...(det.conflicts.length ? { dateConflicts: det.conflicts } : {}),
+    ...(steps.length ? { steps } : {}),
   };
 }
