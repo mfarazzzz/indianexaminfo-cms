@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- PROPOSAL (NOT APPLIED) — S3.2 verify columns require publish_exam at the DB
+-- APPLIED as version 20261022031508 (was PROPOSAL, NOT APPLIED) — S3.2 verify columns require publish_exam at the DB
 -- Date: 2026-10-21. Owner protocol: proposal only; apply ONLY on explicit order.
 --
 -- WHY (evidence, all re-verified live against cwbhhcqsrbuoybeaondk on 2026-10-21)
