@@ -1,0 +1,81 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PROPOSAL (NOT APPLIED) — pages RLS: staff-read gap + DELETE consistency
+-- Date: 2026-10-22. Owner protocol: proposal only; apply ONLY on explicit order.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- WHAT THE LIVE SCHEMA ACTUALLY SHOWS (re-verified 22 Oct, project
+-- cwbhhcqsrbuoybeaondk — RLS is ON for pages; this is NOT a missing-RLS hole)
+--
+-- pg_class: relrowsecurity = true, relforcerowsecurity = false (owner bypass —
+-- normal for Supabase-managed tables).
+-- pg_policies (verbatim):
+--   public_read_pages   SELECT  roles={public}         qual: (status = 'published'::page_status)
+--   pages_insert        INSERT  roles={authenticated}  with_check: current_user_has_permission('manage_pages')
+--   pages_update        UPDATE  roles={authenticated}  qual+with_check: current_user_has_permission('manage_pages')
+--   admin_delete_pages  DELETE  roles={public}         qual: current_user_role() = ANY (ARRAY['super-admin','admin'])
+--
+-- Helper functions (verbatim, both SECURITY DEFINER with fixed search_path):
+--   current_user_has_permission(slug) → user_profiles ⋈ role_permissions ⋈ permissions
+--     where up.id = auth.uid() AND up.is_active — the RBAC source of truth.
+--   current_user_role() → user_profiles ⋈ roles slug where up.id = auth.uid() limit 1.
+--
+-- LIVE COUNTS: pages = 5 draft + 1 published (6 total).
+--
+-- ── FINDING 1 (the real gap — functional, and a content-safety one) ─────────
+-- There is NO staff-read policy. The only SELECT policy exposes status='published'
+-- rows to everyone and NOTHING to staff for drafts. Consequence, proven from code:
+--   CMS src/services/pageService.ts listPages/getPage do .select("*") with no
+--   status filter — under RLS an editor (even a super-admin) sees ONLY the 1
+--   published row; the 5 drafts are invisible in the Pages manager. An editor
+--   cannot review a draft page before publishing it, and cannot open it to fix
+--   it — the publish path is effectively blind.
+--   (The public site is UNAFFECTED and correctly filtered twice over:
+--   indianexaminfo-frontend/services/pageService.ts adds .eq("status","published")
+--   on top of the policy, and uses the anon key — no draft exposure exists.)
+--
+-- ── FINDING 2 (consistency, not a hole) ─────────────────────────────────────
+-- admin_delete_pages gates DELETE by ROLE SLUG (super-admin/admin) while every
+-- other write uses the PERMISSION table (manage_pages). The admin role lacks
+-- only manage_roles, so today the sets are near-identical — but the mechanism
+-- diverges: a custom role granted manage_pages could not delete, and a future
+-- role-slug change silently moves delete rights. Aligning it is optional; the
+-- minimal fix below does NOT touch it (flagged for owner decision).
+--
+-- ── ANON EXPOSURE CHECK (explicitly) ────────────────────────────────────────
+-- anon (public role) SELECT: published rows only — intended (the public site
+-- renders them server-side with the anon key). anon INSERT/UPDATE/DELETE: no
+-- policy → denied. No draft, no column-level leak (body of a published page is
+-- public by design). FINDING: no security hole in the anon path.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- MINIMAL FIX (Finding 1 only): mirror the proven exams pattern
+-- (staff_read_all_exams: USING auth.uid() IS NOT NULL) — authenticated staff can
+-- read all pages; anon still sees published only.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE POLICY staff_read_pages ON public.pages
+  FOR SELECT TO authenticated
+  USING (auth.uid() IS NOT NULL);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- APPLY-TIME CHECKS — run in ONE transaction that ends in ROLLBACK, exactly as
+-- done for the verify trigger (20261022031508), so nothing persists:
+--   BEGIN;
+--   -- POSITIVE (staff sees drafts): a real editor user's claims, e.g.
+--   SET LOCAL ROLE authenticated;
+--   SET LOCAL request.jwt.claims = '{"sub":"<active-editor-uid>","role":"authenticated"}';
+--   SELECT count(*) FROM pages;                       -- expect 6 (5 drafts + 1 published)
+--   -- NEGATIVE (anon still published-only):
+--   SET LOCAL ROLE anon;
+--   SELECT count(*) FROM pages;                       -- expect 1
+--   SELECT count(*) FROM pages WHERE status='draft';  -- expect 0
+--   -- NEUTRAL (published visible to both, writes unchanged):
+--   SET LOCAL ROLE authenticated;
+--   SELECT count(*) FROM pages WHERE status='published'; -- expect 1
+--   ROLLBACK;
+-- Post-apply live proof (separate read-only call):
+--   SELECT polname… FROM pg_policies WHERE tablename='pages';  -- 5 policies
+--   anon REST call GET /rest/v1/pages (anon key) → only the published row.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ROLLBACK:
+--   DROP POLICY IF EXISTS staff_read_pages ON public.pages;
+-- ─────────────────────────────────────────────────────────────────────────────
