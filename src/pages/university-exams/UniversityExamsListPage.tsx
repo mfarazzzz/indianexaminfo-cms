@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { deleteExam } from "@/services/examService";
 import { getErrorMessage } from "@/lib/utils";
+import { TestBadge } from "@/components/shared/TestBadge";
 
 export function UniversityExamsListPage() {
   const navigate = useNavigate();
@@ -52,6 +53,7 @@ export function UniversityExamsListPage() {
             <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }} className="p-1.5 rounded text-slate-300 hover:text-red-600 opacity-0 group-hover:opacity-100"><Trash2 size={14} /></button>
           </div>
           <h3 className="font-medium text-slate-900 text-sm line-clamp-2 pr-6 mb-2">{item.name}</h3>
+          <TestBadge slug={item.slug} />
           <div className="flex items-center gap-2"><span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">{item.category.replace(/-/g, " ")}</span>
             {item.isPublished ? <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">● Live</span> : <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">○ Draft</span>}
           </div>

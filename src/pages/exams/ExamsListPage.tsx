@@ -13,6 +13,7 @@ import { usePillars } from "@/hooks/usePillars";
 import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { formatDate , getErrorMessage, buildUrlPreview } from "@/lib/utils";
 import type { ExamEntity, Pillar } from "@/types/exam";
+import { TestBadge } from "@/components/shared/TestBadge";
 
 export function ExamsListPage() {
   const navigate = useNavigate();
@@ -89,6 +90,7 @@ export function ExamsListPage() {
           <div className="flex items-center gap-1.5">
             {row.original.isFeatured && <Star size={14} className="text-amber-500 fill-amber-500 shrink-0" />}
             <p className="font-medium text-slate-900 line-clamp-1">{row.original.name}</p>
+            <TestBadge slug={row.original.slug} />
           </div>
           <p className="text-xs text-slate-400 line-clamp-1">{buildUrlPreview(row.original.pillar, row.original.category, row.original.slug)}</p>
         </div>

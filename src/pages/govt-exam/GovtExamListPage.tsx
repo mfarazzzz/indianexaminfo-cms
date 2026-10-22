@@ -14,6 +14,7 @@ import { BulkImportExport } from "@/components/shared/BulkImportExport";
 import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
 import { deleteExam } from "@/services/examService";
 import { getErrorMessage } from "@/lib/utils";
+import { TestBadge } from "@/components/shared/TestBadge";
 
 const STATUS_COLORS: Record<string, string> = {
   upcoming: "bg-yellow-100 text-yellow-700",
@@ -134,6 +135,7 @@ export function GovtExamListPage() {
               </div>
 
               <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <TestBadge slug={exam.slug} />
                 <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
                   {exam.category.replace(/-/g, " ")}
                 </span>

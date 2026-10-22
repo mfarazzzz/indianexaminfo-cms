@@ -6,6 +6,7 @@
 import { db } from "@/lib/supabase/client";
 import { revalidateExams } from "@/lib/revalidate";
 import { normalizeUrlOrThrow } from "@/lib/utils";
+import { TEST_SLUG_LIKE } from "@/lib/testContent";
 import { assertPermission, assertAffected } from "@/lib/auth/permissionGuard";
 import { P } from "@/config/permissions";
 import {
@@ -368,7 +369,9 @@ export async function getVerificationQueue(): Promise<VerificationQueueRow[]> {
     .select(
       "id, slug, name, pillar, conducting_body, official_website, selection_model, is_featured, is_verified, verified_at, current_ed:exam_editions!current_edition_id(important_dates)",
     )
-    .or(`is_verified.is.null,is_verified.eq.false,verified_at.lt.${cutoff}`);
+    .or(`is_verified.is.null,is_verified.eq.false,verified_at.lt.${cutoff}`)
+    // Reference TEST rows never enter the real needs-verification backlog.
+    .not("slug", "like", TEST_SLUG_LIKE);
   if (error) throw error;
   const todayISO = now.toISOString().slice(0, 10);
   const rows = ((data ?? []) as unknown as QueueSourceRow[]).map((r) => buildQueueRow(r, todayISO));
