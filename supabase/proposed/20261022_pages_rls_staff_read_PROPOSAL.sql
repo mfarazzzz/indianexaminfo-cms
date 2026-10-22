@@ -1,4 +1,5 @@
--- ─────────────────────────────────────────────────────────────────────────────
+-- PROPOSAL (SUPERSEDED — APPLIED per owner approval 22 Oct as supabase/migrations/
+-- 20261022*_pages_staff_read.sql, policy = current_user_has_permission('manage_pages'))
 -- PROPOSAL (NOT APPLIED) — pages RLS: staff-read gap + DELETE consistency
 -- Date: 2026-10-22. Owner protocol: proposal only; apply ONLY on explicit order.
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -47,31 +48,37 @@
 -- public by design). FINDING: no security hole in the anon path.
 --
 -- ─────────────────────────────────────────────────────────────────────────────
--- MINIMAL FIX (Finding 1 only): mirror the proven exams pattern
--- (staff_read_all_exams: USING auth.uid() IS NOT NULL) — authenticated staff can
--- read all pages; anon still sees published only.
+-- MINIMAL FIX (Finding 1 only) — OWNER-CHANGED on approval (22 Oct): gate the
+-- staff read on the SAME RBAC capability the writes use (manage_pages), NOT on
+-- any authenticated uid. Anon continues to see published-only via public_read_pages.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 CREATE POLICY staff_read_pages ON public.pages
   FOR SELECT TO authenticated
-  USING (auth.uid() IS NOT NULL);
+  USING (public.current_user_has_permission('manage_pages'));
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- APPLY-TIME CHECKS — run in ONE transaction that ends in ROLLBACK, exactly as
--- done for the verify trigger (20261022031508), so nothing persists:
+-- APPLY-TIME CHECKS — ran in ONE transaction ending in a forced-abort RAISE,
+-- exactly as for the verify trigger (20261022031508), so nothing persisted:
 --   BEGIN;
---   -- POSITIVE (staff sees drafts): a real editor user's claims, e.g.
+--   CREATE POLICY staff_read_pages ... USING (public.current_user_has_permission('manage_pages'));
+--   —— POSITIVE (manage_pages holder — super-admin — sees drafts):
 --   SET LOCAL ROLE authenticated;
---   SET LOCAL request.jwt.claims = '{"sub":"<active-editor-uid>","role":"authenticated"}';
---   SELECT count(*) FROM pages;                       -- expect 6 (5 drafts + 1 published)
---   -- NEGATIVE (anon still published-only):
+--   SET LOCAL request.jwt.claims = '{"sub":"1b7bf398-7522-4cf8-9820-04218dfe1533","role":"authenticated"}';
+--   SELECT count(*) FROM pages;                          -- expect 6 (5 drafts + 1 published)
+--   —— NEGATIVE 1 (anon still published-only):
 --   SET LOCAL ROLE anon;
---   SELECT count(*) FROM pages;                       -- expect 1
---   SELECT count(*) FROM pages WHERE status='draft';  -- expect 0
---   -- NEUTRAL (published visible to both, writes unchanged):
+--   SELECT count(*) FROM pages;                          -- expect 1
+--   SELECT count(*) FROM pages WHERE status='draft';     -- expect 0
+--   —— NEGATIVE 2 (authenticated WITHOUT manage_pages — writer):
 --   SET LOCAL ROLE authenticated;
+--   SET LOCAL request.jwt.claims = '{"sub":"17eae549-0505-4f33-8c53-13cbd96d6574","role":"authenticated"}';
+--   SELECT count(*) FROM pages;                          -- expect 1 (published only)
+--   —— NEUTRAL (published visible to the rights-holder):
+--   SET LOCAL ROLE authenticated;
+--   SET LOCAL request.jwt.claims = '{"sub":"1b7bf398-7522-4cf8-9820-04218dfe1533","role":"authenticated"}';
 --   SELECT count(*) FROM pages WHERE status='published'; -- expect 1
---   ROLLBACK;
+--   RAISE (forced abort — whole transaction rolls back, evidence in the error);
 -- Post-apply live proof (separate read-only call):
 --   SELECT polname… FROM pg_policies WHERE tablename='pages';  -- 5 policies
 --   anon REST call GET /rest/v1/pages (anon key) → only the published row.
