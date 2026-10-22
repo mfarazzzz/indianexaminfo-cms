@@ -1,18 +1,27 @@
 -- ══════════════════════════════════════════════════════════════════════════════
--- PROPOSED — NOT APPLIED (S7 Social Queue: auto-post design data model)
+-- PROPOSED — NOT APPLIED (S7.1 Social Queue: TELEGRAM-ONLY, revised 2026-10-22)
+--
+-- OWNER DECISION (22 Oct): Telegram only FIRST. Reddit/Quora stay OUT of the DB
+-- until S7.2 — no channel enum value, no table, no config column for them here.
+-- Facebook/Instagram are deferred (their columns are commented out, not dropped,
+-- so the S7.2 revision can reinstate them deliberately).
 --
 -- READ-ONLY DESIGN ARTIFACT. Nothing here runs. The owner applies deliberately.
--- No token/secret is ever stored in a table — channel credentials live ONLY in
--- Supabase Edge secrets (names in the report: TG_BOT_TOKEN, TG_CHAT_ID is NOT a
--- secret and lives in social_channels.external_id; FB_PAGE_ID + FB_PAGE_TOKEN secret;
--- IG_ACCOUNT_ID + IG_ACCESS_TOKEN secret). external_id below is the PUBLIC target
--- identifier (chat @name / page id / ig account id), never a credential.
+-- No token/secret is ever stored in a table — the ONLY credential is the Edge
+-- secret TG_BOT_TOKEN (set by the owner in the dashboard, never by this agent).
+-- TG_CHAT_ID is NOT a secret: it is the PUBLIC target id and lives in
+-- social_channels.external_id ("@indianexaminfo" or numeric -100… id).
+-- External update: an earlier revision of this file listed facebook_page /
+-- instagram / whatsapp; per this decision they are removed from every CHECK
+-- constraint and from the live surface until S7.2.
 --
 -- Verified live state (read-only, 2026-10-12, project cwbhhcqsrbuoybeaondk):
 --   social tables            = 0        social permission rows = 0
 --   exams published          = 397      exams is_verified=true = 0   <-- EMPTY POOL
 --   (so the owner rule "unverified never auto-post" currently yields ZERO candidates
 --    until the verification action sets is_verified — flagged as a dependency.)
+--   Telegram does NOT need a public image URL (it renders a link preview from
+--    landing_url), so the cms-public bucket dependency is dropped for S7.1.
 --   public bucket "cms-public" exists (public, <=10MB, allows image/jpeg) -> hosts the
 --    rendered card so Instagram/Facebook can cURL a PUBLIC image_url (both require it).
 --   RLS helper in use across the app: public.current_user_has_permission(slug)
@@ -28,9 +37,9 @@ WHERE NOT EXISTS (SELECT 1 FROM public.permissions WHERE slug = 'manage_social')
 -- 1. Which destinations we post to. One row per configured channel target.
 CREATE TABLE IF NOT EXISTS public.social_channels (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  channel       text NOT NULL CHECK (channel IN ('telegram','facebook_page','instagram','whatsapp')),
+  channel       text NOT NULL CHECK (channel IN ('telegram')),   -- S7.1: Telegram only; FB/IG/WhatsApp/Reddit/Quora are NOT in the enum (S7.2 decision)
   label         text NOT NULL,
-  -- PUBLIC target id, not a secret: "@indianexaminfo" / numeric -100… chat id / Page id / IG business account id.
+  -- PUBLIC target id, not a secret: "@indianexaminfo" or numeric -100… chat id.
   external_id   text,
   is_active     boolean NOT NULL DEFAULT true,
   created_at    timestamptz NOT NULL DEFAULT now(),
@@ -52,11 +61,22 @@ CREATE POLICY social_channels_staff_update ON public.social_channels
 
 -- 2. The queue itself. A row is created as a CANDIDATE (status 'draft') from a
 --    publish/verify event; nothing sends until a human approves (first 30 days).
+--    CANDIDATE HOOKS (owner decision 22 Oct) — exactly two event types:
+--      a) an exam UPDATE (content_post) is PUBLISHED with kind IN
+--         ('final','revised','corrigendum')  — drafted/cancelled kinds never queue;
+--      b) an exam is VERIFIED (exam verify control sets is_verified=true).
+--    Hook mechanics for S7.1: the CMS publish path and the verify path call the
+--    social-candidate Edge function (service role, bypasses RLS) which inserts a
+--    'draft' row idempotently (idempotency_key below). No DB trigger needed, so
+--    no pg_cron and no migration on exam/content_posts behaviour.
+--    MANUAL APPROVAL FIRST 30 DAYS: 'draft' -> a staff user with manage_social
+--    approves -> 'approved'. Only after the owner's explicit 30-day sign-off may
+--    auto-approval be discussed; nothing in this file automates it.
 CREATE TABLE IF NOT EXISTS public.social_posts (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   status          text NOT NULL DEFAULT 'draft'
                     CHECK (status IN ('draft','approved','queued','sent','failed','skipped')),
-  channel         text NOT NULL CHECK (channel IN ('telegram','facebook_page','instagram','whatsapp')),
+  channel         text NOT NULL CHECK (channel IN ('telegram')),  -- S7.1 Telegram only
   channel_id      uuid REFERENCES public.social_channels(id),
   -- Structured provenance — never free text. Points at the source record + the
   -- verified field set the card was built from.
@@ -64,8 +84,8 @@ CREATE TABLE IF NOT EXISTS public.social_posts (
   source_id       uuid NOT NULL,
   source_label    text,                          -- denormalised name for the queue UI
   -- Built from verified fields only; rendered into a caption + a PUBLIC image_url.
-  caption         text NOT NULL,                 -- <= 4096 (telegram) / <=2200 (ig caption soft cap) enforced app-side
-  image_url       text,                          -- public cms-public URL when the channel needs it (IG/FB)
+  caption         text NOT NULL,                 -- <= 4096 (telegram) enforced app-side
+  image_url       text,                          -- unused in S7.1 (Telegram previews landing_url); kept for S7.2
   landing_url     text NOT NULL,                 -- the CMS/reader page (UTM added at S7.4)
   payload         jsonb NOT NULL DEFAULT '{}'::jsonb,  -- exact body the adapter will send (auditable)
   scheduled_at    timestamptz,                   -- null = send when approved; else future
@@ -92,17 +112,23 @@ CREATE POLICY social_posts_staff_write ON public.social_posts FOR INSERT TO auth
   WITH CHECK (current_user_has_permission('manage_social'));
 CREATE POLICY social_posts_staff_update ON public.social_posts FOR UPDATE TO authenticated
   USING (current_user_has_permission('manage_social')) WITH CHECK (current_user_has_permission('manage_social'));
--- NOTE: candidate creation from a DB trigger runs as SECURITY DEFINER (service role in
--- the Edge path bypasses RLS anyway). A definer trigger inserting 'draft' rows is the
--- intended source; it is NOT added here (needs the owner to pick the exact publish hook).
+-- NOTE: candidate creation is the Edge-function call in the publish/verify paths
+-- (service role bypasses RLS) — see the CANDIDATE HOOKS block above. There is
+-- deliberately NO security-definer DB trigger on content_posts/exams in S7.1, so
+-- the bulletin and verify triggers stay untouched and reviewable on their own.
 
--- 3. Config: global kill-switch + per-channel daily caps (a single row, id=1).
+-- 3. Config: global kill-switch + dry-run + per-channel daily cap (a single row, id=1).
+--    RUN MECHANISM (owner decision 22 Oct): the CMS "Run due queue" BUTTON calls the
+--    Edge function on demand — NO pg_cron dependency. The button evaluates,
+--    in ONE place: kill_switch -> dry_run -> daily cap -> approve-only.
 CREATE TABLE IF NOT EXISTS public.social_config (
   id                 int PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   kill_switch        boolean NOT NULL DEFAULT true,   -- ship OFF; owner flips to enable
+  dry_run            boolean NOT NULL DEFAULT true,   -- run queue but DO NOT call Telegram; logs 'skipped' + the exact payload
   telegram_daily_cap int NOT NULL DEFAULT 20,
-  facebook_daily_cap int NOT NULL DEFAULT 20,
-  instagram_daily_cap int NOT NULL DEFAULT 25,        -- hard ceiling is IG's 100/24h (verified)
+  -- deferred to S7.2 (kept as comments so the decision is visible, not silent):
+  -- facebook_daily_cap  int NOT NULL DEFAULT 20,
+  -- instagram_daily_cap int NOT NULL DEFAULT 25,
   updated_at         timestamptz NOT NULL DEFAULT now(),
   updated_by         uuid REFERENCES auth.users(id)
 );
@@ -146,9 +172,11 @@ DROP POLICY IF EXISTS social_publish_log_staff_read ON public.social_publish_log
 CREATE POLICY social_publish_log_staff_read ON public.social_publish_log FOR SELECT TO authenticated
   USING (current_user_has_permission('manage_social'));
 
--- Daily-cap helper (called by the Edge function; counts today's sent per channel):
+-- Daily-cap helper (called by the Edge function when the CMS "Run due queue"
+-- button fires; counts today's sent per channel):
 --   SELECT count(*) FROM social_posts
 --   WHERE channel=$1 AND status='sent'
 --     AND last_attempt_at >= date_trunc('day', now());
 -- compared against social_config.<channel>_daily_cap. Kept as app/SQL logic, not a
--- trigger, so the kill-switch and caps are evaluated in ONE place (the function).
+-- trigger, so the kill-switch, dry-run and caps are evaluated in ONE place (the
+-- function) — and the only scheduler is the staff member who clicks the button.
