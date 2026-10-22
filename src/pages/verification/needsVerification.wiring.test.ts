@@ -37,7 +37,7 @@ describe("S3.2 verify write (CMS service)", () => {
 describe("S3.2 verify control (editor header)", () => {
   it("is wired: reasons from the shared lib, one exam at a time", () => {
     expect(page).toContain("verifyBlockReasons({");
-    expect(page).toContain("Verify this edition");
+    expect(page).toContain("Verify this exam");
     expect(page).toContain("Un-verify");
     expect(page).toContain('data-testid="verify-control"');
     expect(page).toContain("setExamVerification(exam.id, wantVerify, user?.id ?? null)");

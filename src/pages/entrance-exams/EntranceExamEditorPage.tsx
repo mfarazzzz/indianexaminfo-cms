@@ -1373,7 +1373,7 @@ export function EntranceExamEditorPage() {
                     onClick={() => void handleVerifyToggle(true)}
                     className="rounded bg-emerald-600 px-2 py-0.5 text-white hover:bg-emerald-700 disabled:opacity-50"
                   >
-                    Verify this edition
+                    Verify this exam
                   </button>
                 )}
               </div>

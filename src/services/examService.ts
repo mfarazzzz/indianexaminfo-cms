@@ -327,8 +327,8 @@ export async function unpublishExam(id: string): Promise<ExamEntity> {
 
 /**
  * Stamp or clear the editor verification on the RECORD (per-exam — D6
- * decision 4; the UI labels it "Verify this edition" because the editor always
- * works on the current cycle). verified_by is the acting user's uuid and stays
+ * decision 4; the UI labels it "Verify this exam"). verified_by is the acting
+ * user's uuid and stays
  * internal — the public page shows the team label, never a name.
  *
  * The app-layer assert is the FIRST layer. The database-level gate is the

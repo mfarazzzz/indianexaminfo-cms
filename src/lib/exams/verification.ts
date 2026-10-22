@@ -6,8 +6,8 @@
  *
  * Locked decisions (owner, 21 Oct):
  *  – Verification is PER EXAM (exams.is_verified/verified_at/verified_by); the
- *    action label says "Verify this edition" because the editor always works on
- *    the current cycle, but the stamp is on the record.
+ *    action label says "Verify this exam" — the stamp is on the record, never
+ *    on a single cycle.
  *  – Only a publish_exam holder may verify (CMS-layer assert first; the
  *    database-level trigger ships separately with the owner-approved proposal
  *    — copy must NOT claim DB enforcement until it is applied).
