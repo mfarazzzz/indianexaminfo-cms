@@ -118,4 +118,15 @@ describe("computeReaderCompleteness", () => {
     }
     expect(summarizeReaderCompleteness(rows)).toMatch(/filled/);
   });
+
+  it("marks pillar-inapplicable sections n/a, not empty/blocked", () => {
+    // university-exam has no vacancy / application-fee / selection-process reader section.
+    const rows = computeReaderCompleteness(form({ pillar: "university-exam" }), [], { nowISO: NOW, quickInfoCardEnabled: true });
+    for (const k of ["vacancy", "fee", "selection-process"]) {
+      expect(row(rows, k).status, k).toBe("n/a");
+    }
+    // and a section that DOES apply to university (faq, important-dates) is not n/a.
+    expect(row(rows, "faq").status).not.toBe("n/a");
+    expect(summarizeReaderCompleteness(rows)).toMatch(/n\/a/);
+  });
 });

@@ -26,6 +26,7 @@ const STATUS_META: Record<ReaderStatus, { label: string; dot: string; icon: type
   filled: { label: "filled", dot: "text-emerald-600", icon: CheckCircle2 },
   empty: { label: "no data", dot: "text-slate-400", icon: MinusCircle },
   blocked: { label: "blocked", dot: "text-amber-600", icon: ShieldAlert },
+  "n/a": { label: "n/a", dot: "text-slate-300", icon: MinusCircle },
 };
 
 export function ReaderCompletenessPanel({ rows, onJump }: Props) {

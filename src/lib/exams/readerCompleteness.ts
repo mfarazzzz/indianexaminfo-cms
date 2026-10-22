@@ -17,10 +17,10 @@
  * Read-only by construction: it takes plain values and returns rows. It never
  * fetches, never writes, and the panel renders no Save anywhere.
  */
-import { hasData, meaningfulFaqs, type HasDataView } from "@/lib/sectionRegistry";
+import { hasData, meaningfulFaqs, SECTION_BY_SLUG, type HasDataView } from "@/lib/sectionRegistry";
 import type { RailTabId } from "@/pages/entrance-exams/editorSections";
 
-export type ReaderStatus = "filled" | "empty" | "blocked";
+export type ReaderStatus = "filled" | "empty" | "blocked" | "n/a";
 
 export interface ReaderCompletenessRow {
   /** Stable key for tests and data-attrs. */
@@ -113,6 +113,14 @@ function moduleDisabled(view: ReaderFormView, slug: string): boolean {
  * THE panel rows, in the owner's order. Every row is computed from the same
  * predicate the reader uses; nothing is fetched or invented here.
  */
+/** True when the registry section is shown for this pillar at all. A column
+ *  section that does not apply to the pillar is NOT "no data" — it is simply not
+ *  a reader block here, so the panel says "n/a" rather than nagging to fill it. */
+function appliesToPillar(pillar: string, slug: string): boolean {
+  const def = SECTION_BY_SLUG[slug];
+  return def ? (def.appliesTo as string[]).includes(pillar) : true;
+}
+
 export function computeReaderCompleteness(
   form: ReaderFormView,
   updates: ReaderUpdateView[],
@@ -192,42 +200,54 @@ export function computeReaderCompleteness(
   });
 
   const fee = hasData(view, "application-fee");
+  const feeApplies = appliesToPillar(form.pillar, "application-fee");
   rows.push({
     key: "fee",
     label: "Application fee",
-    status: fee ? "filled" : (moduleDisabled(view, "application-fee") ? "blocked" : "empty"),
-    fixHint: "A ₹0 or blank row counts as no data; the section hides itself rather than render empty.",
+    status: !feeApplies ? "n/a" : fee ? "filled" : "empty",
+    fixHint: !feeApplies
+      ? "Not a reader section for this pillar — the exam page never shows a fee block."
+      : "A ₹0 or blank row counts as no data; the section hides itself rather than render empty.",
     targetTab: "edition",
   });
 
   const vac = hasData(view, "vacancy");
+  const vacApplies = appliesToPillar(form.pillar, "vacancy");
   rows.push({
     key: "vacancy",
     label: "Vacancy",
-    status: vac ? "filled" : "empty",
-    fixHint: "Set the Vacancy number under Dates & Status (0 = no data → row hidden).",
+    status: !vacApplies ? "n/a" : vac ? "filled" : "empty",
+    fixHint: !vacApplies
+      ? "Not a reader section for this pillar — the exam page never shows a vacancy block."
+      : "Set the Vacancy number under Dates & Status (0 = no data → row hidden).",
     targetTab: "edition",
   });
 
   const sel = hasData(view, "selection-process");
+  const selApplies = appliesToPillar(form.pillar, "selection-process");
   rows.push({
     key: "selection-process",
     label: "Selection process",
-    status: sel ? "filled" : "empty",
-    fixHint: "The stages list lives on the Identity tab (exams.selection_process); empty list → the card never renders.",
+    status: !selApplies ? "n/a" : sel ? "filled" : "empty",
+    fixHint: !selApplies
+      ? "Not a reader section for this pillar."
+      : "The stages list lives on the Identity tab (exams.selection_process); empty list → the card never renders.",
     targetTab: "identity",
   });
 
   const steps = ((view.contentModules?.["application-process"] ?? {}) as { steps?: unknown[] }).steps;
   const hasSteps = Array.isArray(steps) && steps.length > 0;
   const apDisabled = moduleDisabled(view, "application-process");
+  const apApplies = appliesToPillar(form.pillar, "application-process");
   rows.push({
     key: "how-to-steps",
     label: "How-to steps",
-    status: hasSteps && !apDisabled ? "filled" : apDisabled ? "blocked" : "empty",
-    fixHint: apDisabled
-      ? "The Modules tab has Application Process switched OFF (enabledModules) — the reader cannot see it until re-enabled."
-      : "Add steps to the Application Process module in the Modules tab.",
+    status: !apApplies ? "n/a" : hasSteps && !apDisabled ? "filled" : apDisabled ? "blocked" : "empty",
+    fixHint: !apApplies
+      ? "Not a reader section for this pillar."
+      : apDisabled
+        ? "The Modules tab has Application Process switched OFF (enabledModules) — the reader cannot see it until re-enabled."
+        : "Add steps to the Application Process module in the Modules tab.",
     targetTab: "modules",
   });
 
@@ -282,9 +302,11 @@ export function computeReaderCompleteness(
   return rows;
 }
 
-/** Compact summary for the panel header, e.g. "9 filled · 3 empty · 1 blocked". */
+/** Compact summary for the panel header, e.g. "9 filled · 3 empty · 1 blocked · 2 n/a". */
 export function summarizeReaderCompleteness(rows: ReaderCompletenessRow[]): string {
-  const c = { filled: 0, empty: 0, blocked: 0 };
+  const c = { filled: 0, empty: 0, blocked: 0, "n/a": 0 };
   for (const r of rows) c[r.status] += 1;
-  return `${c.filled} filled · ${c.empty} empty · ${c.blocked} blocked`;
+  const parts = [`${c.filled} filled`, `${c.empty} empty`, `${c.blocked} blocked`];
+  if (c["n/a"] > 0) parts.push(`${c["n/a"]} n/a`);
+  return parts.join(" · ");
 }
