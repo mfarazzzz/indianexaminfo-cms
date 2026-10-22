@@ -57,6 +57,9 @@ import { SyllabusResourcePicker } from "@/components/entrance-exams/SyllabusReso
 import { SyllabusTab } from "@/components/entrance-exams/SyllabusTab";
 // R2.1 (editor shell, CMS only): the section rail and its registry-driven data.
 import { EditorSectionRail } from "@/components/entrance-exams/EditorSectionRail";
+import { ReaderCompletenessPanel } from "@/components/entrance-exams/ReaderCompletenessPanel";
+import { computeReaderCompleteness, type ReaderFormView, type ReaderUpdateView } from "@/lib/exams/readerCompleteness";
+import { listExamUpdates } from "@/services/examUpdatesService";
 import { buildRail, type RailItem } from "@/pages/entrance-exams/editorSections";
 import { getModuleRegistry } from "@/services/moduleRegistryService";
 
@@ -192,6 +195,10 @@ export function EntranceExamEditorPage() {
   // THIS pillar. A failed read leaves it empty and every tab usable — the shell
   // must never stop an editor working because a navigation list did not load.
   const [railItems, setRailItems] = useState<RailItem[]>([]);
+  // "What readers will see": the exam's own updates, read-only, for the panel.
+  // A failed read leaves it empty and the panel still computes the rest — the
+  // checklist is a view, never a blocker.
+  const [readerUpdates, setReaderUpdates] = useState<ReaderUpdateView[]>([]);
   const [showNewEdition, setShowNewEdition] = useState(false);
   // A1: in-flight guard so a double-click on "Create Edition" cannot fire two
   // startNewEdition calls (the second hit the unique key and toasted an error).
@@ -430,6 +437,19 @@ export function EntranceExamEditorPage() {
   }, [id, isNew, form, navigate]);
 
   useEffect(() => { loadExam(); }, [loadExam]);
+
+  // Read-only fetch for the reader checklist. The Updates panel writes through
+  // this same service, so a publish there is reflected after the next save or
+  // reload — the panel never claims a live publish it has not re-read.
+  useEffect(() => {
+    const eid = exam?.id;
+    if (!eid) { setReaderUpdates([]); return; }
+    let cancelled = false;
+    listExamUpdates(eid)
+      .then((u) => { if (!cancelled) setReaderUpdates(u.map((x) => ({ status: x.status, kind: x.kind, expiresAt: x.expiresAt, quickLinks: x.quickLinks, attachmentUrls: x.attachmentUrls }))); })
+      .catch(() => { if (!cancelled) setReaderUpdates([]); });
+    return () => { cancelled = true; };
+  }, [exam?.id]);
 
   const handleSave = async (data: FormData) => {
     // Reject a website value that can't normalise to a single valid URL, rather
@@ -1449,6 +1469,60 @@ export function EntranceExamEditorPage() {
           dirty={{ formDirty, moduleDirty, newsDirty }}
         />
         <div className="flex-1 min-w-0">
+      {/* Item 2 (owner brief 22 Oct): "What readers will see" — read-only,
+          computed from the SAME predicates the frontend applies (mirrored
+          hasData + live-update filters + attested-URL rule). A row click jumps
+          THROUGH the unsaved-changes guard, exactly like the rail. */}
+      {exam && (
+        <div className="mb-3">
+          <ReaderCompletenessPanel
+            rows={computeReaderCompleteness(
+              (() => {
+                // Current form state wins over the loaded record while there are
+                // unsaved edits, so the checklist mirrors what the editor sees.
+                const v = form.getValues() as Record<string, unknown>;
+                return formDirty || moduleDirty
+                  ? {
+                      pillar: exam.pillar,
+                      conductingBody: (v.conductingBody as string) ?? exam.conductingBody,
+                      officialWebsite: (v.officialWebsite as string) ?? exam.officialWebsite,
+                      cycleFrequency: (v.cycleFrequency as string) ?? exam.cycleFrequency,
+                      dates: (v.importantDates as ReaderFormView["dates"]) ?? null,
+                      eligibility: (v.eligibility as ReaderFormView["eligibility"]) ?? null,
+                      vacancy: v.vacancy ? Number(v.vacancy) : null,
+                      applicationFee: (v.applicationFee as ReaderFormView["applicationFee"]) ?? null,
+                      selectionProcess: exam.selectionProcess,
+                      faqs: (v.faqs as ReaderFormView["faqs"]) ?? null,
+                      contentModules: (moduleDirty ? (pendingModulesRef.current as Record<string, unknown> | null) : currentEdition?.contentModules ?? null),
+                      isVerified: Boolean(verifiedStamp),
+                      verifiedAt: verifiedStamp,
+                    }
+                  : {
+                      pillar: exam.pillar,
+                      conductingBody: exam.conductingBody,
+                      officialWebsite: exam.officialWebsite,
+                      cycleFrequency: exam.cycleFrequency,
+                      dates: currentEdition?.importantDates ?? [],
+                      eligibility: (currentEdition?.eligibility as ReaderFormView["eligibility"]) ?? null,
+                      vacancy: currentEdition?.vacancy ?? null,
+                      applicationFee: (currentEdition?.applicationFee as ReaderFormView["applicationFee"]) ?? null,
+                      selectionProcess: exam.selectionProcess,
+                      faqs: exam.faqs,
+                      contentModules: currentEdition?.contentModules ?? null,
+                      isVerified: exam.isVerified,
+                      verifiedAt: exam.verifiedAt,
+                    };
+              })(),
+              readerUpdates,
+              // quickInfoCardEnabled stays false until the reader facts card
+              // ships (mock gap audit, same review batch) — the panel must not
+              // claim a block the frontend does not render yet.
+              { nowISO: new Date().toISOString(), quickInfoCardEnabled: false },
+            )}
+            onJump={guardedSetActiveTab}
+          />
+        </div>
+      )}
       {/* Tabs */}
       <div className="flex gap-0 border-b border-slate-200 bg-white rounded-t-lg overflow-x-auto">
         {tabs.map((tab) => (
