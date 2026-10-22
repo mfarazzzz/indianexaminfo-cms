@@ -1514,10 +1514,10 @@ export function EntranceExamEditorPage() {
                     };
               })(),
               readerUpdates,
-              // quickInfoCardEnabled stays false until the reader facts card
-              // ships (mock gap audit, same review batch) — the panel must not
-              // claim a block the frontend does not render yet.
-              { nowISO: new Date().toISOString(), quickInfoCardEnabled: false },
+              // The reader facts card SHIPPED (frontend 14555b5, mock gap audit
+              // 22 Oct) — QuickInfoCard renders from conductingBody /
+              // cycleFrequency / officialWebsite, so the row is live.
+              { nowISO: new Date().toISOString(), quickInfoCardEnabled: true },
             )}
             onJump={guardedSetActiveTab}
           />
