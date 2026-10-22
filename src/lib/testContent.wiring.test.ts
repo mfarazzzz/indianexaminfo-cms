@@ -29,4 +29,12 @@ describe("CMS excludes/badges reference TEST rows", () => {
       expect(src, p).toContain("TestBadge");
     }
   });
+
+  it("the dashboard aggregates exclude reference TEST rows", () => {
+    const dash = read("../pages/dashboard/DashboardPage.tsx");
+    // every exams/content_posts count + the two recent-activity lists are guarded
+    expect((dash.match(/.not\("slug", "like", TEST_SLUG_LIKE\)/g) || []).length).toBeGreaterThanOrEqual(9);
+    // the pending-review badge is real-content only
+    expect(read("../services/contentService.ts")).toContain('.not("slug", "like", TEST_SLUG_LIKE)');
+  });
 });

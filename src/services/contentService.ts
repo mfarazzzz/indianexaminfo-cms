@@ -1,6 +1,7 @@
 import { db } from "@/lib/supabase/client";
 import type { ContentPost, ContentType } from "@/types/exam";
 import { sanitizeHtml } from "@/lib/utils";
+import { TEST_SLUG_LIKE } from "@/lib/testContent";
 
 export type { ContentPost };
 
@@ -132,6 +133,7 @@ export async function deleteContentPost(id: string): Promise<void> {
 }
 
 export async function getReviewCount(): Promise<number> {
-  const { count } = await db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "review");
+  // Real content only — reference TEST posts never inflate the pending-review badge.
+  const { count } = await db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "review").not("slug", "like", TEST_SLUG_LIKE);
   return count ?? 0;
 }

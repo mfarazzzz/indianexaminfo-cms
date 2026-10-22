@@ -11,6 +11,7 @@ import { SITE } from "@/config/site";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { formatDate, timeAgo } from "@/lib/utils";
+import { TEST_SLUG_LIKE } from "@/lib/testContent";
 
 interface Stats {
   totalExams: number;
@@ -58,21 +59,21 @@ export function DashboardPage() {
           publishedContentTodayRes, publishedBlogTodayRes, publishedSarkariTodayRes,
           draftsRes, entranceRes, boardRes, universityRes, taxonomyRes,
         ] = await Promise.all([
-          db.from("exams").select("id", { count: "exact", head: true }),
-          db.from("content_posts").select("id", { count: "exact", head: true }),
+          db.from("exams").select("id", { count: "exact", head: true }).not("slug", "like", TEST_SLUG_LIKE),
+          db.from("content_posts").select("id", { count: "exact", head: true }).not("slug", "like", TEST_SLUG_LIKE),
           db.from("blog_posts").select("id", { count: "exact", head: true }),
           db.from("categories").select("id", { count: "exact", head: true }),
-          db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "review"),
+          db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "review").not("slug", "like", TEST_SLUG_LIKE),
           db.from("sarkari_naukri").select("id", { count: "exact", head: true }).eq("recruitment_type", "exam"),
           db.from("sarkari_naukri").select("id", { count: "exact", head: true }).eq("recruitment_type", "direct"),
           db.from("cms_education_news").select("id", { count: "exact", head: true }),
-          db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "published").gte("published_at", startOfTodayIso),
+          db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "published").gte("published_at", startOfTodayIso).not("slug", "like", TEST_SLUG_LIKE),
           db.from("blog_posts").select("id", { count: "exact", head: true }).eq("status", "published").gte("published_at", startOfTodayIso),
           db.from("sarkari_naukri").select("id", { count: "exact", head: true }).eq("workflow_status", "published").gte("published_at", startOfTodayIso),
-          db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "draft"),
-          db.from("exams").select("id", { count: "exact", head: true }).eq("pillar", "entrance-exam"),
-          db.from("exams").select("id", { count: "exact", head: true }).eq("pillar", "board-exam"),
-          db.from("exams").select("id", { count: "exact", head: true }).eq("pillar", "university-exam"),
+          db.from("content_posts").select("id", { count: "exact", head: true }).eq("status", "draft").not("slug", "like", TEST_SLUG_LIKE),
+          db.from("exams").select("id", { count: "exact", head: true }).eq("pillar", "entrance-exam").not("slug", "like", TEST_SLUG_LIKE),
+          db.from("exams").select("id", { count: "exact", head: true }).eq("pillar", "board-exam").not("slug", "like", TEST_SLUG_LIKE),
+          db.from("exams").select("id", { count: "exact", head: true }).eq("pillar", "university-exam").not("slug", "like", TEST_SLUG_LIKE),
           db.from("taxonomy_nodes").select("id", { count: "exact", head: true }),
         ]);
 
@@ -98,8 +99,8 @@ export function DashboardPage() {
 
         // Recent activity
         const [recentExams, recentContent, recentBlog, recentSarkari, recentNews] = await Promise.all([
-          db.from("exams").select("id, name, slug, status, updated_at").order("updated_at", { ascending: false }).limit(3),
-          db.from("content_posts").select("id, title, slug, status, updated_at").order("updated_at", { ascending: false }).limit(3),
+          db.from("exams").select("id, name, slug, status, updated_at").not("slug", "like", TEST_SLUG_LIKE).order("updated_at", { ascending: false }).limit(3),
+          db.from("content_posts").select("id, title, slug, status, updated_at").not("slug", "like", TEST_SLUG_LIKE).order("updated_at", { ascending: false }).limit(3),
           db.from("blog_posts").select("id, title, slug, status, updated_at").order("updated_at", { ascending: false }).limit(3),
           db.from("sarkari_naukri").select("id, title, slug, recruitment_type, workflow_status, updated_at").order("updated_at", { ascending: false }).limit(4),
           db.from("cms_education_news").select("id, title, slug, status, updated_at").order("updated_at", { ascending: false }).limit(3),
