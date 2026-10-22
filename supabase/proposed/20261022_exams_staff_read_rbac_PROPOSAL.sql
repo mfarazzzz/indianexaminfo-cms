@@ -1,0 +1,146 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PROPOSAL (NOT APPLIED) — exams RLS: replace the broad staff-read with RBAC
+-- Date: 2026-10-22. Owner brief: same RBAC style as pages (20261022084512),
+-- anon = published only. PROPOSAL ONLY — apply ONLY on explicit order.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- WHAT THE LIVE SCHEMA SHOWS (pg_policy, re-read this session; verbatim qual)
+--
+--   staff_read_all_exams      SELECT  roles={public}(all)   qual: (auth.uid() IS NOT NULL)
+--   public_read_published_exams SELECT roles={public}(all)   qual: (is_published = true)
+--   exams_insert              INSERT  roles={authenticated} with_check: (RBAC, see pg_policy)
+--   exams_update              UPDATE  roles={authenticated} qual: (edit_any_exam OR (created_by = auth.uid() AND create_exam))
+--   admin_delete_exams        DELETE  roles={public}(all)   qual: (current_user_role() IN ('super-admin','admin'))
+--
+-- THE HOLE: staff_read_all_exams lets ANY authenticated user — including a role
+-- with ZERO permissions — read EVERY exam, drafts included. The UPDATE gate
+-- already uses the RBAC table (edit_any_exam / own-record create_exam); the
+-- SELECT gate never caught up. This mirrors exactly what we fixed for pages.
+--
+-- THE REPLACEMENT (two branches, one statement):
+--   1) edit_any_exam  -> read every exam  (the staff/admin/triage case);
+--   2) created_by = auth.uid() -> read YOUR OWN record even with no staff right
+--      (mirrors the existing UPDATE policy's own-record branch, so a
+--      create_exam-only writer never loses sight of the draft it is editing).
+-- Public read is UNCHANGED: public_read_published_exams (is_published=true)
+-- also applies to every role, so authenticated non-staff still see PUBLISHED
+-- exams — anon and the frontend behave exactly as before.
+--
+-- ALTERNATIVE (strict pages-mirror, single branch):
+--   USING (public.current_user_has_permission('edit_any_exam'));
+--   Rejected for this proposal because it drops branch 2: a create_exam-only
+--   writer would read ZERO rows on its own draft (the editor's getExamById
+--   returns nothing, the save flow's duplicate guard can't see its own record).
+--   Owner may still choose it; the checks below cover both shapes.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- DEPENDENCY INVENTORY (read-only survey of BOTH repos — what reads exams, and
+-- what changes under the new policy). Nothing here was modified.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- FRONTEND (indianexaminfo-frontend) — NO REGRESSION, BY KEY CHOICE:
+--   lib/supabase/server.ts createServerClient() uses the ANON key
+--   (NEXT_PUBLIC_SUPABASE_ANON_KEY); no createBrowserClient / authenticated
+--   Supabase client exists anywhere in the frontend. Anon never matched
+--   staff_read_all_exams' authenticated-only TO clause; published reads ride
+--   public_read_published_exams, which this proposal does not touch.
+--   Affected readers, all anon-key: services/examService.ts (all pages, hubs,
+--   nav menus via lib, sitemap exam URLs, JSON-LD), services/contentPostService.ts
+--   (exam embed), services/sarkariNaukriService.ts. ISB (exam_derived_status)
+--   is a VIEW owned by postgres (bypasses RLS) — unaffected.
+-- CMS (indianexaminfo-cms) — authenticated user clients, RLS APPLIES:
+--   services/entranceExamService.ts — the shared editor for entrance/board/
+--     university lists+detail: getEntranceExams (list), getEntranceExam (edit
+--     load), the slug/name/short-name DUPLICATE-GUARD reads inside the create
+--     flow, edition flows. Under the new policy: staff with edit_any_exam see
+--     everything as today; a create_exam-only writer keeps seeing its OWN
+--     records (branch 2) + all published, but duplicate-guard matches against
+--     OTHER people's drafts disappear (flagged below).
+--   services/examService.ts — govt-exam list/detail, setExamVerification, the
+--     D6 triage query (is_verified false/NULL + lost-cycle reads). Triage needs
+--     edit_any_exam to see drafts — verify the triage role holds it (count
+--     query below) before applying.
+--   services/pillarService.ts — generic pillar list/detail/save/duplicate-slug
+--     check (same pattern as above).
+--   services/syllabusService.ts — per-exam weightage read (editor context).
+--   services/settingsService.ts — total exams COUNT on the settings page:
+--     drops from 398 to (published + own) for roles WITHOUT edit_any_exam.
+--   src/lib/utils/excelBulkOps.ts — bulk ops: already write-gated by RBAC; the
+--     read side gains nothing it could legally act on.
+--   services/derivedStatusService.ts — reads the VIEW, not the table: unaffected.
+--   services/examUpdatesService.ts — reads content_posts (own policies):
+--     unaffected.
+--   BEHAVIOUR CHANGES TO ACCEPT CONSCIOUSLY:
+--   a) zero-permission authenticated users (no role grants) lose visibility of
+--      ALL non-published exams — that is the hole being closed;
+--   b) create_exam-only writers: duplicate detection at creation time no longer
+--      surfaces other staff members' DRAFT exams (published + own still match);
+--   c) settings count card reads lower for non-staff roles.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- LIVE COUNTS — PENDING: the Supabase MCP went un-authenticated (OAuth) while
+-- this proposal was written, so the numbers were NOT re-read this session. Run
+-- these read-only queries (or ask the agent after reconnecting) and paste the
+-- results above this line before applying:
+--   SELECT count(*) FILTER (WHERE is_published)               AS published,
+--          count(*) FILTER (WHERE NOT is_published OR is_published IS NULL) AS drafts_unpublished,
+--          count(*)                                           AS total
+--   FROM public.exams;                                        -- total: RE-READ LIVE at apply time (the 22-Oct audit reported 398 but that figure is NOT re-verified in this session; MCP was OAuth-blocked)
+--   -- who keeps full read (should include every role that uses the editor/triage):
+--   SELECT rl.slug, bool_or(p.slug='edit_any_exam') AS has_edit_any_exam
+--   FROM public.roles rl LEFT JOIN public.role_permissions rp ON rp.role_id=rl.id
+--   LEFT JOIN public.permissions p ON p.id=rp.permission_id GROUP BY 1 ORDER BY 1;
+--   -- users per branch (positive/negative subjects for the checks):
+--   SELECT u.id, up.is_active, rl.slug AS role FROM auth.users u
+--   JOIN public.user_profiles up ON up.id=u.id JOIN public.roles rl ON rl.id=up.role_id
+--   WHERE up.is_active ORDER BY rl.slug;
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- THE FIX (run as ONE migration; DROP + CREATE, no transaction wrapper needed):
+
+DROP POLICY IF EXISTS staff_read_all_exams ON public.exams;
+
+CREATE POLICY staff_read_exams_rbac ON public.exams
+  FOR SELECT TO authenticated
+  USING (
+    public.current_user_has_permission('edit_any_exam')
+    OR created_by = auth.uid()
+  );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- APPLY-TIME CHECKS — ONE transaction ending in a forced-abort RAISE carrying
+-- the evidence (the proven pattern: verify trigger 20261022031508, pages
+-- 20261022084512), so nothing persists. Subjects must be REAL users resolved
+-- by the count queries above: S1 = active user WITH edit_any_exam; S2 = active
+-- user WITHOUT it that OWNS >=1 unpublished exam (created_by); S3 = active user
+-- WITHOUT it that owns nothing. NOTE: counts depend on the live data at run
+-- time — compute the expectations in the same transaction from the table
+-- itself (as below) instead of hard-coding.
+--
+--   BEGIN;
+--   DROP POLICY staff_read_all_exams; CREATE POLICY staff_read_exams_rbac ...;
+--   -- POSITIVE (S1 reads everything):
+--   SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claims = '{"sub":"<S1>","role":"authenticated"}';
+--   EXECUTE 'SELECT count(*) FROM public.exams'                      -- expect = total (live)
+--   -- POSITIVE 2 (S2 still sees own drafts + all published):
+--   SET LOCAL request.jwt.claims = '{"sub":"<S2>","role":"authenticated"}';
+--   EXECUTE 'SELECT count(*) FROM public.exams'
+--     -- expect = published + own_unpublished (compute both in-script and assert equality)
+--   -- NEGATIVE (S3 without edit_any_exam sees published ONLY):
+--   SET LOCAL request.jwt.claims = '{"sub":"<S3>","role":"authenticated"}';
+--   EXECUTE 'SELECT count(*) FROM public.exams'                      -- expect = published
+--   -- NEUTRAL (anon unchanged, published only — rides public_read_published_exams):
+--   SET LOCAL ROLE anon; SET LOCAL request.jwt.claims = '{"role":"anon"}';
+--   EXECUTE 'SELECT count(*) FROM public.exams'                      -- expect = published
+--   -- RAISE 'EVIDENCE %' ... at the end => whole transaction aborts.
+--
+-- Post-apply live proof (separate read-only call):
+--   SELECT policyname, cmd, qual FROM pg_policies WHERE tablename='exams';
+--   -- expect staff_read_exams_rbac present, staff_read_all_exams ABSENT.
+--   -- CMS spot-check as S1: exam list + editor load unchanged; as S3: the
+--   -- dashboard count card drops to published-only (documented change b/c).
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ROLLBACK (restore the previous state verbatim):
+--   DROP POLICY IF EXISTS staff_read_exams_rbac ON public.exams;
+--   CREATE POLICY staff_read_all_exams ON public.exams
+--     FOR SELECT TO authenticated
+--     USING (auth.uid() IS NOT NULL);
+-- ─────────────────────────────────────────────────────────────────────────────
