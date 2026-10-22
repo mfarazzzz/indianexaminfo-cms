@@ -265,15 +265,17 @@ export function computeReaderCompleteness(
     targetTab: "identity",
   });
 
+  // FAQs render from the exams.faqs COLUMN (FaqsSummary + hasData both read the
+  // column), so enabledModules does NOT gate them — a record with meaningful FAQs
+  // always shows them. (The reader never hides FAQs via the module toggle.)
   const faqCount = meaningfulFaqs(form.faqs ?? []).length;
-  const faqsDisabled = moduleDisabled(view, "faqs");
   rows.push({
     key: "faq",
     label: "FAQ (details/summary)",
-    status: faqCount > 0 && !faqsDisabled ? "filled" : faqsDisabled ? "blocked" : "empty",
-    fixHint: faqCount === 0
-      ? "Add Q&A pairs in the SEO tab (exams.faqs). Placeholder answers ('N/A', 'not specified'…) count as NO data."
-      : `${faqCount} meaningful answer${faqCount === 1 ? "" : "s"} render as expandable <details>.`,
+    status: faqCount > 0 ? "filled" : "empty",
+    fixHint: faqCount > 0
+      ? `${faqCount} meaningful answer${faqCount === 1 ? "" : "s"} render as expandable <details>.`
+      : "Add Q&A pairs in the SEO tab (exams.faqs). Placeholder answers ('N/A', 'not specified'…) count as NO data.",
     targetTab: "seo",
   });
 
