@@ -20,6 +20,7 @@ import { ConductingBodySelect } from '@/components/shared/ConductingBodySelect'
 import { TaxonomyTooltip } from '@/components/shared/TaxonomyTooltip'
 import { ReadOnlyDateChip } from '@/components/shared/ReadOnlyDateChip'
 import { DuplicateWarningBanner } from '@/components/entity-editor/DuplicateWarningBanner'
+import { EvergreenNameHint } from '@/components/entity-editor/EvergreenNameHint'
 import { STANDARD_DATE_TYPES } from '@/types/entity'
 import {
   FormField as Field, FieldGroup, SectionHeader, inputCls,
@@ -220,6 +221,8 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
                 </span>
               </div>
             </Field>
+            {/* Soft, non-blocking: the year belongs to the edition, not the identity. */}
+            <EvergreenNameHint name={name} />
           </div>
 
           <Field label="Short Name" error={errors.shortName?.message}>
