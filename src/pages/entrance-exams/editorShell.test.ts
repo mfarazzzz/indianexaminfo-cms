@@ -154,8 +154,16 @@ describe('R2.1 the rail dirty dots read the guard, never their own opinion', () 
 
 describe('R2.1 the rail navigates and does nothing else', () => {
   it('the page routes the rail through the ONE unsaved-changes guard', () => {
-    expect(pageSrc).toContain('onSection={guardedSetActiveTab}')
+    // P2 item 17: the rail now goes through jumpToFix, which DELEGATES the tab change to
+    // guardedSetActiveTab and then scrolls to the section — the guard is still the only
+    // way a tab changes, so the assertion follows the call and pins the delegation.
+    expect(pageSrc).toContain('onSection={jumpToFix}')
+    expect(pageSrc).toMatch(/const jumpToFix = useCallback\(\([\s\S]{0,400}?guardedSetActiveTab\(to\)/)
     expect(pageSrc).toContain('<EditorSectionRail')
+  })
+
+  it('a rail click carries its section slug so the tab scrolls to that section (P2 item 17)', () => {
+    expect(railSrc).toContain('onSection(item.tabId, item.slug)')
   })
 
   it('the rail holds no state, fires no request and saves nothing (navigation only)', () => {

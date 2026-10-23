@@ -163,8 +163,12 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-4 px-2">
+      {/* Nav — `min-h-0` is the fix for the clipped list (P2 item 18): a flex item's
+          default min-height is its CONTENT height, so `flex-1 overflow-y-auto` alone
+          never actually scrolls — the list grew past the viewport and the last group
+          (and the footer) were pushed off screen. With min-height: 0 the nav takes the
+          space between the header and the footer and scrolls inside it. */}
+      <nav className="min-h-0 flex-1 overflow-y-auto py-4 px-2" data-testid="sidebar-nav">
         {NAV_GROUPS.map((group) => {
           if (!canSeeGroup(group)) return null;
           const visibleItems = group.items.filter(canSeeItem);

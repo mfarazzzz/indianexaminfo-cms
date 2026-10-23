@@ -122,7 +122,12 @@ export function ContentModuleCard({
   };
 
   return (
-    <div className={`border rounded-lg transition-colors ${enabled ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50/50"} ${isDragging ? "opacity-60 shadow-lg" : ""}`}>
+    // data-fix-target lets the "What readers will see" panel's Fix button land on THIS
+    // module after switching to the Modules tab (P2 item 15). It is a hook, never a style.
+    <div
+      data-fix-target={module.slug}
+      className={`border rounded-lg transition-colors ${enabled ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50/50"} ${isDragging ? "opacity-60 shadow-lg" : ""}`}
+    >
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2.5">
         {/* Real drag handle — ONLY for reorderable (Group B) rows. No handle = not reorderable. */}

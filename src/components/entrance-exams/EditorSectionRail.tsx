@@ -18,7 +18,13 @@ interface Props {
   items: RailItem[];
   /** the tab currently open — every section pointing at it reads as current. */
   activeTab: string;
-  onSection: (tabId: RailTabId) => void;
+  /**
+   * Switch to the tab AND, when the section has a surface on it, scroll to it.
+   * `sectionSlug` is the module_registry slug the parent matches against a
+   * data-fix-target on the card that edits that section (P2 item 17), so a rail
+   * click lands the editor on the thing they named, not at the top of a tab.
+   */
+  onSection: (tabId: RailTabId, sectionSlug?: string) => void;
   dirty: DirtyFlags;
 }
 
@@ -42,7 +48,7 @@ export function EditorSectionRail({ items, activeTab, onSection, dirty }: Props)
             <li key={item.slug} data-testid={`rail-item-${item.slug}`}>
               <button
                 type="button"
-                onClick={() => onSection(item.tabId)}
+                onClick={() => onSection(item.tabId, item.slug)}
                 aria-current={current ? "page" : undefined}
                 title={item.label}
                 className={`w-full flex items-center gap-1.5 text-left px-3 py-1.5 text-[13px] leading-snug border-l-2 ${

@@ -30,15 +30,18 @@ interface CardShellProps {
   subtitle?: string;
   forceCollapsed?: boolean;
   status: SaveStatus;
+  /** Stable hook so the "What readers will see" panel's Fix button can focus this card
+   *  after switching to the Modules tab (P2 item 15). */
+  fixTarget?: string;
   children: React.ReactNode;
 }
 
-function CardShell({ title, subtitle, forceCollapsed, status, children }: CardShellProps) {
+function CardShell({ title, subtitle, forceCollapsed, status, fixTarget, children }: CardShellProps) {
   const [open, setOpen] = useState(true);
   useEffect(() => { if (forceCollapsed) setOpen(false); }, [forceCollapsed]);
 
   return (
-    <div className="rounded border border-slate-200 bg-white">
+    <div className="rounded border border-slate-200 bg-white" data-fix-target={fixTarget}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -93,7 +96,7 @@ export function EligibilityCard({ editionId, edition, forceCollapsed, onStatusCh
   };
 
   return (
-    <CardShell title="Eligibility" subtitle="edition column" forceCollapsed={forceCollapsed} status={status}>
+    <CardShell title="Eligibility" subtitle="edition column" forceCollapsed={forceCollapsed} status={status} fixTarget="eligibility">
       <div className="space-y-3">
         <Field label="Educational Qualification" value={fields.qualification} onChange={(v) => handleChange("qualification", v)}
           placeholder="e.g. Graduate with 50% marks" />
@@ -161,7 +164,7 @@ export function ApplicationFeeCard({ editionId, edition, forceCollapsed, onStatu
   };
 
   return (
-    <CardShell title="Application Fee" subtitle="edition column" forceCollapsed={forceCollapsed} status={status}>
+    <CardShell title="Application Fee" subtitle="edition column" forceCollapsed={forceCollapsed} status={status} fixTarget="application-fee">
       <div className="grid grid-cols-2 gap-2">
         {FEE_CATEGORIES.map(({ key, label }) => (
           <div key={key}>
@@ -217,7 +220,7 @@ export function SelectionProcessCard({ examId, exam, forceCollapsed, onStatusCha
   };
 
   return (
-    <CardShell title="Selection Process" subtitle="exam column" forceCollapsed={forceCollapsed} status={status}>
+    <CardShell title="Selection Process" subtitle="exam column" forceCollapsed={forceCollapsed} status={status} fixTarget="selection-process">
       <div className="space-y-1.5">
         {stages.map((stage, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -277,7 +280,7 @@ export function FaqsCard({ examId, exam, forceCollapsed, onStatusChange, onPendi
   };
 
   return (
-    <CardShell title="FAQs" subtitle="exam column" forceCollapsed={forceCollapsed} status={status}>
+    <CardShell title="FAQs" subtitle="exam column" forceCollapsed={forceCollapsed} status={status} fixTarget="faqs">
       <div className="space-y-3">
         {faqs.map((faq, i) => (
           <div key={i} className="rounded border border-slate-100 p-2 space-y-1.5">

@@ -8,6 +8,9 @@ import { describe, it, expect } from "vitest";
 import {
   computeReaderCompleteness,
   isLiveUpdateView,
+  readerVisibleUpdates,
+  supersededUpdateIds,
+  orderRowsForFixFirst,
   summarizeReaderCompleteness,
   type ReaderFormView,
   type ReaderUpdateView,
@@ -128,5 +131,64 @@ describe("computeReaderCompleteness", () => {
     // and a section that DOES apply to university (faq, important-dates) is not n/a.
     expect(row(rows, "faq").status).not.toBe("n/a");
     expect(summarizeReaderCompleteness(rows)).toMatch(/n\/a/);
+  });
+
+  it("a SUPERSEDED update no longer counts as reader-visible (matches partitionUpdates)", () => {
+    const set: ReaderUpdateView[] = [
+      { id: "old", status: "published", kind: "provisional", quickLinks: [{ label: "Download Admit Card", url: "https://x/old" }] },
+      { id: "new", status: "published", kind: "final", supersedesId: "old", quickLinks: [{ label: "Download Admit Card", url: "https://x/new" }] },
+    ];
+    expect([...supersededUpdateIds(set)]).toEqual(["old"]);
+    expect(readerVisibleUpdates(set, NOW).map((u) => u.id)).toEqual(["new"]);
+    const rows = computeReaderCompleteness(form(), set, { nowISO: NOW });
+    expect(row(rows, "updates-timeline").fixHint).toContain("1 live update");
+    // the whole set superseded away → the panel must not claim a timeline
+    const onlyOld: ReaderUpdateView[] = [{ id: "a", status: "published" }, { id: "b", status: "published", supersedesId: "a" }];
+    expect(readerVisibleUpdates([onlyOld[0]], NOW)).toHaveLength(1); // no edge inside the set
+    expect(row(computeReaderCompleteness(form(), [onlyOld[0], onlyOld[1]], { nowISO: NOW }), "updates-timeline").status).toBe("filled");
+  });
+
+  it("the Vacancy row agrees with whether the page renders a Vacancy section", () => {
+    // pillar WITH the section: the column drives it
+    expect(row(computeReaderCompleteness(form({ vacancy: 500 }), [], { nowISO: NOW }), "vacancy").status).toBe("filled");
+    expect(row(computeReaderCompleteness(form({ vacancy: 0 }), [], { nowISO: NOW }), "vacancy").status).toBe("empty");
+    // pillar WITHOUT the registry section, but the module carries prose → the block
+    // still paints a section, so the row may not say "n/a".
+    const uniWithProse = form({
+      pillar: "university-exam",
+      vacancy: 0,
+      contentModules: { "vacancy-details": { body: "<p>Seat matrix detail.</p>" }, _config: { enabledModules: ["vacancy-details"] } },
+    });
+    expect(row(computeReaderCompleteness(uniWithProse, [], { nowISO: NOW }), "vacancy").status).toBe("filled");
+    // same, module disabled by the editor → blocked, with the reason in the hint
+    const uniOff = form({
+      pillar: "university-exam",
+      vacancy: 0,
+      contentModules: { "vacancy-details": { body: "<p>Seat matrix detail.</p>" }, _config: { enabledModules: ["overview"] } },
+    });
+    const r = row(computeReaderCompleteness(uniOff, [], { nowISO: NOW }), "vacancy");
+    expect(r.status).toBe("blocked");
+    expect(r.fixHint).toContain("switched OFF");
+  });
+});
+
+describe("orderRowsForFixFirst (P2 item 15 panel order)", () => {
+  it("blocked, then empty, then n/a, then filled — original order kept inside a group", () => {
+    const rows = computeReaderCompleteness(form(), [], { nowISO: NOW, quickInfoCardEnabled: true });
+    const ordered = orderRowsForFixFirst(rows);
+    expect(ordered).toHaveLength(rows.length);
+    const rank = (s: string) => ({ blocked: 0, empty: 1, "n/a": 2, filled: 3 } as Record<string, number>)[s];
+    for (let i = 1; i < ordered.length; i++) expect(rank(ordered[i].status)).toBeGreaterThanOrEqual(rank(ordered[i - 1].status));
+    // stability inside a group is the panel's own row order, not an alphabetical sort
+    const firstEmpty = rows.filter((r) => r.status === "empty").map((r) => r.key);
+    expect(ordered.filter((r) => r.status === "empty").map((r) => r.key)).toEqual(firstEmpty);
+  });
+
+  it("every row names a real fix surface: a tab, and a focus target where one exists", () => {
+    const rows = computeReaderCompleteness(form(), [], { nowISO: NOW, quickInfoCardEnabled: true });
+    for (const r of rows) {
+      expect(r.targetTab).toBeTruthy();
+      if (r.focusKey) expect(r.focusKey).toMatch(/^[a-z][a-z0-9-]*$/i);
+    }
   });
 });

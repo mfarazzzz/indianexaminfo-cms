@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useBlocker, type BlockerFunction } from "react-router-dom";
-import { ArrowLeft, Save, Plus, Trash2, History, Sparkles, Loader2, Globe, ExternalLink, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, History, Sparkles, Loader2, Globe, ExternalLink, ShieldCheck, MoreVertical } from "lucide-react";
 import { UnsavedChangesDialog } from "@/components/shared/UnsavedChangesDialog";
+import { TypeToConfirm } from "@/components/shared/TypeToConfirm";
 import { FaqAnswerWarning } from "@/components/shared/FaqAnswerWarning";
 import { toast } from "sonner";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -17,7 +18,6 @@ import { deleteExam, setExamWorkflowStatus, setExamVerification } from "@/servic
 import { getRegions, type Region } from "@/services/regionService";
 import { getDerivedStatus, derivedStatusLabel, type DerivedStatusRow } from "@/services/derivedStatusService";
 import type { ExamWorkflowStatus } from "@/types/exam";
-import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { RichEditor } from "@/components/shared/RichEditor";
 import { ImageUploader } from "@/components/shared/ImageUploader";
 import { DraggableList } from "@/components/shared/DraggableList";
@@ -60,7 +60,7 @@ import { EditorSectionRail } from "@/components/entrance-exams/EditorSectionRail
 import { ReaderCompletenessPanel } from "@/components/entrance-exams/ReaderCompletenessPanel";
 import { computeReaderCompleteness, type ReaderFormView, type ReaderUpdateView } from "@/lib/exams/readerCompleteness";
 import { listExamUpdates } from "@/services/examUpdatesService";
-import { buildRail, type RailItem } from "@/pages/entrance-exams/editorSections";
+import { buildRail, type RailItem, type RailTabId, TAB_LABELS } from "@/pages/entrance-exams/editorSections";
 import { getModuleRegistry } from "@/services/moduleRegistryService";
 
 /** A zeroed fill report — used wherever the drawer/provenance is opened with no
@@ -206,6 +206,14 @@ export function EntranceExamEditorPage() {
   // A5: in-flight guard for the header's "Activate it / Create <year> cycle" fix.
   const [fixingCycle, setFixingCycle] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  // P2 item 16: the header's overflow menu (⋯). New Edition and Delete live behind it so
+  // the destructive action is never one stray click from the buttons used every day.
+  const [moreOpen, setMoreOpen] = useState(false);
+  // P2 item 16: the SAME status the site derives (exam_derived_status VIEW), read once at
+  // page level so the header chip and the Dates & Status chip cannot disagree. The edition
+  // column (upcoming/completed…) is the editor's OWN flag and stays on the Editions tab.
+  const [derived, setDerived] = useState<DerivedStatusRow | null>(null);
+  const [derivedLoading, setDerivedLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [showAIDialog, setShowAIDialog] = useState(false);
@@ -441,13 +449,27 @@ export function EntranceExamEditorPage() {
   // Read-only fetch for the reader checklist. The Updates panel writes through
   // this same service, so a publish there is reflected after the next save or
   // reload — the panel never claims a live publish it has not re-read.
+  // id + supersedesId travel WITH the row: the reader timeline moves a superseded
+  // update into History, so the panel must not count it as visible (P2 item 15).
   useEffect(() => {
     const eid = exam?.id;
     if (!eid) { setReaderUpdates([]); return; }
     let cancelled = false;
     listExamUpdates(eid)
-      .then((u) => { if (!cancelled) setReaderUpdates(u.map((x) => ({ status: x.status, kind: x.kind, expiresAt: x.expiresAt, quickLinks: x.quickLinks, attachmentUrls: x.attachmentUrls }))); })
+      .then((u) => { if (!cancelled) setReaderUpdates(u.map((x) => ({ id: x.id, status: x.status, kind: x.kind, expiresAt: x.expiresAt, supersedesId: x.supersedesId, quickLinks: x.quickLinks, attachmentUrls: x.attachmentUrls }))); })
       .catch(() => { if (!cancelled) setReaderUpdates([]); });
+    return () => { cancelled = true; };
+  }, [exam?.id]);
+
+  // The derived status is read at page level (header chip + Dates & Status chip share it).
+  useEffect(() => {
+    const eid = exam?.id;
+    if (!eid) { setDerived(null); return; }
+    let cancelled = false;
+    setDerivedLoading(true);
+    getDerivedStatus(eid)
+      .then((d) => { if (!cancelled) setDerived(d); })
+      .finally(() => { if (!cancelled) setDerivedLoading(false); });
     return () => { cancelled = true; };
   }, [exam?.id]);
 
@@ -1206,17 +1228,41 @@ export function EntranceExamEditorPage() {
     );
   }
 
+  // Tab labels come from the ONE map the rail and the reader-panel hints also use
+  // (P2 item 17) — a hint can no longer name a place the editor cannot find.
   const tabs = [
-    { id: "identity", label: "Identity" },
+    { id: "identity", label: TAB_LABELS.identity },
     // Exam-identity-level tabs (shared across editions), beside Identity.
-    ...(!isNew ? [{ id: "resources", label: "Resources" }] : []),
-    ...(!isNew ? [{ id: "syllabus", label: "Syllabus" }] : []),
-    { id: "edition", label: "Dates & Status" },
-    { id: "modules", label: "Modules" },
-    { id: "news", label: "News" },
-    { id: "seo", label: "SEO" },
-    ...(!isNew ? [{ id: "editions", label: `Editions (${editions.length})` }] : []),
+    ...(!isNew ? [{ id: "resources", label: TAB_LABELS.resources }] : []),
+    ...(!isNew ? [{ id: "syllabus", label: TAB_LABELS.syllabus }] : []),
+    { id: "edition", label: TAB_LABELS.edition },
+    { id: "modules", label: TAB_LABELS.modules },
+    { id: "news", label: TAB_LABELS.news },
+    { id: "seo", label: TAB_LABELS.seo },
+    ...(!isNew ? [{ id: "editions", label: `${TAB_LABELS.editions} (${editions.length})` }] : []),
   ];
+
+  /**
+   * P2 item 15: jump to a row's fix THROUGH the unsaved-changes guard, then focus the
+   * control. `focusKey` matches a data-fix-target the field wrappers carry; if the tab
+   * switch is being held by the guard, or the control is not on screen yet, the focus is
+   * retried on the next paint rather than silently doing nothing.
+   */
+  const jumpToFix = useCallback((to: RailTabId, focusKey?: string) => {
+    guardedSetActiveTab(to);
+    if (!focusKey) return;
+    const tryFocus = (attempt: number) => {
+      const host = document.querySelector<HTMLElement>(`[data-fix-target="${focusKey}"]`);
+      const target = host?.querySelector<HTMLElement>("input,select,textarea,button") ?? host;
+      if (target) {
+        target.scrollIntoView({ block: "center", behavior: "smooth" });
+        target.focus({ preventScroll: true });
+        return;
+      }
+      if (attempt < 3) setTimeout(() => tryFocus(attempt + 1), 60);
+    };
+    setTimeout(() => tryFocus(0), 60);
+  }, [guardedSetActiveTab]);
 
   // A5: the draft/other edition to offer activating when there is no current cycle.
   const a5Draft = pickDraftWhenNoCurrent(editions, !!currentEdition, !!draftEdition);
@@ -1230,12 +1276,36 @@ export function EntranceExamEditorPage() {
             <ArrowLeft size={18} />
           </button>
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-slate-900 truncate">
+            {/* P2 item 16: the FULL name, wrapping instead of truncating. A long record name
+                ("Uttar Pradesh Subordinate Services Selection Commission Preliminary
+                Eligibility Test…") used to be cut to "UPSSSC P…" with no way to read it. */}
+            <h1
+              className="text-lg font-semibold text-slate-900 break-words"
+              title={exam?.name ?? undefined}
+              data-testid="editor-exam-name"
+            >
               {isNew ? (pillarFromUrl === "government-exam" ? "New Govt Exam Recruitment" : pillarFromUrl === "govt-vacancy" ? "New Govt Vacancy" : "New Entrance Exam") : exam?.name ?? ""}
             </h1>
-            {currentEdition && !draftEdition && (
-              <p className="text-xs text-slate-500">
-                Edition: {currentEdition.editionLabel} ({currentEdition.session !== "main" ? currentEdition.session + " — " : ""}{currentEdition.status.replace(/-/g, " ")})
+            {/* The status the SITE shows, from exam_derived_status — not the edition's own
+                `status` column, which is the editor's manual flag and often disagrees. */}
+            {currentEdition && (
+              <p className="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
+                <span>Edition: {currentEdition.editionLabel}{currentEdition.session !== "main" ? ` — ${currentEdition.session}` : ""}</span>
+                {derivedLoading ? (
+                  <span className="text-slate-400">checking site status…</span>
+                ) : derived ? (
+                  <span
+                    className="rounded bg-blue-600 px-1.5 py-0.5 text-[11px] font-semibold text-white"
+                    data-testid="editor-derived-status"
+                    title="What the public site shows, derived live from this cycle's Important Dates"
+                  >
+                    {derivedStatusLabel(derived.derivedStatus)}
+                  </span>
+                ) : (
+                  <span className="italic text-slate-400" data-testid="editor-derived-status-none">
+                    no status on the site yet
+                  </span>
+                )}
               </p>
             )}
             {draftEdition && (
@@ -1364,6 +1434,7 @@ export function EntranceExamEditorPage() {
               <div
                 className="flex items-center gap-1.5 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium"
                 data-testid="verify-control"
+                data-fix-target="verify"
               >
                 <ShieldCheck size={14} className={verifiedStamp ? "text-emerald-600" : "text-slate-400"} />
                 {verifiedStamp ? (
@@ -1430,14 +1501,56 @@ export function EntranceExamEditorPage() {
                 {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 {aiGenerating ? "Reading the notice..." : "🤖 Update from a notice"}
               </button>
-              <button type="button" onClick={() => setShowNewEdition(true)}
-                className="flex items-center gap-1.5 rounded border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
-                <Plus size={14} /> New Edition
-              </button>
-              <button type="button" onClick={() => setShowDelete(true)}
-                className="flex items-center gap-1.5 rounded border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50">
-                <Trash2 size={14} /> Delete
-              </button>
+              {/* P2 item 16: the rarely-used and the destructive live behind one overflow
+                  menu, not beside Save. Delete additionally requires typing the record's own
+                  name (TypeToConfirm) — a click on "are you sure?" is not a confirmation. */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMoreOpen((v) => !v)}
+                  aria-expanded={moreOpen}
+                  aria-haspopup="menu"
+                  data-testid="header-more-menu"
+                  className="flex items-center gap-1.5 rounded border border-slate-200 px-2 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                  title="More actions"
+                >
+                  <MoreVertical size={14} />
+                </button>
+                {moreOpen && (
+                  <>
+                    {/* click-away layer: closes the menu without a document listener */}
+                    <button
+                      type="button"
+                      aria-label="Close menu"
+                      className="fixed inset-0 z-40 cursor-default"
+                      onClick={() => setMoreOpen(false)}
+                    />
+                    <div
+                      role="menu"
+                      className="absolute right-0 z-50 mt-1 w-52 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                      data-testid="header-more-menu-items"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => { setMoreOpen(false); setShowNewEdition(true); }}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50"
+                      >
+                        <Plus size={14} /> New Edition
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => { setMoreOpen(false); setShowDelete(true); }}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
+                        data-testid="header-delete-item"
+                      >
+                        <Trash2 size={14} /> Delete exam…
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </>
           )}
           {isNew && (
@@ -1465,7 +1578,7 @@ export function EntranceExamEditorPage() {
         <EditorSectionRail
           items={railItems}
           activeTab={activeTab}
-          onSection={guardedSetActiveTab}
+          onSection={jumpToFix}
           dirty={{ formDirty, moduleDirty, newsDirty }}
         />
         <div className="flex-1 min-w-0">
@@ -1519,7 +1632,7 @@ export function EntranceExamEditorPage() {
               // cycleFrequency / officialWebsite, so the row is live.
               { nowISO: new Date().toISOString(), quickInfoCardEnabled: true },
             )}
-            onJump={guardedSetActiveTab}
+            onJump={jumpToFix}
           />
         </div>
       )}
@@ -1544,6 +1657,7 @@ export function EntranceExamEditorPage() {
         {activeTab === "resources" && <ResourcesTab examId={exam?.id ?? null} />}
         {activeTab === "syllabus" && <SyllabusTab examId={exam?.id ?? null} />}
         {activeTab === "edition" && <EditionTab form={form} dateFields={dateFields} appendDate={appendDate} removeDate={removeDate} replaceDates={replaceDates} watchFrequency={watchFrequency}
+          derived={derived} derivedLoading={derivedLoading}
           examId={exam?.id ?? null}
           editionId={currentEdition?.id ?? null}
           onCycleCreated={loadExam}
@@ -1610,10 +1724,16 @@ export function EntranceExamEditorPage() {
         } : undefined}
       />
 
-      {/* Delete Dialog */}
-      <ConfirmDialog open={showDelete} onOpenChange={setShowDelete} title="Delete Exam"
-        description={`Permanently delete "${exam?.name}" and all its editions? This cannot be undone.`}
-        confirmLabel="Delete" onConfirm={handleDelete} confirmVariant="danger" />
+      {/* Delete Dialog — typed confirmation with the record's own name (P2 item 16). */}
+      <TypeToConfirm
+        open={showDelete}
+        onOpenChange={setShowDelete}
+        title="Delete exam"
+        description={`Permanently delete "${exam?.name ?? ""}" and all its editions, modules and updates. This cannot be undone.`}
+        requireText={exam?.name ?? ""}
+        confirmLabel="Delete permanently"
+        onConfirm={async () => { await handleDelete(); }}
+      />
 
       {/* Unsaved-changes guard — shown when a tab switch or in-app navigation would
           lose unsaved work. Names the dirty surface; Save & continue / Discard / Cancel. */}
@@ -1911,22 +2031,27 @@ function mergeWithStandardDates(rawDates: unknown): DateRow[] {
   return merged;
 }
 
-function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, watchFrequency, examId, editionId, syllabusResourceId, onLinkSyllabus, onCycleCreated }: { form: any; dateFields: any[]; appendDate: (v: any) => void; removeDate: (i: number) => void; replaceDates: (v: any[]) => void; watchFrequency: CycleFrequency; examId: string | null; editionId: string | null; syllabusResourceId: string | null; onLinkSyllabus: (resourceId: string | null) => void; onCycleCreated?: () => void | Promise<void> }) {
+function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, watchFrequency, examId, editionId, syllabusResourceId, onLinkSyllabus, onCycleCreated, derived: derivedFromPage, derivedLoading: derivedLoadingFromPage }: { form: any; dateFields: any[]; appendDate: (v: any) => void; removeDate: (i: number) => void; replaceDates: (v: any[]) => void; watchFrequency: CycleFrequency; examId: string | null; editionId: string | null; syllabusResourceId: string | null; onLinkSyllabus: (resourceId: string | null) => void; onCycleCreated?: () => void | Promise<void>; derived?: DerivedStatusRow | null; derivedLoading?: boolean }) {
   // ── Derived status (what the SITE shows) ───────────────────────────────────
   // The public site computes status from the current edition's important_dates
   // via the exam_derived_status VIEW — NOT from the manual `status` column below.
-  // We read the VIEW here so the editor stops lying about what a visitor sees.
-  const [derived, setDerived] = React.useState<DerivedStatusRow | null>(null);
-  const [derivedLoading, setDerivedLoading] = React.useState(false);
+  // The PAGE reads the VIEW once and passes it down, so the header chip and this one
+  // are the same number (P2 item 16). The props are optional: an isolated use of the
+  // tab still shows the truth by reading the VIEW itself.
+  const [ownDerived, setOwnDerived] = React.useState<DerivedStatusRow | null>(null);
+  const [ownLoading, setOwnLoading] = React.useState(false);
+  const supplied = derivedFromPage !== undefined;
+  const derived = supplied ? derivedFromPage ?? null : ownDerived;
+  const derivedLoading = supplied ? derivedLoadingFromPage ?? false : ownLoading;
   React.useEffect(() => {
-    if (!examId) { setDerived(null); return; }
+    if (supplied || !examId) { if (!supplied && !examId) setOwnDerived(null); return; }
     let cancelled = false;
-    setDerivedLoading(true);
+    setOwnLoading(true);
     getDerivedStatus(examId)
-      .then((d) => { if (!cancelled) setDerived(d); })
-      .finally(() => { if (!cancelled) setDerivedLoading(false); });
+      .then((d) => { if (!cancelled) setOwnDerived(d); })
+      .finally(() => { if (!cancelled) setOwnLoading(false); });
     return () => { cancelled = true; };
-  }, [examId]);
+  }, [examId, supplied]);
 
   // On first render, ensure standard date fields exist ONLY if truly empty
   // Use a small delay to allow form.reset() from loadExam to propagate first
@@ -2038,7 +2163,7 @@ function EditionTab({ form, dateFields, appendDate, removeDate, replaceDates, wa
         <Field label="Vacancy" name="vacancy" form={form} type="number" placeholder="Total seats (leave 0 if N/A)" />
       </div>
       {/* Important Dates — pre-defined rows + custom — DRAGGABLE */}
-      <div>
+      <div data-fix-target="important-dates">
         <div className="flex items-center justify-between mb-2">
           <div>
             <label className="text-xs font-medium text-slate-600">Important Dates</label>
@@ -2288,7 +2413,7 @@ function NewsTab({ editionId, examId, editionYear, pillar, updateDraft, onCycleC
 
       {/* D-P2: exam Updates authored as content_posts (immediate save, own life). */}
       {examId && (
-        <div className="pt-2 border-t border-slate-100">
+        <div className="pt-2 border-t border-slate-100" data-fix-target="updates">
           <ExamUpdatesPanel examId={examId} examEditionId={editionId} pillar={pillar} initialDraft={updateDraft} />
         </div>
       )}
@@ -2568,7 +2693,9 @@ function AIFillDialog({ onGenerate, onCancel }: { onGenerate: (rawContent?: stri
 
 function Field({ label, name, form, type = "text", placeholder, disabled }: { label: string; name: string; form: any; type?: string; placeholder?: string; disabled?: boolean }) {
   return (
-    <div>
+    // data-fix-target lets the "What readers will see" panel's Fix button focus this
+    // exact control after switching tabs (P2 item 15). It is a hook, never a style.
+    <div data-fix-target={name}>
       <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
       <input type={type} {...form.register(name)} placeholder={placeholder} disabled={disabled}
         className="w-full rounded border border-slate-200 px-3 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400" />

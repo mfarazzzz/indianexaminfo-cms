@@ -20,6 +20,24 @@ export type RailTabId =
   | "identity" | "resources" | "syllabus" | "edition"
   | "modules" | "news" | "seo" | "editions";
 
+/**
+ * The ONE label per editor tab (reference-page review 23 Oct, P2 items 15 and 17).
+ * The tab strip, the rail hint and the "What readers will see" Fix button all read
+ * this, so a hint can never name a place the editor cannot find under that name.
+ * `editions` is shown with a count by the tab strip; the count is appended there, the
+ * base word stays here.
+ */
+export const TAB_LABELS: Record<RailTabId, string> = {
+  identity: "Identity",
+  resources: "Resources",
+  syllabus: "Syllabus",
+  edition: "Dates & Status",
+  modules: "Modules",
+  news: "News",
+  seo: "SEO",
+  editions: "Editions",
+};
+
 export interface RailItem {
   /** module_registry.slug — the stable key, never the display label. */
   slug: string;

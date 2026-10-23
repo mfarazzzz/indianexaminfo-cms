@@ -32,6 +32,13 @@ export interface ReaderCompletenessRow {
   fixHint: string;
   /** The rail tab the row jumps to (through the unsaved-changes guard). */
   targetTab: RailTabId;
+  /**
+   * The control the "Fix →" button focuses after switching the tab — a field name the
+   * editor renders with data-fix-target (P2 item 15). Optional: when a fix has no single
+   * control (a drag-and-drop list, a module card) the row still switches the tab, and the
+   * panel says so rather than pretending to focus something.
+   */
+  focusKey?: string;
 }
 
 /** The plain form-state view (the editor passes its CURRENT unsaved values). */
@@ -60,6 +67,12 @@ export interface ReaderUpdateView {
   expiresAt?: string | null;
   quickLinks?: { label?: string; url?: string }[] | null;
   attachmentUrls?: { label?: string; url?: string }[] | null;
+  /** Identity + supersession edge. The reader timeline moves a SUPERSEDED update into
+   *  "History / Withdrawn" (frontend lib/exam/updates.partitionUpdates), so a count that
+   *  ignored these two fields would promise the editor a row the reader never sees
+   *  (reference-page review 23 Oct, P2 item 15). */
+  id?: string;
+  supersedesId?: string | null;
 }
 
 export interface ReaderCompletenessOptions {
@@ -89,6 +102,30 @@ export function isLiveUpdateView(u: ReaderUpdateView, nowISO: string): boolean {
   return true;
 }
 
+/**
+ * The ids SUPERSEDED by some other update in the SAME set — the exact rule the
+ * frontend's partitionUpdates applies (a row another row points at moves to
+ * History). Exported so the panel and its tests share one definition.
+ */
+export function supersededUpdateIds(updates: readonly ReaderUpdateView[]): Set<string> {
+  const ids = new Set<string>();
+  for (const u of updates) {
+    const sid = typeof u.supersedesId === "string" ? u.supersedesId.trim() : "";
+    if (sid) ids.add(sid);
+  }
+  return ids;
+}
+
+/**
+ * Live AND not superseded — what the reader's Updates timeline actually shows.
+ * The editor's counts must use THIS, not the looser isLiveUpdateView, or the panel
+ * promises a row the reader cannot see.
+ */
+export function readerVisibleUpdates(updates: readonly ReaderUpdateView[], nowISO: string): ReaderUpdateView[] {
+  const superseded = supersededUpdateIds(updates);
+  return updates.filter((u) => isLiveUpdateView(u, nowISO) && !(u.id && superseded.has(u.id)));
+}
+
 function liveLinks(updates: ReaderUpdateView[]): { label: string; url: string }[] {
   const out: { label: string; url: string }[] = [];
   for (const u of updates) {
@@ -107,6 +144,16 @@ function liveLinks(updates: ReaderUpdateView[]): { label: string; url: string }[
 function moduleDisabled(view: ReaderFormView, slug: string): boolean {
   const config = (view.contentModules ?? {})._config as { enabledModules?: string[] } | undefined;
   return !!(config?.enabledModules && config.enabledModules.length > 0 && !config.enabledModules.includes(slug));
+}
+
+/** True when an editorial module carries prose a reader would actually see. */
+function moduleHasProse(view: ReaderFormView, slug: string): boolean {
+  const d = (view.contentModules ?? {})[slug];
+  if (!d || typeof d !== "object" || Array.isArray(d)) return false;
+  const o = d as Record<string, unknown>;
+  return ["body", "content", "description", "summary", "additionalCriteria"].some(
+    (k) => typeof o[k] === "string" && (o[k] as string).trim() !== "",
+  );
 }
 
 /**
@@ -139,7 +186,7 @@ export function computeReaderCompleteness(
     contentModules: (form.contentModules ?? undefined) as HasDataView["contentModules"],
   };
 
-  const live = updates.filter((u) => isLiveUpdateView(u, opts.nowISO));
+  const live = readerVisibleUpdates(updates, opts.nowISO);
   const attested = liveLinks(live);
   const hasAttestedAction = attested.some((l) => ACTION_RES.some((re) => re.test(l.label)));
   const datedRows = (form.dates ?? []).filter((d) => d && String(d.date ?? "").trim() !== "");
@@ -154,6 +201,7 @@ export function computeReaderCompleteness(
       ? `Next dates a reader sees come from the edition's Important Dates (${datedRows.length} dated row${datedRows.length === 1 ? "" : "s"}).`
       : "Add a dated row under Dates & Status → Important Dates. Undated rows never render.",
     targetTab: "edition",
+    focusKey: "important-dates",
   });
 
   const website = (form.officialWebsite ?? "").trim();
@@ -165,6 +213,7 @@ export function computeReaderCompleteness(
       ? "Shown in the strip, sidebar and sources line straight from the stored field."
       : "Set Official Website in the Identity tab. No URL stored → no button anywhere (never a fake link).",
     targetTab: "identity",
+    focusKey: "officialWebsite",
   });
 
   rows.push({
@@ -172,9 +221,10 @@ export function computeReaderCompleteness(
     label: "Admit-card / Apply button",
     status: hasAttestedAction ? "filled" : "empty",
     fixHint: hasAttestedAction
-      ? "An attested link on a published, unexpired update backs the button."
+      ? "An attested link on a published, unexpired, not superseded update backs the button."
       : "Publish an update that CARRIES the real admit-card/apply link (quick link or attachment). A label with no URL never renders a button.",
     targetTab: "edition",
+    focusKey: "updates",
   });
 
   const impDates = hasData(view, "important-dates");
@@ -186,6 +236,7 @@ export function computeReaderCompleteness(
       ? "Renders every row the edition stores."
       : "Fill Important Dates under Dates & Status; an empty list hides the whole card.",
     targetTab: "edition",
+    focusKey: "important-dates",
   });
 
   const elig = hasData(view, "eligibility");
@@ -195,8 +246,9 @@ export function computeReaderCompleteness(
     status: elig ? "filled" : "empty",
     fixHint: elig
       ? "Age / qualification / nationality render straight from the structured fields."
-      : "Fill the structured Eligibility card (or the eligibility module) under Dates & Status.",
-    targetTab: "edition",
+      : "Fill the Eligibility card on the Modules tab (it writes the edition column). The reader hides the table while every field is blank.",
+    targetTab: "modules",
+    focusKey: "eligibility",
   });
 
   const fee = hasData(view, "application-fee");
@@ -207,20 +259,45 @@ export function computeReaderCompleteness(
     status: !feeApplies ? "n/a" : fee ? "filled" : "empty",
     fixHint: !feeApplies
       ? "Not a reader section for this pillar — the exam page never shows a fee block."
-      : "A ₹0 or blank row counts as no data; the section hides itself rather than render empty.",
-    targetTab: "edition",
+      : "Fill the Application Fee card on the Modules tab. A ₹0 or blank row counts as no data; the section hides itself rather than render empty.",
+    targetTab: "modules",
+    focusKey: "application-fee",
   });
 
+  // The row must agree with the PAGE, not with the column alone. The reader renders a
+  // "Vacancy Details" section when the structured vacancy is > 0; on a pillar the registry
+  // section does NOT cover, the module block still paints one when the vacancy-details
+  // module carries prose (frontend lib/exam/sectionOwnership gives the block anything no
+  // other surface shows). Only when neither is true is the section genuinely n/a.
   const vac = hasData(view, "vacancy");
   const vacApplies = appliesToPillar(form.pillar, "vacancy");
+  const vacModuleProse = moduleHasProse(view, "vacancy-details");
+  const vacModuleOff = moduleDisabled(view, "vacancy-details");
+  // Order matters and mirrors the frontend: a DISABLED module renders nowhere
+  // (moduleShowsInContentBlock requires it in enabledModules), so "blocked" must be
+  // decided BEFORE prose — otherwise the panel claims a section the reader will not see.
+  const vacStatus: ReaderStatus = vacApplies
+    ? (vac ? "filled" : "empty")
+    : vacModuleOff
+      ? "blocked"
+      : vacModuleProse
+        ? "filled"
+        : "n/a";
   rows.push({
     key: "vacancy",
     label: "Vacancy",
-    status: !vacApplies ? "n/a" : vac ? "filled" : "empty",
-    fixHint: !vacApplies
-      ? "Not a reader section for this pillar — the exam page never shows a vacancy block."
-      : "Set the Vacancy number under Dates & Status (0 = no data → row hidden).",
+    status: vacStatus,
+    fixHint: vacApplies
+      ? vac
+        ? "Readers see the total from the Vacancy field, with any post-wise detail from the module beneath it."
+        : "Set the Vacancy number under Dates & Status (0 = no data → the section is hidden)."
+      : vacModuleOff
+        ? "The Modules tab has Vacancy Details switched OFF, so the reader cannot see it."
+        : vacModuleProse
+          ? "This pillar has no vacancy section, but the Vacancy Details module carries text — the site shows it as a plain section."
+          : "Not a reader section for this pillar — nothing to fill.",
     targetTab: "edition",
+    focusKey: "vacancy",
   });
 
   const sel = hasData(view, "selection-process");
@@ -231,8 +308,9 @@ export function computeReaderCompleteness(
     status: !selApplies ? "n/a" : sel ? "filled" : "empty",
     fixHint: !selApplies
       ? "Not a reader section for this pillar."
-      : "The stages list lives on the Identity tab (exams.selection_process); empty list → the card never renders.",
-    targetTab: "identity",
+      : "Fill the Selection Process card on the Modules tab (it writes exams.selection_process); an empty list means the section never renders.",
+    targetTab: "modules",
+    focusKey: "selection-process",
   });
 
   const steps = ((view.contentModules?.["application-process"] ?? {}) as { steps?: unknown[] }).steps;
@@ -249,6 +327,7 @@ export function computeReaderCompleteness(
         ? "The Modules tab has Application Process switched OFF (enabledModules) — the reader cannot see it until re-enabled."
         : "Add steps to the Application Process module in the Modules tab.",
     targetTab: "modules",
+    focusKey: "application-process",
   });
 
   rows.push({
@@ -256,9 +335,10 @@ export function computeReaderCompleteness(
     label: "Updates timeline",
     status: live.length > 0 ? "filled" : "empty",
     fixHint: live.length > 0
-      ? `${live.length} live update${live.length === 1 ? "" : "s"} (published, not withdrawn, not expired).`
-      : "Publish an update in Dates & Status → Updates. Drafts, withdrawn and expired items never reach the reader.",
+      ? `${live.length} live update${live.length === 1 ? "" : "s"} (published, not withdrawn, not expired, not superseded).`
+      : "Publish an update in Dates & Status → Updates. Drafts, withdrawn, expired and superseded items never reach the reader's timeline.",
     targetTab: "edition",
+    focusKey: "updates",
   });
 
   const verified = form.isVerified === true && String(form.verifiedAt ?? "").trim() !== "";
@@ -270,6 +350,7 @@ export function computeReaderCompleteness(
       ? "Readers see 'Verified by IndianExamInfo editorial team · <date>' instead of the honest notice."
       : "Use the Verify control in the header. Until then readers see the honest 'not yet verified' notice (by design).",
     targetTab: "identity",
+    focusKey: "verify",
   });
 
   const quickFacts = [form.conductingBody, website, form.cycleFrequency].some((v) => String(v ?? "").trim() !== "");
@@ -283,6 +364,7 @@ export function computeReaderCompleteness(
         ? "Conducting body, frequency and website come straight from the stored fields; facts with no stored value are omitted."
         : "Fill Conducting Body / Exam Frequency / Official Website in the Identity tab.",
     targetTab: "identity",
+    focusKey: "conductingBody",
   });
 
   // FAQs render from the exams.faqs COLUMN (FaqsSummary + hasData both read the
@@ -295,8 +377,9 @@ export function computeReaderCompleteness(
     status: faqCount > 0 ? "filled" : "empty",
     fixHint: faqCount > 0
       ? `${faqCount} meaningful answer${faqCount === 1 ? "" : "s"} render as expandable <details>.`
-      : "Add Q&A pairs in the SEO tab (exams.faqs). Placeholder answers ('N/A', 'not specified'…) count as NO data.",
-    targetTab: "seo",
+      : "Add Q&A pairs on the FAQs card (Modules tab, or the SEO tab — both write exams.faqs). Placeholder answers ('N/A', 'not specified'…) count as NO data.",
+    targetTab: "modules",
+    focusKey: "faqs",
   });
 
   return rows;
@@ -309,4 +392,18 @@ export function summarizeReaderCompleteness(rows: ReaderCompletenessRow[]): stri
   const parts = [`${c.filled} filled`, `${c.empty} empty`, `${c.blocked} blocked`];
   if (c["n/a"] > 0) parts.push(`${c["n/a"]} n/a`);
   return parts.join(" · ");
+}
+
+/**
+ * Panel order (P2 item 15): what still needs work comes FIRST, in the owner's own row
+ * order — blocked, then empty, then n/a, then filled at the bottom. The reader's eye
+ * opens on the rows that have a Fix button, not on the nine things already right.
+ */
+const STATUS_RANK: Record<ReaderStatus, number> = { blocked: 0, empty: 1, "n/a": 2, filled: 3 };
+
+export function orderRowsForFixFirst(rows: ReaderCompletenessRow[]): ReaderCompletenessRow[] {
+  return rows
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => STATUS_RANK[a.r.status] - STATUS_RANK[b.r.status] || a.i - b.i)
+    .map(({ r }) => r);
 }
