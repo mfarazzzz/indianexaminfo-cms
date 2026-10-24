@@ -9,6 +9,7 @@ import { normalizeUrlOrThrow } from "@/lib/utils";
 import { TEST_SLUG_LIKE } from "@/lib/testContent";
 import { assertPermission, assertAffected } from "@/lib/auth/permissionGuard";
 import { P } from "@/config/permissions";
+import { createCandidate } from "@/services/social/socialQueueService";
 import {
   buildQueueRow, sortQueueRows, RECHECK_AFTER_DAYS,
   type VerificationQueueRow, type QueueSourceRow,
@@ -313,6 +314,9 @@ export async function setExamWorkflowStatus(id: string, status: ExamWorkflowStat
   // Zero rows under RLS = permission refusal, not success.
   assertAffected(data as unknown[] | null, status === "published" ? "publish this exam" : "change this exam's status");
   revalidateExams().catch(() => {});
+  // Social candidate hook — no-op when the flag is off, and it never throws (a social
+  // failure must not block publish). Fire-and-forget.
+  if (status === "published") void createCandidate({ source_type: "exam", source_id: id, event: "published", page_url: "" });
   return mapRow((data as Record<string, unknown>[])[0]);
 }
 
@@ -351,6 +355,8 @@ export async function setExamVerification(id: string, verified: boolean, actorId
   // Zero rows under RLS = permission refusal, not success.
   assertAffected(data as unknown[] | null, "verify this exam");
   revalidateExams().catch(() => {});
+  // Social candidate hook (verified event) — no-op when off, never blocks verify.
+  if (verified) void createCandidate({ source_type: "exam", source_id: id, event: "verified", page_url: "" });
   return mapRow((data as Record<string, unknown>[])[0]);
 }
 

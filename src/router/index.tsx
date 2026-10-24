@@ -4,6 +4,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { RequirePermission } from "./RequirePermission";
 import { P } from "@/config/permissions";
+import { flagOn } from "@/config/featureFlags";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { SetPasswordPage } from "@/pages/auth/SetPasswordPage";
 import { Loader2 } from "lucide-react";
@@ -124,6 +125,7 @@ const UnifiedContentListPage   = lazyPage(() => import("@/pages/unified-content/
 const UnifiedContentEditorPage = lazyPage(() => import("@/pages/unified-content/UnifiedContentEditorPage"), "UnifiedContentEditorPage");
 const CategoriesPage    = lazyPage(() => import("@/pages/categories/CategoriesPage"),  "CategoriesPage");
 const MenusPage         = lazyPage(() => import("@/pages/menus/MenusPage"),             "MenusPage");
+const SocialQueuePage   = lazyPage(() => import("@/pages/social/SocialQueuePage"),      "SocialQueuePage");
 const PagesListPage     = lazyPage(() => import("@/pages/pages/PagesListPage"),         "PagesListPage");
 const PageEditPage      = lazyPage(() => import("@/pages/pages/PageEditPage"),          "PageEditPage");
 const MediaLibraryPage  = lazyPage(() => import("@/pages/media/MediaLibraryPage"),     "MediaLibraryPage");
@@ -198,6 +200,11 @@ export const router = createBrowserRouter([
           { path: "/categories",        element: <RequirePermission anyOf={[P.MANAGE_CATEGORIES]}><CategoriesPage /></RequirePermission> },
           { path: "/navigation",        element: <RequirePermission anyOf={[P.MANAGE_MENUS, P.MANAGE_CATEGORIES]}><NavigationSettingsPage /></RequirePermission> },
           { path: "/menus",             element: <RequirePermission anyOf={[P.MANAGE_MENUS]}><MenusPage /></RequirePermission> },
+          // Social queue (S7.1b) — route only exists when the feature flag is on (schema
+          // applied + functions deployed). Off by default, so nothing changes today.
+          ...(flagOn("SOCIAL_QUEUE")
+            ? [{ path: "/social", element: <RequirePermission anyOf={[P.EDIT_ANY_POST]}><SocialQueuePage /></RequirePermission> }]
+            : []),
           { path: "/pages",             element: <RequirePermission anyOf={[P.MANAGE_PAGES]}><PagesListPage /></RequirePermission> },
           { path: "/pages/new",         element: <RequirePermission anyOf={[P.MANAGE_PAGES]}><PageEditPage /></RequirePermission> },
           { path: "/pages/:id",         element: <RequirePermission anyOf={[P.MANAGE_PAGES]}><PageEditPage /></RequirePermission> },

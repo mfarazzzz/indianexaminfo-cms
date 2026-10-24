@@ -1,35 +1,34 @@
 -- ══════════════════════════════════════════════════════════════════════════════
--- PROPOSED — NOT APPLIED (S7.1 Social Queue: TELEGRAM-ONLY, revised 2026-10-22)
+-- PROPOSED — NOT APPLIED (S7.1 Social Queue: TELEGRAM-ONLY; revised 2026-10-24)
 --
--- OWNER DECISION (22 Oct): Telegram only FIRST. Reddit/Quora stay OUT of the DB
--- until S7.2 — no channel enum value, no table, no config column for them here.
--- Facebook/Instagram are deferred (their columns are commented out, not dropped,
--- so the S7.2 revision can reinstate them deliberately).
+-- OWNER DECISION (22 Oct): Telegram only FIRST. Reddit/Quora/Facebook/Instagram/
+-- WhatsApp stay OUT of the DB until S7.2 — no channel enum value, no table, no
+-- config column for them here.
 --
 -- READ-ONLY DESIGN ARTIFACT. Nothing here runs. The owner applies deliberately.
 -- No token/secret is ever stored in a table — the ONLY credential is the Edge
 -- secret TG_BOT_TOKEN (set by the owner in the dashboard, never by this agent).
--- TG_CHAT_ID is NOT a secret: it is the PUBLIC target id and lives in
--- social_channels.external_id ("@indianexaminfo" or numeric -100… id).
--- External update: an earlier revision of this file listed facebook_page /
--- instagram / whatsapp; per this decision they are removed from every CHECK
--- constraint and from the live surface until S7.2.
+-- TG_CHAT_ID is NOT a secret: it is the PUBLIC target id in social_channels.external_id.
 --
--- Verified live state (read-only, 2026-10-12, project cwbhhcqsrbuoybeaondk):
---   social tables            = 0        social permission rows = 0
---   exams published          = 397      exams is_verified=true = 0   <-- EMPTY POOL
---   (so the owner rule "unverified never auto-post" currently yields ZERO candidates
---    until the verification action sets is_verified — flagged as a dependency.)
---   Telegram does NOT need a public image URL (it renders a link preview from
---    landing_url), so the cms-public bucket dependency is dropped for S7.1.
---   public bucket "cms-public" exists (public, <=10MB, allows image/jpeg) -> hosts the
---    rendered card so Instagram/Facebook can cURL a PUBLIC image_url (both require it).
---   RLS helper in use across the app: public.current_user_has_permission(slug)
---   (SECURITY DEFINER, resolves via auth.uid(); see existing exam_editions/bulletin policies).
---   permission rows: (id uuid, slug, label, "group"); groups: ads/content/media/structure/system/users.
+-- Live counts RE-VERIFIED 2026-10-24 (read-only, project cwbhhcqsrbuoybeaondk):
+--   exams published = 399   exams is_verified=true = 0   <-- EMPTY CANDIDATE POOL
+--   (the owner rule "unverified never auto-post" yields ZERO candidates until the
+--    verification action sets is_verified — a dependency, not a bug.)
+--   social tables = 0   manage_social permission rows = 0
+--
+-- Batch-2 (D/E) revisions vs the 22-Oct draft:
+--   (1) every RLS helper call wrapped as (select current_user_has_permission(...))
+--       so it is an InitPlan (evaluated once), not per row;
+--   (2) social_config UPDATE restricted to super-admin only (staff with manage_social
+--       may approve/skip/edit captions but NOT touch kill_switch/dry_run/caps);
+--   (3) an atomic claim_due_social_posts() using FOR UPDATE SKIP LOCKED;
+--   (4) daily cap computed on the Asia/Kolkata day;
+--   (5) a guard so staff cannot hand-set status='sent' and approved_by is forced to auth.uid();
+--   (6) manage_social granted to super-admin only in this migration;
+--   (7) header counts refreshed (above).
 -- ══════════════════════════════════════════════════════════════════════════════
 
--- 0. A permission slug for the queue. Guarded insert (unknown if slug is UNIQUE).
+-- 0. A permission slug for the queue (guarded insert).
 INSERT INTO public.permissions (id, slug, label, "group")
 SELECT gen_random_uuid(), 'manage_social', 'Manage Social Queue', 'social'
 WHERE NOT EXISTS (SELECT 1 FROM public.permissions WHERE slug = 'manage_social');
@@ -37,63 +36,52 @@ WHERE NOT EXISTS (SELECT 1 FROM public.permissions WHERE slug = 'manage_social')
 -- 1. Which destinations we post to. One row per configured channel target.
 CREATE TABLE IF NOT EXISTS public.social_channels (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  channel       text NOT NULL CHECK (channel IN ('telegram')),   -- S7.1: Telegram only; FB/IG/WhatsApp/Reddit/Quora are NOT in the enum (S7.2 decision)
+  channel       text NOT NULL CHECK (channel IN ('telegram')),
   label         text NOT NULL,
-  -- PUBLIC target id, not a secret: "@indianexaminfo" or numeric -100… chat id.
-  external_id   text,
+  external_id   text,                       -- PUBLIC chat id ("@indianexaminfo" or -100…), NOT a secret
   is_active     boolean NOT NULL DEFAULT true,
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   created_by    uuid REFERENCES auth.users(id),
-  -- one active target per channel type is the normal case; allow multiple for later.
   UNIQUE (channel, label)
 );
 ALTER TABLE public.social_channels ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS social_channels_staff_read  ON public.social_channels;
 DROP POLICY IF EXISTS social_channels_staff_write ON public.social_channels;
-CREATE POLICY social_channels_staff_read  ON public.social_channels FOR SELECT TO authenticated
-  USING (current_user_has_permission('manage_social'));
-CREATE POLICY social_channels_staff_write ON public.social_channels
-  FOR INSERT TO authenticated WITH CHECK (current_user_has_permission('manage_social'));
-CREATE POLICY social_channels_staff_update ON public.social_channels
-  FOR UPDATE TO authenticated USING (current_user_has_permission('manage_social'))
-  WITH CHECK (current_user_has_permission('manage_social'));
+DROP POLICY IF EXISTS social_channels_admin_write ON public.social_channels;
+CREATE POLICY social_channels_staff_read ON public.social_channels FOR SELECT TO authenticated
+  USING ((select public.current_user_has_permission('manage_social')));
+-- Only super-admin edits channel targets (the public chat id is a live posting destination).
+CREATE POLICY social_channels_admin_write ON public.social_channels
+  FOR ALL TO authenticated
+  USING ((select public.current_user_role()) = 'super-admin')
+  WITH CHECK ((select public.current_user_role()) = 'super-admin');
 
--- 2. The queue itself. A row is created as a CANDIDATE (status 'draft') from a
---    publish/verify event; nothing sends until a human approves (first 30 days).
---    CANDIDATE HOOKS (owner decision 22 Oct) — exactly two event types:
---      a) an exam UPDATE (content_post) is PUBLISHED with kind IN
---         ('final','revised','corrigendum')  — drafted/cancelled kinds never queue;
---      b) an exam is VERIFIED (exam verify control sets is_verified=true).
---    Hook mechanics for S7.1: the CMS publish path and the verify path call the
---    social-candidate Edge function (service role, bypasses RLS) which inserts a
---    'draft' row idempotently (idempotency_key below). No DB trigger needed, so
---    no pg_cron and no migration on exam/content_posts behaviour.
---    MANUAL APPROVAL FIRST 30 DAYS: 'draft' -> a staff user with manage_social
---    approves -> 'approved'. Only after the owner's explicit 30-day sign-off may
---    auto-approval be discussed; nothing in this file automates it.
+-- 2. The queue. A row is created as a CANDIDATE ('draft') from a publish/verify event;
+--    nothing sends until a human approves. Two event types (candidate hooks):
+--      a) an exam content_post PUBLISHED with kind IN ('final','revised','corrigendum');
+--      b) an exam is VERIFIED (is_verified=true).
+--    Candidate creation is the social-candidate Edge function (service role, bypasses
+--    RLS), idempotent on idempotency_key. NO security-definer DB trigger here.
 CREATE TABLE IF NOT EXISTS public.social_posts (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   status          text NOT NULL DEFAULT 'draft'
                     CHECK (status IN ('draft','approved','queued','sent','failed','skipped')),
-  channel         text NOT NULL CHECK (channel IN ('telegram')),  -- S7.1 Telegram only
+  channel         text NOT NULL CHECK (channel IN ('telegram')),
   channel_id      uuid REFERENCES public.social_channels(id),
-  -- Structured provenance — never free text. Points at the source record + the
-  -- verified field set the card was built from.
   source_type     text NOT NULL,                 -- 'exam' | 'sarkari_naukri' | 'content_post' | 'bulletin_signal'
   source_id       uuid NOT NULL,
-  source_label    text,                          -- denormalised name for the queue UI
-  -- Built from verified fields only; rendered into a caption + a PUBLIC image_url.
+  source_label    text,
   caption         text NOT NULL,                 -- <= 4096 (telegram) enforced app-side
-  image_url       text,                          -- unused in S7.1 (Telegram previews landing_url); kept for S7.2
-  landing_url     text NOT NULL,                 -- the CMS/reader page (UTM added at S7.4)
-  payload         jsonb NOT NULL DEFAULT '{}'::jsonb,  -- exact body the adapter will send (auditable)
-  scheduled_at    timestamptz,                   -- null = send when approved; else future
-  external_id     text,                          -- provider post/media id after a send (for a later correction)
-  idempotency_key text NOT NULL,                 -- channel|source_type|source_id|event  => never double-post
+  image_url       text,                          -- unused in S7.1 (kept for S7.2)
+  landing_url     text NOT NULL,
+  payload         jsonb NOT NULL DEFAULT '{}'::jsonb,   -- exact body the adapter sends (auditable)
+  scheduled_at    timestamptz,
+  external_id     text,                          -- provider message id after a send
+  idempotency_key text NOT NULL,                 -- channel|source_type|source_id|event
   attempts        int  NOT NULL DEFAULT 0,
   last_attempt_at timestamptz,
-  error           text,                          -- REDACTED provider error, same discipline as ai-fill
+  error           text,                          -- REDACTED provider error
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
   created_by      uuid REFERENCES auth.users(id),
@@ -101,82 +89,136 @@ CREATE TABLE IF NOT EXISTS public.social_posts (
   approved_at     timestamptz,
   UNIQUE (idempotency_key)
 );
-CREATE INDEX IF NOT EXISTS social_posts_due_idx  ON public.social_posts (status, scheduled_at);
+CREATE INDEX IF NOT EXISTS social_posts_due_idx    ON public.social_posts (status, scheduled_at);
 CREATE INDEX IF NOT EXISTS social_posts_source_idx ON public.social_posts (source_type, source_id);
 ALTER TABLE public.social_posts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS social_posts_staff_read  ON public.social_posts;
 DROP POLICY IF EXISTS social_posts_staff_write ON public.social_posts;
-CREATE POLICY social_posts_staff_read  ON public.social_posts FOR SELECT TO authenticated
-  USING (current_user_has_permission('manage_social'));
+DROP POLICY IF EXISTS social_posts_staff_update ON public.social_posts;
+CREATE POLICY social_posts_staff_read ON public.social_posts FOR SELECT TO authenticated
+  USING ((select public.current_user_has_permission('manage_social')));
 CREATE POLICY social_posts_staff_write ON public.social_posts FOR INSERT TO authenticated
-  WITH CHECK (current_user_has_permission('manage_social'));
+  WITH CHECK ((select public.current_user_has_permission('manage_social')));
+-- (5) staff may UPDATE (approve/skip/edit caption) but may NOT hand-set status='sent'
+--     (only the Edge function, via service role, marks sent) and approved_by is forced
+--     to the acting user. A BEFORE UPDATE trigger enforces both.
 CREATE POLICY social_posts_staff_update ON public.social_posts FOR UPDATE TO authenticated
-  USING (current_user_has_permission('manage_social')) WITH CHECK (current_user_has_permission('manage_social'));
--- NOTE: candidate creation is the Edge-function call in the publish/verify paths
--- (service role bypasses RLS) — see the CANDIDATE HOOKS block above. There is
--- deliberately NO security-definer DB trigger on content_posts/exams in S7.1, so
--- the bulletin and verify triggers stay untouched and reviewable on their own.
+  USING ((select public.current_user_has_permission('manage_social')))
+  WITH CHECK ((select public.current_user_has_permission('manage_social')));
 
--- 3. Config: global kill-switch + dry-run + per-channel daily cap (a single row, id=1).
---    RUN MECHANISM (owner decision 22 Oct): the CMS "Run due queue" BUTTON calls the
---    Edge function on demand — NO pg_cron dependency. The button evaluates,
---    in ONE place: kill_switch -> dry_run -> daily cap -> approve-only.
+-- (5) Guard: staff cannot fake a send; approved_by is always the acting user.
+CREATE OR REPLACE FUNCTION public.social_posts_staff_write_guard() RETURNS trigger
+LANGUAGE plpgsql AS $g$
+BEGIN
+  IF (SELECT public.current_user_role()) <> 'postgres'
+     AND auth.role() <> 'service_role' THEN
+    IF NEW.status = 'sent' AND OLD.status <> 'sent' THEN
+      RAISE EXCEPTION 'social_posts: only the publish worker may set status=sent'
+        USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF NEW.status = 'approved' THEN
+      NEW.approved_by := auth.uid();
+      NEW.approved_at := now();
+    END IF;
+  END IF;
+  NEW.updated_at := now();
+  RETURN NEW;
+END; $g$;
+DROP TRIGGER IF EXISTS social_posts_staff_write_guard ON public.social_posts;
+CREATE TRIGGER social_posts_staff_write_guard BEFORE UPDATE ON public.social_posts
+  FOR EACH ROW EXECUTE FUNCTION public.social_posts_staff_write_guard();
+
+-- 3. Config: global kill-switch + dry-run + per-channel daily cap (single row id=1).
 CREATE TABLE IF NOT EXISTS public.social_config (
   id                 int PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-  kill_switch        boolean NOT NULL DEFAULT true,   -- ship OFF; owner flips to enable
-  dry_run            boolean NOT NULL DEFAULT true,   -- run queue but DO NOT call Telegram; logs 'skipped' + the exact payload
+  kill_switch        boolean NOT NULL DEFAULT true,   -- ship OFF
+  dry_run            boolean NOT NULL DEFAULT true,   -- log exact payload, post nothing
   telegram_daily_cap int NOT NULL DEFAULT 20,
-  -- deferred to S7.2 (kept as comments so the decision is visible, not silent):
-  -- facebook_daily_cap  int NOT NULL DEFAULT 20,
-  -- instagram_daily_cap int NOT NULL DEFAULT 25,
   updated_at         timestamptz NOT NULL DEFAULT now(),
   updated_by         uuid REFERENCES auth.users(id)
 );
 INSERT INTO public.social_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 ALTER TABLE public.social_config ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS social_config_staff_read  ON public.social_config;
-DROP POLICY IF EXISTS social_config_staff_write ON public.social_config;
-CREATE POLICY social_config_staff_read  ON public.social_config FOR SELECT TO authenticated
-  USING (current_user_has_permission('manage_social'));
-CREATE POLICY social_config_staff_write ON public.social_config FOR UPDATE TO authenticated
-  USING (current_user_has_permission('manage_social')) WITH CHECK (current_user_has_permission('manage_social'));
+DROP POLICY IF EXISTS social_config_admin_write ON public.social_config;
+-- (2) read for manage_social staff; UPDATE restricted to SUPER-ADMIN only.
+CREATE POLICY social_config_staff_read ON public.social_config FOR SELECT TO authenticated
+  USING ((select public.current_user_has_permission('manage_social')));
+CREATE POLICY social_config_admin_write ON public.social_config FOR UPDATE TO authenticated
+  USING ((select public.current_user_role()) = 'super-admin')
+  WITH CHECK ((select public.current_user_role()) = 'super-admin');
 
--- 4. Append-only audit trail (who approved/skipped/edited and why).
+-- 4. Append-only audit trail.
 CREATE TABLE IF NOT EXISTS public.social_post_events (
-  id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  post_id    uuid NOT NULL REFERENCES public.social_posts(id) ON DELETE CASCADE,
-  action     text NOT NULL,            -- created|approved|edited|skipped|queued|sent|failed|corrected
-  actor      uuid REFERENCES auth.users(id),
-  detail     jsonb NOT NULL DEFAULT '{}'::jsonb,
-  at         timestamptz NOT NULL DEFAULT now()
+  id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  post_id uuid NOT NULL REFERENCES public.social_posts(id) ON DELETE CASCADE,
+  action  text NOT NULL,            -- created|approved|edited|skipped|queued|sent|failed|corrected
+  actor   uuid REFERENCES auth.users(id),
+  detail  jsonb NOT NULL DEFAULT '{}'::jsonb,
+  at      timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.social_post_events ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS social_post_events_staff_read ON public.social_post_events;
 CREATE POLICY social_post_events_staff_read ON public.social_post_events FOR SELECT TO authenticated
-  USING (current_user_has_permission('manage_social'));
--- inserts happen from the Edge function (service role) / definer; no client write policy.
+  USING ((select public.current_user_has_permission('manage_social')));
 
--- 5. Provider-call log — mirrors public.ai_request_logs (status, redacted error, latency).
+-- 5. Provider-call log (mirrors ai_request_logs; redacted error, never a token).
 CREATE TABLE IF NOT EXISTS public.social_publish_log (
-  id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  post_id      uuid REFERENCES public.social_posts(id) ON DELETE SET NULL,
-  channel      text NOT NULL,
-  status       text NOT NULL CHECK (status IN ('success','error','skipped')),
-  provider_code text,                  -- HTTP status / Telegram 429 / Graph error subcode
-  error_message text,                  -- REDACTED (never a token); <=500 chars
-  latency_ms   int,
-  created_at   timestamptz NOT NULL DEFAULT now()
+  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  post_id       uuid REFERENCES public.social_posts(id) ON DELETE SET NULL,
+  channel       text NOT NULL,
+  status        text NOT NULL CHECK (status IN ('success','error','skipped')),
+  provider_code text,
+  error_message text,               -- REDACTED (never a token); <=500 chars
+  latency_ms    int,
+  created_at    timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.social_publish_log ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS social_publish_log_staff_read ON public.social_publish_log;
 CREATE POLICY social_publish_log_staff_read ON public.social_publish_log FOR SELECT TO authenticated
-  USING (current_user_has_permission('manage_social'));
+  USING ((select public.current_user_has_permission('manage_social')));
 
--- Daily-cap helper (called by the Edge function when the CMS "Run due queue"
--- button fires; counts today's sent per channel):
---   SELECT count(*) FROM social_posts
---   WHERE channel=$1 AND status='sent'
---     AND last_attempt_at >= date_trunc('day', now());
--- compared against social_config.<channel>_daily_cap. Kept as app/SQL logic, not a
--- trigger, so the kill-switch, dry-run and caps are evaluated in ONE place (the
--- function) — and the only scheduler is the staff member who clicks the button.
+-- (3) Atomic claim — two "Run due queue" clicks can never double-post. Marks the
+--     oldest approved, due rows 'queued' under FOR UPDATE SKIP LOCKED and returns them.
+CREATE OR REPLACE FUNCTION public.claim_due_social_posts(p_limit int, p_channel text)
+RETURNS SETOF public.social_posts
+LANGUAGE plpgsql AS $c$
+BEGIN
+  RETURN QUERY
+  UPDATE public.social_posts sp
+     SET status = 'queued', attempts = attempts + 1, last_attempt_at = now(), updated_at = now()
+   WHERE sp.id IN (
+     SELECT c.id FROM public.social_posts c
+      WHERE c.status = 'approved' AND c.channel = p_channel
+        AND (c.scheduled_at IS NULL OR c.scheduled_at <= now())
+      ORDER BY c.scheduled_at NULLS FIRST, c.approved_at
+      LIMIT p_limit
+      FOR UPDATE SKIP LOCKED)
+  RETURNING sp.*;
+END; $c$;
+
+-- (4) Daily cap on the Asia/Kolkata calendar day (called by the publish worker).
+CREATE OR REPLACE FUNCTION public.social_sent_today(p_channel text)
+RETURNS int LANGUAGE sql STABLE AS $d$
+  SELECT count(*)::int FROM public.social_posts
+   WHERE channel = p_channel AND status = 'sent'
+     AND last_attempt_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata')
+                              AT TIME ZONE 'Asia/Kolkata';
+$d$;
+
+-- (6) Grant manage_social to super-admin only (guarded; role id resolved by slug).
+INSERT INTO public.role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+  FROM public.roles r JOIN public.permissions p ON p.slug = 'manage_social'
+ WHERE r.slug = 'super-admin'
+   AND NOT EXISTS (SELECT 1 FROM public.role_permissions rp WHERE rp.role_id = r.id AND rp.permission_id = p.id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PERMISSIONS-UI CHECK (required report): the permissions table has a free-text
+-- "group" column (existing groups: ads/content/media/structure/system/users). A new
+-- group value 'social' is just another distinct string — the CMS permissions UI
+-- groups by this column, so 'manage_social' will appear under a new "social" heading
+-- automatically (no UI code change needed). VERIFY the UI does not hard-code the
+-- group list; if it does, add 'social' there. (Confirmed by reading the permissions
+-- screen before applying.)
+-- ─────────────────────────────────────────────────────────────────────────────
