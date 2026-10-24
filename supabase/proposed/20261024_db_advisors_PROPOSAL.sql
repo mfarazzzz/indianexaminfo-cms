@@ -16,6 +16,34 @@
 --             (duplicate_index) · INFO 52 (unindexed_foreign_keys) + 60
 --             (unused_index) + 2 (no_primary_key)
 -- ─────────────────────────────────────────────────────────────────────────────
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- D2 DECISION (owner batch 2) — SAFE SUBSET vs HOLD, proven in a rolled-back txn.
+--
+-- SAFE SUBSET (the only thing proposed for "APPLY ADVISORS SAFE"):
+--   1) A3 — the six ALTER FUNCTION … SET search_path (exact SQL below).
+--   2) Drop the DUPLICATE content_posts index. Both are identical
+--      `USING btree (content_type)` (verified via pg_indexes). KEEP
+--      content_posts_content_type_idx — the foundational migration 20260702150704
+--      creates it (`create index if not exists content_posts_content_type_idx on
+--      content_posts(content_type)`). DROP idx_content_posts_content_type (added later
+--      by 20260703110444, byte-identical):
+--         DROP INDEX CONCURRENTLY IF EXISTS public.idx_content_posts_content_type;
+--   PROOF NOTHING PERSISTS UNTIL APPLIED: the six ALTERs + the DROP were run inside
+--   BEGIN … ROLLBACK; the post-rollback check returned fns_pinned_after_rollback=0 and
+--   dup_index_present_after_rollback=1 — nothing changed on the live DB.
+--
+-- HOLD (do NOT apply yet — each needs its own owner review):
+--   • REVOKE EXECUTE on SECURITY DEFINER functions referenced INSIDE RLS policies —
+--     revoking them would break every policy. pg_policies references exactly:
+--       auth.uid(), current_user_has_permission(), current_user_role().
+--     So current_user_has_permission / current_user_role are OFF-LIMITS for REVOKE.
+--   • extension_in_public moves (pg_trgm, pg_net) — schema-move risk.
+--   • auth_rls_initplan rewrites (31 policies) — each is a policy change; batch carefully.
+--   • unindexed_foreign_keys (52) — CREATE INDEX CONCURRENTLY; confirm the entity* legacy
+--     tables are live first.
+--   • unused_index drops (60) — verify idx_scan=0 over a window before dropping.
+-- ─────────────────────────────────────────────────────────────────────────────
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
