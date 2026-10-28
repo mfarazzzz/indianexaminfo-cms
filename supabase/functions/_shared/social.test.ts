@@ -10,6 +10,7 @@ import {
   buildCaption, escapeTelegramHtml, idempotencyKey, capExceeded,
   redactError, telegramPayload, evaluateQueueGate, officialHost,
   goResolverUrl, isSameSiteUrl, pickLandingUrl,
+  queueHeadroom, isTestSlug, landingUrlIsTest,
   TELEGRAM_CAPTION_MAX,
 } from "./social";
 
@@ -123,5 +124,46 @@ describe("landing url — the reader page, never the project host", () => {
     // and the Supabase project host can never be the answer
     expect(pickLandingUrl({ pageUrl: PROJECT, slug: "ssc-cgl", siteUrl: SITE })).not.toBe(PROJECT);
     expect(pickLandingUrl({ pageUrl: "", slug: "", siteUrl: "" })).toBe("");
+  });
+});
+
+/** J2-4 — the worker's batch size, in ONE pure function rather than inline arithmetic. */
+describe("queueHeadroom — cap - sent - queued, never negative", () => {
+  it("subtracts both spent counts", () => {
+    expect(queueHeadroom(20, 0, 0)).toBe(20);
+    expect(queueHeadroom(20, 7, 0)).toBe(13);
+    expect(queueHeadroom(20, 7, 3)).toBe(10);          // a claim in flight is capacity spent
+  });
+  it("clamps at zero, including when the cap is already exceeded", () => {
+    expect(queueHeadroom(20, 20, 0)).toBe(0);
+    expect(queueHeadroom(20, 18, 5)).toBe(0);
+    expect(queueHeadroom(0, 0, 0)).toBe(0);
+  });
+  it("tolerates nulls/floats from SQL rather than returning NaN", () => {
+    expect(queueHeadroom(20, null as unknown as number, undefined as unknown as number)).toBe(20);
+    expect(queueHeadroom(20.9, 3.2, 1.7)).toBe(16);
+  });
+});
+
+/** J3 — reference TEST content must never be posted, by either edge the owner named. */
+describe("test content is refused (J3)", () => {
+  it("isTestSlug matches the shared prefix rule, case-insensitively", () => {
+    expect(isTestSlug("zz-test-government-exam")).toBe(true);
+    expect(isTestSlug(" ZZ-TEST-x ")).toBe(true);
+    expect(isTestSlug("ssc-cgl")).toBe(false);
+    expect(isTestSlug("")).toBe(false);
+    expect(isTestSlug(null)).toBe(false);
+  });
+
+  it("landingUrlIsTest looks at path SEGMENTS, not at the whole string", () => {
+    expect(landingUrlIsTest("https://www.indianexaminfo.com/sarkari-naukri/zz-test-vacancy-2026")).toBe(true);
+    expect(landingUrlIsTest("https://www.indianexaminfo.com/admission/medical/zz-test-entrance-exam")).toBe(true);
+    // encoded slash cannot hide a test segment
+    expect(landingUrlIsTest("https://x/sarkari-naukri/zz%2Dtest-vacancy")).toBe(true);
+    // a real slug that merely contains the letters is NOT refused
+    expect(landingUrlIsTest("https://x/sarkari-naukri/up-anganwadi-bharti-2026")).toBe(false);
+    expect(landingUrlIsTest("https://x/blog/exam-prep/zz-notes-guide")).toBe(false);
+    expect(landingUrlIsTest("")).toBe(false);
+    expect(landingUrlIsTest(null)).toBe(false);
   });
 });

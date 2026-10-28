@@ -69,6 +69,49 @@ export function capExceeded(sentToday: number, cap: number): boolean {
   return sentToday >= cap;
 }
 
+/**
+ * J2-4 — the batch size the publish worker may claim: cap - sent_today - currently_queued,
+ * never negative. 'queued' rows count as spent capacity (a claim still in flight is not
+ * free), so ignoring them would let a caller push the day past its cap. Pure so a unit test
+ * pins the arithmetic and the clamp; the two numbers come from social_sent_today() and
+ * social_queued_count().
+ */
+export function queueHeadroom(cap: number, sentToday: number, currentlyQueued: number): number {
+  // PostgREST hands back null for count(*) over an empty set only in odd shapes, and a
+  // failed rpc() call leaves the value undefined; NaN would poison the comparison and a
+  // NaN headroom reads as "no capacity", which silently stalls the queue. Coerce first.
+  const int = (v: unknown): number => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.trunc(n) : 0;
+  };
+  const room = int(cap) - int(sentToday) - int(currentlyQueued);
+  return room > 0 ? room : 0;
+}
+
+/**
+ * J3 — the reference TEST content must never be posted. The rule is the ONE definition this
+ * platform already uses (frontend lib/testContent.ts, mirrored byte-identically in
+ * src/lib/testContent.ts): test identity is purely the lowercase slug prefix.
+ */
+export const TEST_SLUG_PREFIX = "zz-test-";
+
+export function isTestSlug(slug: string | null | undefined): boolean {
+  return typeof slug === "string" && slug.trim().toLowerCase().startsWith(TEST_SLUG_PREFIX);
+}
+
+/**
+ * True when a landing URL points AT reference test content — i.e. any path SEGMENT begins
+ * with the test prefix (the exam/vacancy slug is the last segment of a public URL).
+ * Checked segment-wise rather than as a substring so a real slug that merely contains the
+ * letters cannot be refused, and so a test slug cannot hide behind an encoded slash.
+ */
+export function landingUrlIsTest(url: string | null | undefined): boolean {
+  if (!url) return false;
+  let path = String(url);
+  try { path = new URL(url).pathname; } catch { /* a relative path is fine to inspect as-is */ }
+  return path.split("/").some((seg) => isTestSlug(decodeURIComponent(seg)));
+}
+
 export interface CaptionInput {
   examName: string;
   derivedStatusLabel: string;      // e.g. "Applications open" — from the derived status, not free text

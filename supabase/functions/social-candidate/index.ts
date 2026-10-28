@@ -12,7 +12,10 @@
  * e.g. https://www.indianexaminfo.com). No token here.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { buildCaption, idempotencyKey, isSameSiteUrl, pickLandingUrl, type CaptionInput } from "../_shared/social.ts";
+import {
+  buildCaption, idempotencyKey, isSameSiteUrl, isTestSlug, landingUrlIsTest, pickLandingUrl,
+  type CaptionInput,
+} from "../_shared/social.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
@@ -67,6 +70,14 @@ Deno.serve(async (req) => {
       const r = await fetch(landing, { redirect: "follow", headers: { "user-agent": "social-candidate/1" } });
       if (r.ok && isSameSiteUrl(r.url, SITE_URL)) landing = r.url;
     } catch { /* keep the resolver URL — one hop still lands the reader on the right page */ }
+  }
+
+  // J3 — reference TEST content is NEVER queued for posting, whatever the caller asked for.
+  // Both halves are checked because the landing URL is resolver-derived (a test record would
+  // otherwise arrive as a clean /sarkari-naukri/zz-test-… path) and a caller-supplied
+  // page_url is otherwise honoured verbatim when it is on our own host.
+  if (isTestSlug(meta.slug) || landingUrlIsTest(landing)) {
+    return json({ ok: false, error: "reference test content is never queued" }, 422);
   }
 
   // The one date that matters, by event/status — never invented.
