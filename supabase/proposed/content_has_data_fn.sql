@@ -1,4 +1,9 @@
 -- ─────────────────────────────────────────────────────────────────────────────
+-- APPLIED 2026-10-28 (owner batch 4, J1) as part of
+--   supabase/migrations/20261028165448_sitemap_content_types_view.sql  (PART 1), together
+--   with the exam_content_types_with_data view + RPC. This file is kept as the standalone
+--   source of the evaluator; do not apply it again. The applied copy carries the
+--   `SET search_path` pins noted below.
 -- PROPOSED — DO NOT move into supabase/migrations/ without the owner's approval
 -- (AGENTS.md: a CMS push may apply every file in migrations/). When the owner
 -- promotes it, the version prefix is assigned AT PROMOTION TIME (UTC time of the
@@ -27,6 +32,13 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- Small private helpers (prefix _chd_) used only by content_has_data below.
+--
+-- search_path is PINNED on every function in this file (owner batch 4, J1 pre-flight).
+-- Checked before applying: all six were declared IMMUTABLE and none was SECURITY DEFINER,
+-- but NONE carried a `SET search_path`, so applying them as written would have added six
+-- new `function_search_path_mutable` findings to the security advisor (the lint batch 3 just
+-- cleared to zero on the other six). Pinning is behaviour-preserving: every object these
+-- bodies touch lives in `public`, and pg_catalog is always implicitly in the path.
 
 -- Non-empty trimmed string at obj->key (TS nonEmptyStr). COALESCE'd because
 -- jsonb_typeof(NULL) is SQL NULL (not a string), so a missing key must read as
@@ -35,6 +47,7 @@
 CREATE OR REPLACE FUNCTION public._chd_str(obj jsonb, key text)
 RETURNS boolean
 LANGUAGE sql IMMUTABLE
+SET search_path = public, pg_temp
 AS $h$
   SELECT COALESCE(jsonb_typeof(obj -> key) = 'string'
               AND length(btrim(obj ->> key)) > 0, false);
@@ -44,6 +57,7 @@ $h$;
 CREATE OR REPLACE FUNCTION public._chd_arr(obj jsonb, key text)
 RETURNS boolean
 LANGUAGE sql IMMUTABLE
+SET search_path = public, pg_temp
 AS $h$
   SELECT COALESCE(jsonb_typeof(obj -> key) = 'array'
                AND jsonb_array_length(obj -> key) > 0, false);
@@ -58,6 +72,7 @@ $h$;
 CREATE OR REPLACE FUNCTION public._chd_faq_meaningful(view jsonb)
 RETURNS boolean
 LANGUAGE sql IMMUTABLE
+SET search_path = public, pg_temp
 AS $h$
   SELECT CASE WHEN jsonb_typeof(view -> 'faqs') = 'array' THEN
     EXISTS (
@@ -77,6 +92,7 @@ $h$;
 CREATE OR REPLACE FUNCTION public._chd_vacancy_positive(view jsonb)
 RETURNS boolean
 LANGUAGE sql IMMUTABLE
+SET search_path = public, pg_temp
 AS $h$
   SELECT COALESCE(jsonb_typeof(view -> 'vacancy') = 'number'
                AND (view ->> 'vacancy')::numeric > 0, false);
@@ -87,6 +103,7 @@ $h$;
 CREATE OR REPLACE FUNCTION public._chd_fee_positive(fee jsonb)
 RETURNS boolean
 LANGUAGE sql IMMUTABLE
+SET search_path = public, pg_temp
 AS $h$
   SELECT COALESCE(jsonb_typeof(fee) = 'object'
                AND EXISTS (
@@ -99,6 +116,7 @@ $h$;
 CREATE OR REPLACE FUNCTION public.content_has_data(view jsonb, section text)
 RETURNS boolean
 LANGUAGE plpgsql IMMUTABLE
+SET search_path = public, pg_temp
 AS $fn$
 DECLARE
   cm       jsonb := view -> 'contentModules';

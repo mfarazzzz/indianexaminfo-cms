@@ -1,4 +1,10 @@
 -- ─────────────────────────────────────────────────────────────────────────────
+-- APPLIED 2026-10-28 (owner batch 4, J1, approval "APPLY SITEMAP VIEW") as
+--   supabase/migrations/20261028165448_sitemap_content_types_view.sql (PART 2), together
+--   with content_has_data_fn.sql (PART 1). The rolled-back proof below was re-run after
+--   applying and matched: 399 view rows as postgres and as anon, planted draft + zz-test-
+--   rows absent, anon SELECT/EXECUTE true, authenticated SELECT false, 20/20 fixture parity,
+--   reloptions security_invoker=true. Kept as the reviewed design record; do not apply twice.
 -- PROPOSED — DO NOT move into supabase/migrations/ without the owner's word
 -- ("APPLY SITEMAP VIEW"). Nothing in this file has been applied. The proof runs in
 -- a BEGIN … ROLLBACK transaction, so the live database is unchanged by it.
