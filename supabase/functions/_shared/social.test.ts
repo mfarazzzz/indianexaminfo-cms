@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildCaption, escapeTelegramHtml, idempotencyKey, capExceeded,
   redactError, telegramPayload, evaluateQueueGate, officialHost,
+  goResolverUrl, isSameSiteUrl, pickLandingUrl,
   TELEGRAM_CAPTION_MAX,
 } from "./social";
 
@@ -83,5 +84,44 @@ describe("token safety", () => {
   it("telegramPayload never contains the token", () => {
     const p = telegramPayload("@chan", "hello");
     expect(JSON.stringify(p)).not.toContain(TOKEN);
+  });
+});
+
+/**
+ * H-3a (owner batch 3). A candidate used to store `page_url || SUPABASE_URL`, and both CMS
+ * callers pass page_url "" — so the landing link would have been the Supabase project host,
+ * not the reader page. These pin the rule that replaced it: the link is always on the public
+ * site, and the Supabase host can never be written into it again.
+ */
+describe("landing url — the reader page, never the project host", () => {
+  const SITE = "https://www.indianexaminfo.com";
+  const PROJECT = "https://cwbhhcqsrbuoybeaondk.supabase.co";
+
+  it("goResolverUrl builds the frontend resolver path from the slug", () => {
+    expect(goResolverUrl(SITE, "SSC-CGL")).toBe("https://www.indianexaminfo.com/go/ssc-cgl");
+    expect(goResolverUrl(`${SITE}/`, "ssc cgl")).toBe("https://www.indianexaminfo.com/go/ssc%20cgl");
+    expect(goResolverUrl("", "ssc-cgl")).toBe("");
+    expect(goResolverUrl(SITE, "")).toBe("");
+  });
+
+  it("isSameSiteUrl accepts only http(s) on the site host", () => {
+    expect(isSameSiteUrl(`${SITE}/sarkari-naukri/ssc/ssc-cgl`, SITE)).toBe(true);
+    expect(isSameSiteUrl(PROJECT, SITE)).toBe(false);
+    expect(isSameSiteUrl("https://evil.example/x", SITE)).toBe(false);
+    expect(isSameSiteUrl("not a url", SITE)).toBe(false);
+  });
+
+  it("pickLandingUrl: a caller URL on the site wins; anything else resolves through /go", () => {
+    expect(pickLandingUrl({ pageUrl: `${SITE}/admission/medical/neet-ug`, slug: "neet-ug", siteUrl: SITE }))
+      .toBe("https://www.indianexaminfo.com/admission/medical/neet-ug");
+    // the empty page_url both CMS hooks pass today
+    expect(pickLandingUrl({ pageUrl: "", slug: "neet-ug", siteUrl: SITE }))
+      .toBe("https://www.indianexaminfo.com/go/neet-ug");
+    // a caller URL that is NOT ours (a pasted official link) is ignored, never stored
+    expect(pickLandingUrl({ pageUrl: "https://ssc.gov.in/x", slug: "ssc-cgl", siteUrl: SITE }))
+      .toBe("https://www.indianexaminfo.com/go/ssc-cgl");
+    // and the Supabase project host can never be the answer
+    expect(pickLandingUrl({ pageUrl: PROJECT, slug: "ssc-cgl", siteUrl: SITE })).not.toBe(PROJECT);
+    expect(pickLandingUrl({ pageUrl: "", slug: "", siteUrl: "" })).toBe("");
   });
 });

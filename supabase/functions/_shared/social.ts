@@ -23,6 +23,42 @@ export function officialHost(url: string | null | undefined): string {
   try { return url ? new URL(url).host : ""; } catch { return ""; }
 }
 
+/**
+ * The frontend's canonical-URL resolver for one record (app/go/[slug]/route.ts). The CMS
+ * deliberately builds NO public URLs of its own — the pillar → URL-segment fact lives in the
+ * frontend only — so /go/{slug} IS "the real reader URL", answered with a 308 to it.
+ */
+export function goResolverUrl(siteUrl: string, slug: string): string {
+  const base = (siteUrl || "").replace(/\/+$/, "");
+  if (!base || !slug) return "";
+  return `${base}/go/${encodeURIComponent(slug.trim().toLowerCase())}`;
+}
+
+/** True when `url` is an http(s) URL on the same host as `siteUrl` (the public site). */
+export function isSameSiteUrl(url: string, siteUrl: string): boolean {
+  try {
+    const u = new URL(url), s = new URL(siteUrl);
+    return (u.protocol === "https:" || u.protocol === "http:") && u.host === s.host;
+  } catch { return false; }
+}
+
+/**
+ * The landing URL a candidate may carry (owner batch 3, H-3a).
+ *
+ * BEFORE, social-candidate fell back to `page_url || SUPABASE_URL` and BOTH CMS callers
+ * passed page_url: "" — so every candidate would have posted the Supabase project host
+ * (https://<ref>.supabase.co) instead of the reader page. The fallback is removed here:
+ * a candidate with no site origin configured is refused (the caller returns 502) rather
+ * than silently publishing the wrong host.
+ *
+ * Order: the caller's own-site page_url wins; otherwise the /go/{slug} resolver.
+ */
+export function pickLandingUrl(input: { pageUrl?: string; slug?: string; siteUrl: string }): string {
+  const explicit = (input.pageUrl || "").trim();
+  if (explicit && isSameSiteUrl(explicit, input.siteUrl)) return explicit;
+  return goResolverUrl(input.siteUrl, input.slug || "");
+}
+
 /** Idempotency key: two events for the same (channel, source, event) collapse. */
 export function idempotencyKey(channel: string, sourceType: string, sourceId: string, event: string): string {
   return `${channel}|${sourceType}|${sourceId}|${event}`;

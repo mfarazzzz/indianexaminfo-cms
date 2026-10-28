@@ -8,13 +8,18 @@
  * It NEVER posts. It only records a candidate for a human to approve. The caption is
  * built from STRUCTURED fields only (../_shared/social.ts) — never free text.
  *
- * Env (owner-set): SUPABASE_URL, SUPABASE_ANON_KEY. No token here.
+ * Env (owner-set): SUPABASE_URL, SUPABASE_ANON_KEY, PUBLIC_SITE_URL (the reader origin,
+ * e.g. https://www.indianexaminfo.com). No token here.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { buildCaption, idempotencyKey, type CaptionInput } from "../_shared/social.ts";
+import { buildCaption, idempotencyKey, isSameSiteUrl, pickLandingUrl, type CaptionInput } from "../_shared/social.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+// The PUBLIC reader origin. Deliberately not SUPABASE_URL: a landing link must be a page a
+// reader can open, and until now this function fell back to the project host when the caller
+// passed no page_url — which both CMS call sites do (they pass "").
+const SITE_URL = (Deno.env.get("PUBLIC_SITE_URL") ?? "").replace(/\/+$/, "");
 
 const STATUS_LABELS: Record<string, string> = {
   "registration-open": "Applications open",
@@ -51,6 +56,19 @@ Deno.serve(async (req) => {
     .eq("id", source_id).maybeSingle();
   if (!meta) return json({ ok: false, error: "exam meta missing" }, 404);
 
+  // H-3a: the landing URL must BE the reader page. Build it through the frontend's own
+  // resolver (/go/{slug}, the single place the pillar → segment fact lives) and follow its
+  // 308 once, so the stored landing_url is the final URL rather than a redirect.
+  if (!SITE_URL) return json({ ok: false, error: "PUBLIC_SITE_URL is not configured" }, 502);
+  let landing = pickLandingUrl({ pageUrl: page_url, slug: meta.slug, siteUrl: SITE_URL });
+  if (!landing) return json({ ok: false, error: "no landing url could be resolved" }, 502);
+  if (/\/go\//.test(landing)) {
+    try {
+      const r = await fetch(landing, { redirect: "follow", headers: { "user-agent": "social-candidate/1" } });
+      if (r.ok && isSameSiteUrl(r.url, SITE_URL)) landing = r.url;
+    } catch { /* keep the resolver URL — one hop still lands the reader on the right page */ }
+  }
+
   // The one date that matters, by event/status — never invented.
   const dateMap: Record<string, { label: string; iso: string | null }> = {
     "registration-open": { label: "Last date", iso: exam.app_close_date },
@@ -64,7 +82,7 @@ Deno.serve(async (req) => {
     dateLabel: pick.label || null,
     dateISO: pick.iso || null,
     officialUrl: meta.official_website,
-    pageUrl: page_url || SUPABASE_URL, // the real reader URL, supplied by the CMS caller
+    pageUrl: landing, // resolved above through the frontend's /go/{slug} (never the project host)
   };
   const caption = buildCaption(captionInput);
 
