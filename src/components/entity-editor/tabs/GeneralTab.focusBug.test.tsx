@@ -61,6 +61,12 @@ vi.mock('sonner', () => ({
   Toaster: () => null,
 }))
 
+// Phase T: GeneralTab scopes its browser draft backup to the signed-in user. In the app the tab is
+// always rendered under AuthProvider, so the hook is stubbed here the way the page tests stub it.
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({ user: { id: 'test-user' }, isLoading: false, authExpired: false }),
+}))
+
 // ── Import after mocks ────────────────────────────────────────────────────────
 
 import { GeneralTab } from './GeneralTab'

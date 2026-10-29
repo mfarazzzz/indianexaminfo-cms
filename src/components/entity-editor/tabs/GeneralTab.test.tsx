@@ -26,6 +26,13 @@ vi.mock('@/services/categoryService', () => ({
   getCategories: vi.fn().mockResolvedValue([]),
 }))
 
+// Phase T: GeneralTab scopes its browser draft backup to the signed-in user. In the app the tab is
+// always rendered under AuthProvider, so the hook is stubbed the same way BulletinPage.test.tsx and
+// MessagesListPage.test.tsx stub it. No component under test reads auth for anything else.
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({ user: { id: 'test-user' }, isLoading: false, authExpired: false }),
+}))
+
 // GeneralTab renders ReadOnlyDateChips, which read from TimelineDatesProvider.
 // The provider queries timeline + vacancy, so both services are stubbed.
 vi.mock('@/services/entity/timelineService', () => ({

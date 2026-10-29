@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Select from '@radix-ui/react-select'
 import * as Switch from '@radix-ui/react-switch'
-import { ChevronDown, Check, Loader2, RefreshCw, Clock } from 'lucide-react'
+import { ChevronDown, Check, Loader2, RefreshCw, Clock, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { EntityCreateSchema, generateSlug } from '@/lib/validation/entitySchemas'
 import type { EntityCreateInput } from '@/lib/validation/entitySchemas'
@@ -14,6 +14,8 @@ import { entityKeys, categoryKeys } from '@/lib/queryKeys'
 import { useEntityQuery } from '@/hooks/useEntityQuery'
 import { useEditorUI } from '@/contexts/EditorUIContext'
 import { useAutosave } from '@/hooks/useAutosave'
+import { useDraftBackup } from '@/hooks/useDraftBackup'
+import { useAuth } from '@/hooks/useAuth'
 import { usePillarContext } from '@/contexts/PillarContext'
 import { buildUrlPreview } from '@/lib/utils'
 import { ConductingBodySelect } from '@/components/shared/ConductingBodySelect'
@@ -97,6 +99,13 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
     },
   })
 
+  // ── browser draft backup (owner batch 5, Phase T) ──────────────────────────
+  // This form is the one section of the editor that deliberately holds text it has NOT written
+  // yet (until Save, or until the 30-second autosave fires). A closed tab inside that window
+  // loses it, so a second copy lives in this browser — nothing is sent anywhere and the save
+  // path is untouched. The hook is wired below, after the seed refs it has to cooperate with.
+  const { user } = useAuth()
+
   // Track whether we have populated the form from server data at least once.
   // We only reset on the FIRST successful load (seedRef.current === false) and
   // never again after that — background refetches must never overwrite unsaved
@@ -104,9 +113,16 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
   // the next confirmed server value is loaded cleanly.
   const seedRef = useRef(false)
 
+  // Set once the editor answers "Restore" on the draft banner: the restored text wins over the
+  // server values for this mount, because otherwise a slow entity load would land on top of it.
+  // Mirrored in `restored` state so the backup hook keeps treating the section as unsaved.
+  const restoredRef = useRef(false)
+  const [restored, setRestored] = useState(false)
+
   useEffect(() => {
     if (!entity) return
     if (seedRef.current) return // already seeded — do NOT overwrite dirty state
+    if (restoredRef.current) return
 
     seedRef.current = true
     reset({
@@ -127,6 +143,22 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
     else clearDirty('general')
   }, [isDirty, markDirty, clearDirty])
 
+  // The backup itself. `watch()` supplies the live values, `entity.updatedAt` is what keeps an
+  // OLD leftover silent, and `draftSaved()` (in the mutation's onSuccess) retires the copy once
+  // the database has the text. `restored` is state rather than only a ref because the restored
+  // text is unsaved even though reset() re-based react-hook-form's isDirty.
+  const liveValues = watch()
+  const {
+    restore: draftOffer, acceptRestore: acceptDraft, dismissRestore: discardDraft, markSaved: draftSaved,
+  } = useDraftBackup<EntityCreateInput>({
+    entityId: entityId || null,
+    section: 'general',
+    values: liveValues as EntityCreateInput,
+    dirty: isDirty || restored,
+    serverSavedAt: (entity as { updatedAt?: string } | undefined)?.updatedAt ?? null,
+    userId: user?.id ?? null,
+  })
+
   const pillar   = watch('pillar')
   const name     = watch('name')
   const tags     = watch('tags')
@@ -143,6 +175,7 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
     onSuccess: (saved) => {
       toast.success(isNew ? 'Exam created' : 'Saved')
       clearDirty('general')
+      draftSaved()          // the server has this text now; the browser copy is spent
       // Allow the next server response to re-seed the form with confirmed values.
       // This is the only place we intentionally accept a server overwrite.
       seedRef.current = false
@@ -154,6 +187,30 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
   })
 
   const onSubmit = handleSubmit((data) => mutation.mutate(data))
+
+  /**
+   * "Restore" — put the browser draft back into the form.
+   *
+   * `reset(draft)` (whole form, not a pile of setValue() calls) so the tags/keywords arrays and
+   * the nested `metadata` object land together. reset() re-bases react-hook-form's own
+   * isDirty on the restored values, which would make the form look SAVED while it is emphatically
+   * not, so the section is marked dirty through the same context the rail and Save All read —
+   * the unsaved badge comes back and the existing autosave timer behaves exactly as it does for
+   * any other edit (no new write path, and nothing is saved by this click).
+   * `seedRef`/`restoredRef` keep a late server response from overwriting it. "Discard" drops the
+   * copy from storage immediately; restoring keeps it until the next successful save, so an
+   * editor who restores and then closes the tab has not lost anything.
+   */
+  const applyDraft = useCallback(() => {
+    if (!draftOffer) return
+    restoredRef.current = true
+    setRestored(true)
+    seedRef.current = true            // do not let a later server load overwrite what we restored
+    reset(draftOffer.draft)
+    markDirty('general')
+    acceptDraft()
+    toast.success('Unsaved changes restored from this browser')
+  }, [draftOffer, reset, markDirty, acceptDraft])
 
   // Stable autosave callback — uses a ref so the 30s timer always calls the
   // latest handleSubmit without creating a new function reference each render.
@@ -176,6 +233,38 @@ export function GeneralTab({ entityId, pillars: pillarsProp }: { entityId: strin
 
   return (
     <form onSubmit={onSubmit} className="p-6 max-w-4xl mx-auto space-y-8">
+
+      {/* ── Unsaved draft found in THIS browser (Phase T) ──────────────────────
+          Shown only when the stored copy is NEWER than the row the server sent, and only
+          until it is answered — nothing is applied by itself, and Discarding is allowed while
+          Restoring is not the default. The text is not lost either way until it expires (24h). */}
+      {draftOffer && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3"
+        >
+          <p className="text-sm text-amber-900">
+            <span className="font-semibold">Restore unsaved changes?</span>{' '}
+            This browser still holds a General-tab edit from{' '}
+            {new Date(draftOffer.savedAt).toLocaleString()} that was never saved. Your current
+            typing is not discarded by restoring — nothing happens until you choose.
+          </p>
+          <span className="flex items-center gap-2">
+            <button
+              type="button" onClick={applyDraft}
+              className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Restore
+            </button>
+            <button
+              type="button" onClick={discardDraft}
+              className="rounded-md border border-amber-300 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
+            >
+              Discard
+            </button>
+          </span>
+        </div>
+      )}
 
       {/* Autosave indicator */}
       {!isNew && (
