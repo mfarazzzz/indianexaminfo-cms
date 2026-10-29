@@ -10,7 +10,7 @@ import {
   buildCaption, escapeTelegramHtml, idempotencyKey, capExceeded,
   redactError, telegramPayload, evaluateQueueGate, officialHost,
   goResolverUrl, isSameSiteUrl, pickLandingUrl,
-  queueHeadroom, isTestSlug, landingUrlIsTest,
+  queueHeadroom, isTestSlug, landingUrlIsTest, testContentRefusal,
   TELEGRAM_CAPTION_MAX,
 } from "./social";
 
@@ -165,5 +165,39 @@ describe("test content is refused (J3)", () => {
     expect(landingUrlIsTest("https://x/blog/exam-prep/zz-notes-guide")).toBe(false);
     expect(landingUrlIsTest("")).toBe(false);
     expect(landingUrlIsTest(null)).toBe(false);
+  });
+});
+
+/**
+ * P5 (owner batch 5) — the SAME predicate both Edge Functions now call, so "a candidate for a
+ * zz-test- exam is refused" is a fact proven by a test rather than by reading an `if` in a
+ * file that nothing here can execute (there is no Deno in this repo's test run).
+ */
+describe("testContentRefusal — the one decision social-candidate and social-publish share (P5)", () => {
+  it("refuses the record the candidate came from", () => {
+    expect(testContentRefusal({ slug: "zz-test-entrance-exam", landingUrl: "https://x/admission/medical/zz-test-entrance-exam" }))
+      .toBe("reference test exam");
+    expect(testContentRefusal({ slug: "ssc-cgl", landingUrl: "https://x/sarkari-naukri/ssc/ssc-cgl" })).toBe(null);
+  });
+
+  it("refuses a claimed row whose exam slug is test content, via the id → slug map social-publish builds", () => {
+    const examSlugById = { real: "ssc-cgl", bad: "zz-test-government-exam" };
+    expect(testContentRefusal({ examSlugById, sourceId: "bad", landingUrl: "https://x/sarkari-naukri/zz-test-government-exam" }))
+      .toBe("reference test exam");
+    expect(testContentRefusal({ examSlugById, sourceId: "real", landingUrl: "https://x/sarkari-naukri/ssc/ssc-cgl" })).toBe(null);
+    // an id not in the map (a vacancy row) is decided by its landing URL, not silently passed
+    expect(testContentRefusal({ examSlugById, sourceId: "vac-1", landingUrl: "https://x/sarkari-naukri/zz-test-vacancy-2026" }))
+      .toBe("landing url points at reference test content");
+  });
+
+  it("refuses a landing URL that points at test content even when the record itself is real", () => {
+    // the case a caller-supplied page_url opens up: a real exam, a test page.
+    expect(testContentRefusal({ slug: "ssc-cgl", landingUrl: "https://x/sarkari-naukri/zz-test-vacancy-2026" }))
+      .toBe("landing url points at reference test content");
+  });
+
+  it("never refuses a real exam on a real page, and never refuses nothing-at-all", () => {
+    expect(testContentRefusal({ slug: "upssc-pet", landingUrl: "https://x/sarkari-naukri/upsssc-pet" })).toBe(null);
+    expect(testContentRefusal({})).toBe(null);
   });
 });

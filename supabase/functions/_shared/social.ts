@@ -112,6 +112,32 @@ export function landingUrlIsTest(url: string | null | undefined): boolean {
   return path.split("/").some((seg) => isTestSlug(decodeURIComponent(seg)));
 }
 
+/**
+ * THE test-content decision, in one pure function that both Edge Functions call — so a
+ * unit test can prove the refusal instead of only proving that some `if` exists in a
+ * source file. (P5, owner batch 5.)
+ *
+ * Returns the reason to refuse, or null when the row may proceed. Two independent senses
+ * are checked because a candidate carries both: the record it came from, and the page a
+ * reader would be sent to.
+ *
+ * `examSlugById` is what social-publish has after its one batched slug read: a map of
+ * exam id → slug for the claimed rows. `slug` is what social-candidate already holds. The
+ * landing URL is checked segment-wise by `landingUrlIsTest`, so a test slug cannot arrive
+ * through a caller-supplied `page_url` either.
+ */
+export function testContentRefusal(input: {
+  slug?: string | null;
+  landingUrl?: string | null;
+  examSlugById?: Record<string, string>;
+  sourceId?: string | null;
+}): string | null {
+  if (isTestSlug(input.slug)) return "reference test exam";
+  if (input.sourceId && isTestSlug(input.examSlugById?.[input.sourceId])) return "reference test exam";
+  if (landingUrlIsTest(input.landingUrl)) return "landing url points at reference test content";
+  return null;
+}
+
 export interface CaptionInput {
   examName: string;
   derivedStatusLabel: string;      // e.g. "Applications open" — from the derived status, not free text

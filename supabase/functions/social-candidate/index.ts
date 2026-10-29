@@ -13,8 +13,8 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  buildCaption, idempotencyKey, isSameSiteUrl, isTestSlug, landingUrlIsTest, pickLandingUrl,
-  type CaptionInput,
+  buildCaption, idempotencyKey, isSameSiteUrl, pickLandingUrl,
+  testContentRefusal, type CaptionInput,
 } from "../_shared/social.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -72,12 +72,14 @@ Deno.serve(async (req) => {
     } catch { /* keep the resolver URL — one hop still lands the reader on the right page */ }
   }
 
-  // J3 — reference TEST content is NEVER queued for posting, whatever the caller asked for.
-  // Both halves are checked because the landing URL is resolver-derived (a test record would
-  // otherwise arrive as a clean /sarkari-naukri/zz-test-… path) and a caller-supplied
-  // page_url is otherwise honoured verbatim when it is on our own host.
-  if (isTestSlug(meta.slug) || landingUrlIsTest(landing)) {
-    return json({ ok: false, error: "reference test content is never queued" }, 422);
+  // J3/P5 — reference TEST content is NEVER queued for posting, whatever the caller asked for.
+  // The decision lives in the shared, unit-tested predicate: both halves are checked because
+  // the landing URL is resolver-derived (a test record would otherwise arrive as a clean
+  // /sarkari-naukri/zz-test-… path) and a caller-supplied page_url is otherwise honoured
+  // verbatim when it is on our own host.
+  const refusal = testContentRefusal({ slug: meta.slug, landingUrl: landing });
+  if (refusal) {
+    return json({ ok: false, error: "reference test content is never queued", reason: refusal }, 422);
   }
 
   // The one date that matters, by event/status — never invented.

@@ -12,7 +12,7 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  isTestSlug, landingUrlIsTest, queueHeadroom, redactError, telegramPayload,
+  queueHeadroom, redactError, telegramPayload, testContentRefusal,
 } from "../_shared/social.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -56,26 +56,28 @@ Deno.serve(async (req) => {
 
   const { data: chat } = await supabase.from("social_channels").select("external_id").eq("channel", channel).eq("is_active", true).limit(1).maybeSingle();
 
-  // J3 — refuse reference TEST content, in both senses the owner named: the record's own
+  // J3/P5 — refuse reference TEST content, in both senses the owner named: the record's own
   // slug, and a landing URL whose path carries a zz-test- segment. One batched read for the
-  // exam rows, then the row is failed (never sent) with the reason on the log.
+  // exam ids, then the shared predicate (unit-tested, not grepped) decides; the row is FAILED
+  // — never sent — with the reason on the log.
   const examIds = rows.filter((r) => r.source_type === "exam").map((r) => r.source_id);
-  const testExamIds = new Set<string>();
+  const examSlugById: Record<string, string> = {};
   if (examIds.length > 0) {
     const { data: slugRows } = await supabase.from("exams").select("id, slug").in("id", examIds);
     for (const s of (slugRows ?? []) as Array<{ id: string; slug: string }>) {
-      if (isTestSlug(s.slug)) testExamIds.add(s.id);
+      if (s?.id && typeof s.slug === "string") examSlugById[s.id] = s.slug;
     }
   }
 
   const results: Array<{ id: string; status: string }> = [];
   for (const row of rows) {
-    if (testExamIds.has(row.source_id) || landingUrlIsTest(row.landing_url)) {
+    const refusal = testContentRefusal({ landingUrl: row.landing_url, examSlugById, sourceId: row.source_id });
+    if (refusal) {
       await supabase.from("social_posts")
-        .update({ status: "failed", error: "reference test content is never posted" })
+        .update({ status: "failed", error: `reference test content is never posted (${refusal})` })
         .eq("id", row.id);
       await supabase.from("social_publish_log")
-        .insert({ post_id: row.id, channel, status: "skipped", provider_code: "test_content", error_message: "reference test content refused before send" });
+        .insert({ post_id: row.id, channel, status: "skipped", provider_code: "test_content", error_message: `refused before send: ${refusal}` });
       results.push({ id: row.id, status: "refused_test_content" });
       continue;
     }
