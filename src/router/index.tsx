@@ -200,10 +200,13 @@ export const router = createBrowserRouter([
           { path: "/categories",        element: <RequirePermission anyOf={[P.MANAGE_CATEGORIES]}><CategoriesPage /></RequirePermission> },
           { path: "/navigation",        element: <RequirePermission anyOf={[P.MANAGE_MENUS, P.MANAGE_CATEGORIES]}><NavigationSettingsPage /></RequirePermission> },
           { path: "/menus",             element: <RequirePermission anyOf={[P.MANAGE_MENUS]}><MenusPage /></RequirePermission> },
-          // Social queue (S7.1b) — route only exists when the feature flag is on (schema
-          // applied + functions deployed). Off by default, so nothing changes today.
+          // Social queue (S7.1b) — the route only exists when the feature flag is on (schema
+          // applied + functions deployed). Gate is manage_social, the SAME slug the
+          // social_posts / social_channels / social_config RLS policies check, so the page cannot
+          // be opened by someone the database will then refuse to show anything (measured
+          // 2026-10-29: exactly one role holds manage_social — super-admin).
           ...(flagOn("SOCIAL_QUEUE")
-            ? [{ path: "/social", element: <RequirePermission anyOf={[P.EDIT_ANY_POST]}><SocialQueuePage /></RequirePermission> }]
+            ? [{ path: "/social", element: <RequirePermission anyOf={[P.MANAGE_SOCIAL]}><SocialQueuePage /></RequirePermission> }]
             : []),
           { path: "/pages",             element: <RequirePermission anyOf={[P.MANAGE_PAGES]}><PagesListPage /></RequirePermission> },
           { path: "/pages/new",         element: <RequirePermission anyOf={[P.MANAGE_PAGES]}><PageEditPage /></RequirePermission> },

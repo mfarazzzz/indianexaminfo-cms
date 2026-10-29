@@ -4,11 +4,12 @@ import {
   LayoutDashboard, FileText, BookOpen, Users, Tag, Link2,
   FileCode, Image, BarChart2, Megaphone, Palette, MapPin,
   TrendingUp, Settings, ClipboardList, LogOut, ExternalLink,
-  X, Shield, ShieldCheck, Building2, GraduationCap, Navigation, Briefcase, Inbox, Mail,
+  X, Shield, ShieldCheck, Building2, GraduationCap, Navigation, Briefcase, Inbox, Mail, Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { P } from "@/config/permissions";
+import { flagOn } from "@/config/featureFlags";
 import { SITE } from "@/config/site";
 import { useMobileNav } from "@/contexts/MobileNavContext";
 import { useNewMessageCount } from "@/hooks/useNewMessageCount";
@@ -55,6 +56,13 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Content", to: "/content", icon: <FileCode size={ICON_SIZE} />, permissions: [P.CREATE_POST, P.EDIT_ANY_POST] },
       { label: "Blog Authors", to: "/blog/authors", icon: <Users size={ICON_SIZE} />, permissions: [P.CREATE_POST] },
       { label: "Messages", to: "/messages", icon: <Mail size={ICON_SIZE} />, permissions: [P.HANDLE_MESSAGES] },
+      // S7.1b — the social queue entry appears only when the feature flag is on (the route is
+      // not even registered otherwise) and only for a role holding manage_social, which is the
+      // same check the RLS policies make. Without it the page is reachable only by URL, which
+      // is why the runbook's click-by-click would otherwise dead-end here.
+      ...(flagOn("SOCIAL_QUEUE")
+        ? [{ label: "Social queue", to: "/social", icon: <Send size={ICON_SIZE} />, permissions: [P.MANAGE_SOCIAL] }]
+        : []),
     ],
   },
   {

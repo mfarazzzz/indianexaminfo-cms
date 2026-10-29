@@ -1,11 +1,16 @@
 /**
  * SocialQueuePage — the S7.1b review/approve screen (Telegram only).
  *
- * Feature-flagged: with FEATURE_FLAGS.SOCIAL_QUEUE off (the schema is not applied and
- * the functions are not deployed) it renders a clear disabled state and touches no DB.
- * When on: a queue list with per-status chips, approve / skip / edit-caption, a config
- * panel (kill switch, dry-run, cap) shown to all but editable only by super-admin, and a
- * "Run due queue" button that stays in dry-run until the owner flips it.
+ * Feature-flagged: with FEATURE_FLAGS.SOCIAL_QUEUE off it renders a clear disabled state
+ * and touches no DB. When on: a queue list with per-status chips, approve / skip /
+ * edit-caption, the channel list (add/edit — super-admin, because that is what the
+ * social_channels_admin_write RLS policy allows), a config panel (kill switch, dry-run, cap)
+ * shown to all but editable only by super-admin, and a "Run due queue" button.
+ *
+ * NOTHING HERE POSTS. While `dry_run` is on the worker writes the exact payload to
+ * social_publish_log and returns the row to 'approved'; while `kill_switch` is on it returns
+ * before claiming anything. The banner below says so in those words, because the only
+ * dangerous-looking moment in this screen is a button labelled "Run due queue".
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -13,7 +18,8 @@ import { flagOn } from "@/config/featureFlags";
 import { useAuth } from "@/hooks/useAuth";
 import {
   listQueue, decide, setCaption, getConfig, setConfig, runDueQueue,
-  type SocialPostRow, type SocialConfig,
+  listChannels, createChannel, updateChannel,
+  type SocialPostRow, type SocialConfig, type SocialChannel,
 } from "@/services/social/socialQueueService";
 
 const STATUS_CHIP: Record<string, string> = {
@@ -28,6 +34,9 @@ export default function SocialQueuePage() {
   const isSuperAdmin = user?.profile?.roleSlug === "super-admin";
   const [rows, setRows] = useState<SocialPostRow[]>([]);
   const [cfg, setCfg] = useState<SocialConfig | null>(null);
+  const [channels, setChannels] = useState<SocialChannel[]>([]);
+  const [newLabel, setNewLabel] = useState("");
+  const [newChatId, setNewChatId] = useState("");
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -35,7 +44,10 @@ export default function SocialQueuePage() {
   const load = useCallback(async () => {
     if (!enabled) return;
     setLoading(true);
-    try { setRows(await listQueue()); setCfg(await getConfig()); }
+    try {
+      const [q, c, ch] = await Promise.all([listQueue(), getConfig(), listChannels()]);
+      setRows(q); setCfg(c); setChannels(ch);
+    }
     catch (e) { toast.error((e as Error).message); }
     finally { setLoading(false); }
   }, [enabled]);
@@ -46,9 +58,10 @@ export default function SocialQueuePage() {
       <div className="p-8 max-w-2xl mx-auto text-center">
         <h1 className="text-lg font-semibold text-slate-800 mb-2">Social queue</h1>
         <p className="text-sm text-slate-500">
-          Disabled — the social-queue schema is not applied and the Telegram functions are not
-          deployed. Enable it in <code>src/config/featureFlags.ts</code> after the owner applies
-          <code> supabase/proposed/20261012140000_social_queue.sql</code> and deploys the functions.
+          Disabled by <code>FEATURE_FLAGS.SOCIAL_QUEUE</code> in <code>src/config/featureFlags.ts</code>.
+          The schema is applied and <code>social-candidate</code> / <code>social-publish</code> are deployed,
+          so flipping that flag (and rebuilding the CMS, because it is compiled into the bundle) is all
+          that stands between this and the queue. Until then this page touches no database at all.
         </p>
       </div>
     );
@@ -67,9 +80,36 @@ export default function SocialQueuePage() {
   const patchCfg = async (p: Partial<SocialConfig>) => {
     try { await setConfig(p); await load(); } catch (e) { toast.error((e as Error).message); }
   };
+  const addChannel = async () => {
+    try { await createChannel({ label: newLabel, external_id: newChatId }); setNewLabel(""); setNewChatId(""); await load(); toast.success("Channel added"); }
+    catch (e) { toast.error((e as Error).message); }
+  };
+  const toggleChannel = async (ch: SocialChannel) => {
+    try { await updateChannel(ch.id, { is_active: !ch.is_active }); await load(); }
+    catch (e) { toast.error((e as Error).message); }
+  };
+
+  const activeTelegram = channels.filter((c) => c.is_active && c.external_id);
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
+      {/* P3 — the safety state is said out loud, at the top, in the same words the worker
+          uses. It is read from the row the database actually holds, not from a constant. */}
+      {cfg && (cfg.kill_switch || cfg.dry_run) && (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">
+            {cfg.kill_switch
+              ? "KILL SWITCH ON: nothing is posted to any channel."
+              : "DRY RUN: nothing is posted — the exact message is written to the log and the item returns to Approved."}
+          </p>
+          <p className="mt-1 text-xs text-amber-800">
+            {cfg.kill_switch
+              ? "Running the queue claims nothing while this is on. Un-tick \"Kill switch\" below to reach the dry-run step."
+              : "Un-tick \"Dry run\" to send for real. The daily cap is " + cfg.telegram_daily_cap + " posts per day, and only then does Telegram get anything."}
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-slate-800">Social queue — Telegram</h1>
         <button onClick={run} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
@@ -89,6 +129,58 @@ export default function SocialQueuePage() {
           {!isSuperAdmin && <span className="text-xs text-slate-400">config editable by super-admin only</span>}
         </div>
       )}
+
+      {/* Channels (P2) — where a post would go. super-admin only, which is also exactly what
+          the social_channels_admin_write RLS policy enforces, so a non-super-admin sees the
+          list (staff_read needs manage_social) but no editor. No field here can carry a bot
+          token: the token lives in Supabase Edge Function Secrets and the browser cannot read
+          or write that. */}
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-slate-800 mb-1">Telegram channels</h2>
+        <p className="text-xs text-slate-500 mb-3">
+          The label is for the queue; the chat id is what Telegram is addressed with — a public
+          handle (@name) or a numeric id (-100… for a channel/supergroup). The bot token is
+          NEVER stored here: it lives only in Supabase → Edge Functions → Secrets as
+          <code> TG_BOT_TOKEN</code>, which this page cannot read.
+        </p>
+
+        {channels.length === 0 && (
+          <p className="text-xs text-slate-500 mb-3">No channel configured yet — a real send (not a dry run) would report <code>config_missing</code> until one is added.</p>
+        )}
+        {activeTelegram.length > 1 && (
+          <p className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {activeTelegram.length} active channels are configured. The publish worker picks one active row for “telegram” — keep exactly one active to remove the ambiguity.
+          </p>
+        )}
+
+        <ul className="divide-y divide-slate-100 text-sm">
+          {channels.map((ch) => (
+            <li key={ch.id} className="flex items-center justify-between gap-3 py-2">
+              <span className="font-medium text-slate-800">{ch.label}</span>
+              <code className="text-xs text-slate-600">{ch.external_id || "(no chat id)"}</code>
+              <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${ch.is_active ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-500"}`}>
+                {ch.is_active ? "active" : "inactive"}
+              </span>
+              {isSuperAdmin && (
+                <button onClick={() => toggleChannel(ch)} className="text-xs rounded border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
+                  {ch.is_active ? "Set inactive" : "Set active"}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        {isSuperAdmin && (
+          <div className="mt-3 flex flex-wrap items-start gap-2">
+            <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Label (e.g. Main channel)"
+              className="flex-1 min-w-[180px] rounded border border-slate-300 px-2 py-1.5 text-sm" />
+            <input value={newChatId} onChange={(e) => setNewChatId(e.target.value)} placeholder="@channelname or -1001234567890"
+              className="flex-1 min-w-[220px] rounded border border-slate-300 px-2 py-1.5 text-sm font-mono" />
+            <button onClick={addChannel} className="rounded bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700">Add channel</button>
+          </div>
+        )}
+        {!isSuperAdmin && <p className="mt-2 text-xs text-slate-400">Channels are added and edited by super-admin only (enforced by RLS as well as by this view).</p>}
+      </div>
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
       {!loading && rows.length === 0 && (

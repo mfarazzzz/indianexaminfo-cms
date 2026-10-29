@@ -41,6 +41,11 @@ export const P = {
   // S0-5 Part 3 — Reader messages (handle_messages = read/update;
   // delete/export stay on manage_settings, per reader_messages.sql)
   HANDLE_MESSAGES:   "handle_messages",
+  // S7.1b — Social queue. The slug exists in the seeded `permissions` table (group
+  // "social") and, measured 2026-10-29, exactly one role holds it: super-admin. The
+  // social_posts / social_channels / social_config RLS policies check the same slug, so the
+  // route gate and the database agree instead of the route being looser than the data.
+  MANAGE_SOCIAL:     "manage_social",
 } as const;
 
 export type PermissionSlug = typeof P[keyof typeof P];

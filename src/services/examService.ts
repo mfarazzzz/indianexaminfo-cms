@@ -315,8 +315,14 @@ export async function setExamWorkflowStatus(id: string, status: ExamWorkflowStat
   assertAffected(data as unknown[] | null, status === "published" ? "publish this exam" : "change this exam's status");
   revalidateExams().catch(() => {});
   // Social candidate hook — no-op when the flag is off, and it never throws (a social
-  // failure must not block publish). Fire-and-forget.
-  if (status === "published") void createCandidate({ source_type: "exam", source_id: id, event: "published", page_url: "" });
+  // failure must not block publish). Fire-and-forget. The slug rides along so the hook can
+  // skip reference TEST content without spending a request (J3/P5, layer 1 of 3).
+  if (status === "published") {
+    void createCandidate({
+      source_type: "exam", source_id: id, event: "published", page_url: "",
+      slug: (data as Array<{ slug?: string }>)[0]?.slug,
+    });
+  }
   return mapRow((data as Record<string, unknown>[])[0]);
 }
 
@@ -356,7 +362,12 @@ export async function setExamVerification(id: string, verified: boolean, actorId
   assertAffected(data as unknown[] | null, "verify this exam");
   revalidateExams().catch(() => {});
   // Social candidate hook (verified event) — no-op when off, never blocks verify.
-  if (verified) void createCandidate({ source_type: "exam", source_id: id, event: "verified", page_url: "" });
+  if (verified) {
+    void createCandidate({
+      source_type: "exam", source_id: id, event: "verified", page_url: "",
+      slug: (data as Array<{ slug?: string }>)[0]?.slug,
+    });
+  }
   return mapRow((data as Record<string, unknown>[])[0]);
 }
 
