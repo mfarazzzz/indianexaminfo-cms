@@ -190,7 +190,10 @@ Typical feature addition flow:
 - **React Query DevTools** — Available in development (TanStack Query Devtools)
 - **Supabase Dashboard** — View tables, run queries, check auth logs
 - **Browser DevTools** — Network tab shows all Supabase API calls
-- **PM2 logs** — `pm2 logs indianexaminfo-cms` in production
+- **What is actually deployed** — the build stamp in the served HTML:
+  `<meta name="build" content="<sha> <sync> <iso>">` on `https://admincms1.indianexaminfo.com/`.
+  The host builds on push to `main`; there is no pm2 process and no server log to tail
+  (`docs/DEPLOYMENT_GUIDE.md` §1b; §4 there is the retired VPS path)
 
 ---
 

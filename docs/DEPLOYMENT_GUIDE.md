@@ -282,15 +282,23 @@ Supabase Storage files can be synced to S3/GCS:
 
 ### Code Rollback
 
+Rollback is a revert plus a push — the host rebuilds, and that rebuild IS the rollback. There is
+no `dist/` on a server to swap and no process to restart.
+
 ```bash
-# If deployment broke the frontend:
-# 1. Revert to previous build artifacts
-cd /var/www/indianexaminfo-cms
-# Assuming previous dist is preserved:
-mv dist dist-broken
-mv dist-previous dist
-pm2 restart indianexaminfo-cms
+git revert <sha>        # or git revert <oldest>..<newest> for a range
+git push origin main    # the host builds and serves it
 ```
+
+Then confirm it landed, from outside, with no login:
+
+```powershell
+Invoke-WebRequest https://admincms1.indianexaminfo.com/ -UseBasicParsing | Select-Object -ExpandProperty Content | Select-String -Pattern 'name="build" content="([^"]+)"'
+```
+
+The sha in that tag must be the reverted commit. If it is not, the host build did not run or
+failed — read its log in the hosting panel. (§4 of this document keeps the retired VPS
+`mv dist dist-previous && pm2 restart` sequence, for reference only.)
 
 ### Database Rollback
 
