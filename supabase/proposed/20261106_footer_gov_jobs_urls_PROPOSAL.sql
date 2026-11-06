@@ -52,6 +52,24 @@
 -- ROLLBACK: run the ROLLBACK block at the bottom. It restores the four exact urls
 -- this file changes, by id, and is safe to run at any time.
 
+-- ─── OWNER BATCH 7, A4 — RE-PROBED 2026-11-06, STILL NOT APPLIED ───────────────────
+-- The batch-7 brief made this phase conditional ("apply only if the owner's approval
+-- word appears below") and the only approval word in that prompt was APPLY RETIRE, so
+-- nothing was applied. The re-probe the brief required was run anyway and it still
+-- passes, so the file remains ready to run at any time:
+--   /sarkari-naukri/ssc      200 self-canonical=yes  ELIGIBLE
+--   /sarkari-naukri/banking  200 self-canonical=yes  ELIGIBLE
+--   /sarkari-naukri/railways 200 self-canonical=yes  ELIGIBLE
+--   /sarkari-naukri/defence  200 self-canonical=yes  ELIGIBLE
+--   /sarkari-naukri/state-government-jobs  308 -> /sarkari-naukri/bharti  NOT ELIGIBLE
+--     (unchanged reasoning: the current State Jobs url is already the winner of that
+--     redirect, so pointing at it would only add a hop)
+--   pre-flight rows: ids ending …0002/…0003/…0004/…0005 still carry the labels SSC
+--     Jobs / Banking Jobs / Railway Jobs / Defence Jobs, url /sarkari-naukri/exam,
+--     is_active=true and order_index 1-4 — exactly what the four UPDATEs pin below, so
+--     each is expected to match one row and no other row.
+-- Waiting for the owner's word: "APPLY FOOTER URLS".
+
 BEGIN;
 
 -- ── PRE-FLIGHT: what the four rows say right now ────────────────────────────
