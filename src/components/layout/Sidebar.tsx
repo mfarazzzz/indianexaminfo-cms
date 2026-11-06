@@ -30,7 +30,36 @@ interface NavGroup {
 
 const ICON_SIZE = 15;
 
-const NAV_GROUPS: NavGroup[] = [
+/**
+ * The nav filter, as pure functions of (the signed-in permission slugs, the entry).
+ *
+ * Exported so the per-role behaviour of the whole rail is a unit test rather than something a
+ * human has to click through four accounts to confirm — see Sidebar.nav.test.ts. The rules are
+ * the ones the component has always applied, unchanged:
+ *   • an item or group with no `permissions` (or an empty list) is visible to everyone;
+ *   • otherwise the viewer needs ANY ONE of the listed slugs (`some`, not `every`);
+ *   • a group whose items are all filtered out is not rendered at all (the component drops it).
+ */
+export function canSeeItemWith(permissions: string[], item: NavItem): boolean {
+  if (!item.permissions || item.permissions.length === 0) return true;
+  return item.permissions.some((p) => permissions.includes(p));
+}
+
+export function canSeeGroupWith(permissions: string[], group: NavGroup): boolean {
+  if (!group.permissions || group.permissions.length === 0) return true;
+  return group.permissions.some((p) => permissions.includes(p));
+}
+
+/** The rail as rendered: groups whose items survive the filter, in order. */
+export function visibleNavGroups(permissions: string[]): NavGroup[] {
+  return NAV_GROUPS
+    .filter((group) => canSeeGroupWith(permissions, group))
+    .map((group) => ({ ...group, items: group.items.filter((item) => canSeeItemWith(permissions, item)) }))
+    .filter((group) => group.items.length > 0);
+}
+
+// Exported for the nav tests; the component reads it exactly as before.
+export const NAV_GROUPS: NavGroup[] = [
   {
     // Step 5: the bulletin is reachable but NOT the default screen yet. It
     // becomes the home route only after bulletin_signals and
@@ -45,14 +74,6 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Content",
     items: [
       { label: "Dashboard", to: "/dashboard", icon: <LayoutDashboard size={ICON_SIZE} /> },
-      { label: "Entrance Exams", to: "/entrance-exams", icon: <GraduationCap size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
-      { label: "Govt Exams", to: "/govt-exam", icon: <ClipboardList size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
-      { label: "Vacancy Pages", to: "/vacancies", icon: <Briefcase size={ICON_SIZE} />, permissions: [P.CREATE_POST, P.EDIT_ANY_POST, P.EDIT_OWN_POST] },
-      { label: "Govt Vacancy Exams", to: "/govt-vacancy", icon: <Shield size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
-      { label: "Board Exams", to: "/board-exams", icon: <BookOpen size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
-      { label: "University Exams", to: "/university-exams", icon: <Building2 size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
-      // S3.2 / D6 — verification triage: every unverified exam, soonest first.
-      { label: "Needs Verification", to: "/needs-verification", icon: <ShieldCheck size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
       { label: "Content", to: "/content", icon: <FileCode size={ICON_SIZE} />, permissions: [P.CREATE_POST, P.EDIT_ANY_POST] },
       { label: "Blog Authors", to: "/blog/authors", icon: <Users size={ICON_SIZE} />, permissions: [P.CREATE_POST] },
       { label: "Messages", to: "/messages", icon: <Mail size={ICON_SIZE} />, permissions: [P.HANDLE_MESSAGES] },
@@ -63,6 +84,27 @@ const NAV_GROUPS: NavGroup[] = [
       ...(flagOn("SOCIAL_QUEUE")
         ? [{ label: "Social queue", to: "/social", icon: <Send size={ICON_SIZE} />, permissions: [P.MANAGE_SOCIAL] }]
         : []),
+    ],
+  },
+  {
+    // U2 step 1 / Phase Y: every exam-shaped list in one group, moved out of "Content" with
+    // NOTHING else changed — same labels, same paths, same icons, same permission slugs, same
+    // order. No route was added, renamed or redirected, and no list component was touched. The
+    // real consolidation (one "Exam records" page with pillar chips, plus "Vacancy listings") is
+    // step 2 of the U2 plan and is deliberately NOT part of this change.
+    title: "Sarkari Naukri",
+    items: [
+      { label: "Entrance Exams", to: "/entrance-exams", icon: <GraduationCap size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      { label: "Govt Exams", to: "/govt-exam", icon: <ClipboardList size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      { label: "Govt Vacancy Exams", to: "/govt-vacancy", icon: <Shield size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      { label: "Board Exams", to: "/board-exams", icon: <BookOpen size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      { label: "University Exams", to: "/university-exams", icon: <Building2 size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      // S3.2 / D6 — verification triage: every unverified exam, soonest first.
+      { label: "Needs Verification", to: "/needs-verification", icon: <ShieldCheck size={ICON_SIZE} />, permissions: [P.CREATE_EXAM, P.EDIT_ANY_EXAM] },
+      // Renamed from "Vacancy Pages" (Phase Y). The path, the icon and the permission set are
+      // unchanged: this is still the editor for `sarkari_naukri`, the 361 rows the public site
+      // serves at /sarkari-naukri/{slug}.
+      { label: "Vacancy listings", to: "/vacancies", icon: <Briefcase size={ICON_SIZE} />, permissions: [P.CREATE_POST, P.EDIT_ANY_POST, P.EDIT_OWN_POST] },
     ],
   },
   {
@@ -133,15 +175,9 @@ export function Sidebar() {
   const roleSlug = user?.profile.roleSlug ?? "author";
   const permissions = user?.profile.permissions ?? [];
 
-  const canSeeItem = (item: NavItem) => {
-    if (!item.permissions || item.permissions.length === 0) return true;
-    return item.permissions.some((p) => permissions.includes(p));
-  };
+  const canSeeItem = (item: NavItem) => canSeeItemWith(permissions, item);
 
-  const canSeeGroup = (group: NavGroup) => {
-    if (!group.permissions || group.permissions.length === 0) return true;
-    return group.permissions.some((p) => permissions.includes(p));
-  };
+  const canSeeGroup = (group: NavGroup) => canSeeGroupWith(permissions, group);
 
   return (
     <aside className={cn(
