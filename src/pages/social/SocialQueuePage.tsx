@@ -11,6 +11,14 @@
  * social_publish_log and returns the row to 'approved'; while `kill_switch` is on it returns
  * before claiming anything. The banner below says so in those words, because the only
  * dangerous-looking moment in this screen is a button labelled "Run due queue".
+ *
+ * EXPORT SHAPE (owner batch 7, Phase S): the router resolves lazy pages by NAME —
+ * `lazyPage(() => import("…/SocialQueuePage"), "SocialQueuePage")`. This file used to carry
+ * only `export default`, so the resolved component was `undefined`, React threw while
+ * rendering the route, and the lazy error boundary showed "Failed to load this page"
+ * on the deployed CMS. The named export is the repo convention (every other page has it)
+ * and is now pinned by src/router/lazyExports.test.ts. `export default` is kept as well so
+ * either import shape works.
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -28,7 +36,7 @@ const STATUS_CHIP: Record<string, string> = {
   failed: "bg-red-50 text-red-700", skipped: "bg-slate-100 text-slate-500",
 };
 
-export default function SocialQueuePage() {
+export function SocialQueuePage() {
   const enabled = flagOn("SOCIAL_QUEUE");
   const { user } = useAuth();
   const isSuperAdmin = user?.profile?.roleSlug === "super-admin";
@@ -222,3 +230,6 @@ export default function SocialQueuePage() {
     </div>
   );
 }
+
+/** Kept for any importer that uses the default form; the router uses the named export. */
+export default SocialQueuePage;

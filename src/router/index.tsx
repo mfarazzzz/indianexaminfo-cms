@@ -56,7 +56,16 @@ class LazyErrorBoundary extends React.Component<
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error };
   }
-  componentDidCatch(error: Error) {
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // Phase S: this boundary used to swallow the error completely — the deployed CMS
+    // showed "Failed to load this page" with nothing in the console, so the owner could
+    // only screenshot it. Name + message + component stack carry no user data, no tokens
+    // and no row contents, and they turn a 20-minute guess into one readable line.
+    console.error(
+      "[cms] page failed to load:",
+      `${error?.name ?? "Error"}: ${String(error?.message ?? "").slice(0, 300)}`,
+      "\ncomponent stack:", String(info?.componentStack ?? "").slice(0, 400),
+    );
     // Auto-recover from stale-chunk 404s: force one hard reload to pull the
     // new index.html. Guard against loops in case the reload doesn't fix it.
     if (isChunkLoadError(error) && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
@@ -92,7 +101,19 @@ function lazyPage(
   exportName: string
 ): React.ComponentType {
   const Component = lazy(() =>
-    factory().then((m) => ({ default: m[exportName] as React.ComponentType }))
+    factory().then((m) => {
+      const resolved = m[exportName];
+      if (typeof resolved !== "function") {
+        // Fail with a message that names the actual problem. An undefined component
+        // otherwise becomes a bare "Element type is invalid" inside React: that is how
+        // /social failed in production (the page had only a default export while the
+        // router asked for the named one) and nothing said which module or which name.
+        throw new Error(
+          `lazyPage: module does not export a component named "${exportName}" (exports found: ${Object.keys(m).join(", ") || "none"})`,
+        );
+      }
+      return { default: resolved as React.ComponentType };
+    })
   );
   return function LazyWrapper() {
     return (
