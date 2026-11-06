@@ -351,10 +351,12 @@ All 4 quality gates must pass before merge:
 
 ### Deployment
 
-- [ ] Build production assets
-- [ ] Deploy to server
-- [ ] Verify PM2 process is running
-- [ ] Verify Nginx is serving correctly
+There is nothing to build or upload by hand — see §1b. The deployment steps ARE the push.
+
+- [ ] Push the intended commits to `main`
+- [ ] Confirm the host build ran and succeeded (hosting panel → the site's build log)
+- [ ] Confirm the admin build stamp matches the pushed sha (`<meta name="build">` in the served HTML)
+- [ ] Confirm the frontend build stamp likewise, if both repos were pushed
 
 ### Post-Deployment
 
@@ -362,7 +364,8 @@ All 4 quality gates must pass before merge:
 - [ ] Verify entity creation works
 - [ ] Verify AI features work (if API key configured)
 - [ ] Verify media upload works
-- [ ] Check PM2 logs for errors: `pm2 logs --lines 50`
+- [ ] Check the Supabase logs (API / database / edge functions) for errors — the CMS is a static
+      bundle and the frontend process is host-managed, so there are no `pm2 logs` to read
 - [ ] Verify revalidation is triggering (if frontend configured)
 - [ ] Monitor for 30 minutes
 
@@ -370,27 +373,17 @@ All 4 quality gates must pass before merge:
 
 ## 11. Monitoring
 
-### PM2 Monitoring
+### What to monitor on this platform
 
-```bash
-pm2 status          # Process status
-pm2 monit           # Real-time monitoring
-pm2 logs            # Tail logs
-pm2 logs --lines 100  # Recent logs
-```
+| Signal | Where it comes from |
+|--------|--------------------|
+| Deployed version | `<meta name="build" content="<sha> <sync> <iso>">` in the served HTML of each app |
+| Build success/failure | Hostinger hosting panel → the site's build log |
+| Availability | An external check on the CMS URL and the frontend URL (200, not 5xx) |
+| Database health and slow queries | Supabase dashboard → Database → Query Performance / Health |
+| API and edge-function errors | Supabase dashboard → Logs |
+| Host resource usage | Hostinger panel (CPU/RAM/disk for the site) |
 
-### Log Locations
-
-| Log | Path |
-|-----|------|
-| PM2 stdout | `/var/log/pm2/cms-out.log` |
-| PM2 stderr | `/var/log/pm2/cms-error.log` |
-| Nginx access | `/var/log/nginx/access.log` |
-| Nginx error | `/var/log/nginx/error.log` |
-
-### Health Indicators
-
-- PM2 process status: `online`
-- PM2 restart count: should be 0 after stable deploy
-- Nginx returns 200 for `/`
-- Supabase dashboard shows active connections
+There is no PM2 process, no `/var/log/pm2/*` and no restart counter on either app: the live
+mechanism is §1b. The old VPS log paths and `pm2 status|monit|logs` commands belong to §4 and are
+listed there as legacy reference only.

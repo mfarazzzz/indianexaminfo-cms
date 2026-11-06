@@ -308,7 +308,9 @@ npm run build && ls -la dist/
 # Check test status
 npm run test 2>&1 | tail -20
 
-# Check PM2 status (production)
-pm2 status
-pm2 logs indianexaminfo-cms --lines 20
+# Check what is actually deployed (there is no pm2 process to inspect — the host builds on push)
+Invoke-WebRequest https://admincms1.indianexaminfo.com/ -UseBasicParsing | Select-Object -ExpandProperty Content | Select-String -Pattern 'name="build" content="([^"]+)"'
+Invoke-WebRequest https://www.indianexaminfo.com/        -UseBasicParsing | Select-Object -ExpandProperty Content | Select-String -Pattern 'name="build" content="([^"]+)"'
+# If the sha is older than the commit you pushed, the host build did not run or failed: read the
+# build log in the Hostinger hosting panel. Do not build or restart anything by hand.
 ```

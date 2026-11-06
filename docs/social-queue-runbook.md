@@ -64,12 +64,28 @@ publishing a broken function.
 
 ## 5. The feature flag — ON since 29 Oct, and it is NOT an environment variable
 `src/config/featureFlags.ts` → `FEATURE_FLAGS.SOCIAL_QUEUE: true`. Vite inlines the value at
-**build** time, so the deployed CMS only shows `/social` after `npm run build` + the normal
-deploy (a local `npm run dev` picks it up on reload). When it is on, the nav item **Social
-queue** appears under **Content** in the sidebar and the `/social` route exists — both only for
-a role holding `manage_social` (today: super-admin), which is the same check the RLS policies
-make. To turn the whole feature back off without touching the database, set the constant to
-`false` and rebuild: `kill_switch` and `dry_run` are the safer levers.
+**build** time, so the deployed CMS only shows `/social` after the commit reaches `main`:
+**push to main; the host builds it; confirm the admin build stamp.** There is no pm2 step and no
+`deploy-cms.sh` — Hostinger builds the CMS itself from the connected repo (see
+`docs/DEPLOYMENT_GUIDE.md` §1b; its §4 pm2/rsync procedure is legacy and is not what runs).
+Confirming the stamp is one request, no login:
+
+```powershell
+Invoke-WebRequest https://admincms1.indianexaminfo.com/ -UseBasicParsing | Select-Object -ExpandProperty Content | Select-String -Pattern 'name="build" content="([^"]+)"'
+```
+
+The sha in that string must be the commit that turned the flag on (`7fec9e6` or any later
+commit). Verified live for this batch on 6 Nov: `0369f92 dirty 2026-11-06T03:02:14.419Z`.
+
+A local `npm run dev` picks the flag up on reload, so a dev box can be ahead of the host — that
+is the one situation where "it works locally but /social is missing in production" means the
+build stamp is older than the commit.
+
+When it is on, the nav item **Social queue** appears in the sidebar and the `/social` route
+exists — both only for a role holding `manage_social` (today: super-admin), which is the same
+check the RLS policies make. To turn the whole feature back off without touching the database,
+set the constant to `false`, push to main, and confirm the build stamp again: `kill_switch` and
+`dry_run` are the safer levers.
 
 ## 6. First dry run, click by click
 
@@ -79,9 +95,10 @@ behave as described, send the reviewer the step number, what you saw, and any er
 result — **never** the bot token or a JWT; the token is not needed to diagnose any of this.
 
 1. **Sign in** to the CMS as **super-admin** (the only role with `manage_social`).
-   *Expect:* the sidebar **Content** group contains **Social queue**.
-   If it is missing: you are not signed in as super-admin, or the deployed CMS was built before
-   the flag was turned on — rebuild (§5). Check with:
+   *Expect:* the sidebar contains **Social queue**.
+   If it is missing: you are not signed in as super-admin, or the deployed build is older than
+   the commit that turned the flag on — check the build stamp (§5) and, if it is old, push to
+   main and let the host build. Check the role with:
    `select r.slug from user_profiles up join roles r on r.id = up.role_id where up.id = auth.uid();`
 
 2. **Open** **Social queue**. *Expect:* an amber banner at the top reading
@@ -89,7 +106,7 @@ result — **never** the bot token or a JWT; the token is not needed to diagnose
    **Social queue — Telegram**, a button **Run due queue (dry run)**, and below it the
    **Telegram channels** panel. An editor without `manage_social` never sees the page at all.
    If instead you see the "Disabled by `FEATURE_FLAGS.SOCIAL_QUEUE`" panel, the running bundle
-   is older than this commit — rebuild.
+   is older than the commit that turned the flag on — compare the build stamp (§5).
 
 3. **Add the channel** in the **Telegram channels** panel: type a label in
    *"Label (e.g. Main channel)"*, the public chat id in *"@channelname or -1001234567890"*,
@@ -189,6 +206,7 @@ result — **never** the bot token or a JWT; the token is not needed to diagnose
   never the project host").
 
 End: SCHEMA APPLIED (20261028171123) · BOTH FUNCTIONS DEPLOYED v2 (verify_jwt true, 401 to
-unauthenticated calls, shared module bundled) · CMS FLAG ON (rebuild required to take effect) ·
+unauthenticated calls, shared module bundled) · CMS FLAG ON and LIVE on the host (build stamp
+`0369f92` confirmed 6 Nov — push to main, the host builds it, confirm the admin build stamp) ·
 `kill_switch` and `dry_run` are ON, so nothing can post until you change those deliberately.
 Channel management exists in the UI (super-admin only) — §6 step 3.

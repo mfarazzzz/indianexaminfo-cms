@@ -63,8 +63,8 @@
 | # | Item | Status | Notes |
 |---|------|--------|-------|
 | 5.1 | Server accessible (SSH/console) | ☐ | |
-| 5.2 | PM2/process manager configured | ☐ | |
-| 5.3 | Nginx/reverse proxy configured | ☐ | |
+| 5.2 | Host build/deploy configured (GitHub auto-deploy on push to `main`) | ☐ | Hostinger builds both apps from the connected repos. There is no pm2 process to configure and `deploy-cms.sh` is not the live path — see `docs/DEPLOYMENT_GUIDE.md` §1b (§4 there is legacy reference only). |
+| 5.3 | Nginx/reverse proxy configured | ☐ | Hosted layer; check only if a header or TLS symptom appears. |
 | 5.4 | DNS records pointing correctly | ☐ | |
 | 5.5 | CDN configured (if applicable) | ☐ | |
 | 5.6 | Storage bucket accessible | ☐ | |
@@ -75,18 +75,23 @@
 
 ## Deployment Steps
 
+The release IS a push. There is no build or restart to run by hand — the host clones the repo,
+builds it and serves it. What the releaser does is verify the result from the outside.
+
 | # | Step | Command/Action | Done? |
 |---|------|---------------|-------|
-| 1 | Pull latest code | `git pull origin main` | ☐ |
-| 2 | Install dependencies (CMS) | `npm ci` | ☐ |
-| 3 | Build CMS | `npm run build` | ☐ |
-| 4 | Install dependencies (Frontend) | `npm ci` | ☐ |
-| 5 | Build Frontend | `npm run build` | ☐ |
-| 6 | Restart CMS process | `pm2 restart cms` or equivalent | ☐ |
-| 7 | Restart Frontend process | `pm2 restart frontend` or equivalent | ☐ |
-| 8 | Verify CMS accessible | Open CMS URL in browser | ☐ |
-| 9 | Verify Frontend accessible | Open frontend URL | ☐ |
-| 10 | Run Smoke Tests (20 tests) | See SMOKE_TEST_PLAN.md | ☐ |
+| 1 | Confirm both repos are clean and the intended commits are on `main` | `git log --oneline origin/main..HEAD` must be empty after the push | ☐ |
+| 2 | Push to `main` (CMS) | `git push origin main` — the host builds it | ☐ |
+| 3 | Push to `main` (Frontend) | `git push origin main` — the host builds it | ☐ |
+| 4 | Confirm the CMS build stamp matches the pushed sha | `Invoke-WebRequest https://admincms1.indianexaminfo.com/ -UseBasicParsing` and read `<meta name="build" content="…">` | ☐ |
+| 5 | Confirm the frontend build stamp matches | same request against `https://www.indianexaminfo.com/` | ☐ |
+| 6 | Verify CMS accessible | Open CMS URL in browser | ☐ |
+| 7 | Verify Frontend accessible | Open frontend URL | ☐ |
+| 8 | Run Smoke Tests (20 tests) | See SMOKE_TEST_PLAN.md | ☐ |
+
+If a build stamp still shows an older sha after a push, the host build has not run or has
+failed — that is the deploy incident, not a cache problem. Do not "fix" it by building on a
+server: nothing here serves a hand-built `dist/`.
 
 ---
 
@@ -132,7 +137,8 @@
 | Google Search Console | search.google.com/search-console | ☐ |
 | Uptime monitoring | _______________ | ☐ |
 | Error reporting | _______________ | ☐ |
-| Server logs | PM2 logs / journalctl | ☐ |
+| Build/deploy logs | Hostinger hosting → the site's build log (the host runs the build; there is no pm2 log) | ☐ |
+| App logs | Supabase dashboard → Logs (API, database, edge functions) | ☐ |
 | Supabase dashboard | supabase.com/dashboard | ☐ |
 
 ---
@@ -141,11 +147,15 @@
 
 If critical issues are discovered post-deployment:
 
-1. **Revert code**: `git revert` or deploy previous tag
-2. **Restart services**: `pm2 restart all`
+1. **Revert code**: `git revert <sha>` on the repo and push to `main` — the host rebuilds, which
+   IS the rollback. No process restart exists to run.
+2. **Confirm the rollback landed**: read both build stamps (`<meta name="build">` on
+   `https://www.indianexaminfo.com/` and `https://admincms1.indianexaminfo.com/`); the sha must be
+   the reverted commit. If it is not, the incident is a failed host build — read its log.
 3. **Verify rollback**: Run Smoke Tests
 4. **Communicate**: Notify team of rollback and root cause
-5. **Database**: If migration was applied, evaluate if rollback migration needed
+5. **Database**: If a migration was applied, evaluate whether a rollback migration is needed —
+   a code revert does not undo a migration, and this project applies migrations by owner decision
 
 **Rollback time estimate**: < 10 minutes
 
