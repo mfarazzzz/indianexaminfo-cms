@@ -13,6 +13,7 @@ import { normalizeUrl } from "@/lib/utils";
 import { normalizeLabel } from "@/lib/dates/normalizeLabel";
 import { getRegions } from "@/services/regionService";
 import { resolveEntityType } from "@/config/moduleRegistry";
+import { readSpreadsheetUpload } from "@/lib/utils/spreadsheetUpload";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -157,10 +158,23 @@ export async function exportExamsToExcel(pillar: string, pillarLabel: string): P
     };
   });
 
-  // Create workbook
+  // Create workbook — built by the exported helper so a test can round-trip the same object.
+  const wb = buildExportWorkbook(rows, pillarLabel);
+
+  // Download
+  const filename = `${pillar}-exams-export-${new Date().toISOString().split("T")[0]}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
+/**
+ * The export workbook, as a value rather than a download. `XLSX.writeFile` hands a file to the
+ * browser, which no automated test can observe — so the shaping lives here and the public
+ * function only calls writeFile with the result. Column order and widths are unchanged from the
+ * version that lived inline in `exportExamsToExcel`.
+ */
+export function buildExportWorkbook(rows: ExportRow[], sheetName: string): XLSX.WorkBook {
   const ws = XLSX.utils.json_to_sheet(rows);
 
-  // Set column widths
   ws["!cols"] = [
     { wch: 40 }, // name
     { wch: 12 }, // shortName
@@ -190,17 +204,19 @@ export async function exportExamsToExcel(pillar: string, pillarLabel: string): P
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, pillarLabel);
-
-  // Download
-  const filename = `${pillar}-exams-export-${new Date().toISOString().split("T")[0]}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  return wb;
 }
 
 /**
  * Generate a blank template Excel for import.
  */
 export function downloadImportTemplate(pillar: string, pillarLabel: string): void {
+  XLSX.writeFile(buildTemplateWorkbook(), `${pillar}-import-template.xlsx`);
+}
+
+/** The template workbook as a value, for the same reason `buildExportWorkbook` exists. */
+export function buildTemplateWorkbook(): XLSX.WorkBook {
   const templateRow: ImportRow = {
     name: "Example Exam Name 2026",
     shortName: "EEN",
@@ -239,8 +255,7 @@ export function downloadImportTemplate(pillar: string, pillarLabel: string): voi
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Template");
-
-  XLSX.writeFile(wb, `${pillar}-import-template.xlsx`);
+  return wb;
 }
 
 // ── Import ────────────────────────────────────────────────────────────────────
@@ -248,18 +263,16 @@ export function downloadImportTemplate(pillar: string, pillarLabel: string): voi
 /**
  * Parse an uploaded Excel file and import exams.
  * Creates new exams or updates existing ones (matched by slug or name).
+ *
+ * The file is read through readSpreadsheetUpload (type, size and row caps) before anything here
+ * touches the network — see src/lib/utils/spreadsheetUpload.ts for why that gate exists.
  */
 export async function importExamsFromExcel(
   file: File,
   pillar: string
 ): Promise<ImportResult> {
-  const buffer = await file.arrayBuffer();
-  const wb = XLSX.read(buffer, { type: "array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  if (!ws) throw new Error("Empty spreadsheet — no sheet found.");
-
-  const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws);
-  if (rows.length === 0) throw new Error("No data rows found in the spreadsheet.");
+  const parsed = await readSpreadsheetUpload(file);
+  const rows = parsed.rows as Record<string, any>[];
 
   const result: ImportResult = { created: 0, updated: 0, errors: [] };
 
@@ -572,12 +585,10 @@ export async function previewImportFromExcel(
   file: File,
   pillar: string
 ): Promise<ImportPreview> {
-  const buffer = await file.arrayBuffer();
-  const wb = XLSX.read(buffer, { type: "array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  if (!ws) throw new Error("Empty spreadsheet — no sheet found.");
-  const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws);
-  if (rows.length === 0) throw new Error("No data rows found in the spreadsheet.");
+  // Same gate as the real import, so the preview cannot be handed a file the import would refuse
+  // (and a malformed sheet is rejected here rather than after the staff member clicks Apply).
+  const parsed = await readSpreadsheetUpload(file);
+  const rows = parsed.rows as Record<string, any>[];
 
   // Same region vocabulary the real import validates against, so the dry-run can
   // flag a missing/invalid region BEFORE any write (a create with a bad region

@@ -16,6 +16,8 @@ import {
   exportExamsToExcel, importExamsFromExcel, downloadImportTemplate,
   previewImportFromExcel, type ImportResult, type ImportPreview,
 } from "@/lib/utils/excelBulkOps";
+// The picker and the parser must agree on what a spreadsheet is, so the list lives in one place.
+import { ALLOWED_EXTENSIONS } from "@/lib/utils/spreadsheetUpload";
 import { getErrorMessage } from "@/lib/utils";
 
 interface BulkImportExportProps {
@@ -150,7 +152,7 @@ export function BulkImportExport({ pillar, pillarLabel, onImportComplete }: Bulk
         <input
           ref={fileInputRef}
           type="file"
-          accept=".xlsx,.xls,.csv"
+          accept={ALLOWED_EXTENSIONS.join(",")}
           onChange={handleFileSelect}
           className="hidden"
         />
