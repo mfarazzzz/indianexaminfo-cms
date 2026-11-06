@@ -1,0 +1,8 @@
+# Vendored upstream code must stay byte-identical to the official release it was taken from —
+# vendor/xlsx/VENDOR.md records a sha256 per file, and a line-ending conversion would break every
+# one of them on a machine with core.autocrlf=true. So: no EOL normalisation anywhere under here.
+* -text
+
+# These are third-party generated files: hide them from diff stats by default.
+*.js linguist-generated
+*.mjs linguist-generated
