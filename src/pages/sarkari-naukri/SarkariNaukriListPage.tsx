@@ -13,6 +13,7 @@ import {
 } from "@/services/sarkariNaukriService";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ViewOnSiteButton } from "@/components/shared/ViewOnSiteButton";
+import { VacancyBulkFill } from "@/components/shared/VacancyBulkFill";
 import { getErrorMessage } from "@/lib/utils";
 
 type FlagFilter = "" | "datesMissing" | "unverified";
@@ -67,7 +68,7 @@ export function SarkariNaukriListPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Vacancy Pages</h1>
+          <h1 className="text-xl font-semibold text-slate-900">Vacancy listings</h1>
           <p className="text-sm text-slate-500">
             {count} job pages — these are the rows the public site serves live at{" "}
             <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">/sarkari-naukri/&lt;slug&gt;</code>.
@@ -79,6 +80,9 @@ export function SarkariNaukriListPage() {
           <Plus size={16} /> New Vacancy
         </button>
       </div>
+
+      {/* Owner batch 7, C2b: the spreadsheet path for the dates and official links. */}
+      <VacancyBulkFill onImportComplete={load} />
 
       <div className="flex flex-wrap items-center gap-3 bg-white rounded-lg border border-slate-200 p-3">
         <div className="relative flex-1 min-w-[200px]">

@@ -124,6 +124,24 @@ export function SarkariNaukriEditPage() {
 
   const isExam = item.recruitmentType === "exam";
 
+  /**
+   * Owner batch 7, C2a — the one-screen checklist. These are the five fields a vacancy needs
+   * before its "last date" appears to a reader and before it can show as a Google job
+   * listing, plus the verification that the notice was actually checked, in the order they
+   * have to be filled. The three dates used to sit at the top of this screen and the two
+   * links ~200 lines below it, past the Verify button - the wrong order for a job that must
+   * be filled in sequence and then verified, which is why the database refuses verification
+   * without a last date and an official link (trg_sarkari_verify).
+   */
+  const checklist = [
+    { label: "Notification date", filled: !!item.notificationDate },
+    { label: "Application start", filled: !!item.applicationStartDate },
+    { label: "Last date to apply", filled: !!item.applicationEndDate },
+    { label: "Official notification link", filled: !!item.officialNotificationUrl },
+    { label: "Application link", filled: !!item.applicationUrl },
+    { label: "Verified against the notice", filled: !!verifiedAt },
+  ];
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Header */}
@@ -150,26 +168,57 @@ export function SarkariNaukriEditPage() {
 
       <OpenReportsBanner entityId={isNew ? null : id} />
 
-      {/* Key Dates — the three dates that drive the reader-facing status badge */}
+      {/* Vacancy window — the five fields the reader-facing page and the job listing need,
+          plus verification, in fill order. Drives the status badge and the last-date line. */}
       <div className="rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 text-sm font-semibold text-slate-900">Key Dates</h2>
+        <h2 className="mb-1 text-sm font-semibold text-slate-900">Vacancy window</h2>
+        <p className="mb-3 text-xs text-slate-500">
+          Fill these in this order, then Verify. A page with no last date tells readers
+          “Dates awaited”, and a vacancy that is not verified or has no official link is never
+          shown to Google as a job listing.
+        </p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Notification Date</label>
-            <input type="date" value={item.notificationDate ?? ""} onChange={(e) => handleChange("notificationDate", e.target.value || null)}
+            <label htmlFor="vac-notification-date" className="mb-1 block text-xs font-medium text-slate-600">Notification Date</label>
+            <input id="vac-notification-date" type="date" value={item.notificationDate ?? ""} onChange={(e) => handleChange("notificationDate", e.target.value || null)}
               className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Application Start</label>
-            <input type="date" value={item.applicationStartDate ?? ""} onChange={(e) => handleChange("applicationStartDate", e.target.value || null)}
+            <label htmlFor="vac-application-start" className="mb-1 block text-xs font-medium text-slate-600">Application Start</label>
+            <input id="vac-application-start" type="date" value={item.applicationStartDate ?? ""} onChange={(e) => handleChange("applicationStartDate", e.target.value || null)}
               className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Application End (Last Date)</label>
-            <input type="date" value={item.applicationEndDate ?? ""} onChange={(e) => handleChange("applicationEndDate", e.target.value || null)}
+            <label htmlFor="vac-application-end" className="mb-1 block text-xs font-medium text-slate-600">Application End (Last Date)</label>
+            <input id="vac-application-end" type="date" value={item.applicationEndDate ?? ""} onChange={(e) => handleChange("applicationEndDate", e.target.value || null)}
               className="w-full rounded border border-slate-200 px-3 py-2 text-sm" />
           </div>
         </div>
+
+        {/* Moved up from the "Links" card (C2a): these two are part of the same job. */}
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label htmlFor="vac-official-notification-url" className="mb-1 block text-xs font-medium text-slate-600">Official Notification URL</label>
+            <input id="vac-official-notification-url" value={item.officialNotificationUrl ?? ""} onChange={(e) => handleChange("officialNotificationUrl", e.target.value || null)}
+              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" placeholder="https://…gov.in/…notice.pdf" />
+            <p className="mt-0.5 text-[11px] text-slate-400">The notice you are working from. Required before this row can be verified.</p>
+          </div>
+          <div>
+            <label htmlFor="vac-application-url" className="mb-1 block text-xs font-medium text-slate-600">Application URL</label>
+            <input id="vac-application-url" value={item.applicationUrl ?? ""} onChange={(e) => handleChange("applicationUrl", e.target.value || null)}
+              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" placeholder="https://…" />
+            <p className="mt-0.5 text-[11px] text-slate-400">Where the reader applies. Shown as the Apply link on the page.</p>
+          </div>
+        </div>
+
+        <ul role="status" aria-label="What is still missing on this vacancy" data-testid="vacancy-checklist"
+            className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          {checklist.map((f) => (
+            <li key={f.label} className={f.filled ? "text-green-700" : "text-amber-700"}>
+              {f.filled ? "✓" : "○"} {f.label}
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* Recruitment Type Toggle */}
@@ -362,15 +411,11 @@ export function SarkariNaukriEditPage() {
       <div className="rounded-lg border border-slate-200 bg-white p-5 space-y-4">
         <h2 className="text-sm font-semibold text-slate-900">Links</h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Application URL</label>
-            <input value={item.applicationUrl ?? ""} onChange={(e) => handleChange("applicationUrl", e.target.value || null)}
-              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" placeholder="https://..." />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Official Notification URL</label>
-            <input value={item.officialNotificationUrl ?? ""} onChange={(e) => handleChange("officialNotificationUrl", e.target.value || null)}
-              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" placeholder="https://..." />
+          <div className="md:col-span-2">
+            <p className="text-xs text-slate-500">
+              The <span className="font-medium">application</span> and <span className="font-medium">official notification</span>
+              links now live above, in <span className="font-medium">Vacancy window</span>, next to the dates they belong to.
+            </p>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">Result URL</label>
