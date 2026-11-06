@@ -82,7 +82,15 @@ class LazyErrorBoundary extends React.Component<
     if (this.state.hasError) {
       return (
         <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
-          <p className="text-sm text-slate-600">Failed to load this page.</p>
+          {/* The code is on screen, the detail is in the console: "Failed to load this page"
+              alone could not be told apart from a bad chunk, a missing export or a throw
+              inside the page (owner batch 7, Phase S item 4). */}
+          <p className="text-sm text-slate-600">
+            Failed to load this page.
+            <span data-testid="boundary-error-id" className="ml-1 font-mono text-xs text-slate-500">
+              {errorIdFor(this.state.error)}
+            </span>
+          </p>
           <button
             onClick={this.handleReload}
             className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -96,24 +104,51 @@ class LazyErrorBoundary extends React.Component<
   }
 }
 
+/**
+ * A short, safe identifier for the screen.
+ *
+ * A production React error is minified and carries only a number and its args, e.g.
+ * "Minified React error #306 …; args[]=undefined" — which is precisely the useful part:
+ * #306 means a lazy() element resolved to undefined, so the module had no export under the
+ * name the router asked for. Showing the code tells the next reader which failure it was
+ * without putting a message on screen that could carry a URL or a record id. Anything that
+ * is not a minified React error shows its own name instead. Full detail goes to the console
+ * in componentDidCatch.
+ */
+export function errorIdFor(error: Error | null | undefined): string {
+  if (!error) return "unknown error";
+  const minified = /#(\d+)/.exec(String(error.message ?? ""));
+  if (minified) return `React #${minified[1]}`;
+  return String(error.name || "Error");
+}
+
+/**
+ * Resolve the component a lazy route asked for, or fail with a message that names the
+ * problem. Exported so a test can prove the guard actually rejects a missing export —
+ * otherwise "the wiring test passes" and "the wiring test cannot fail" are indistinguishable.
+ */
+export function resolvePageExport(
+  m: Record<string, unknown>,
+  exportName: string,
+  moduleName = "(module)",
+): React.ComponentType {
+  const resolved = m[exportName];
+  if (typeof resolved !== "function") {
+    throw new Error(
+      `lazyPage: ${moduleName} does not export a component named "${exportName}" `
+      + `(exports found: ${Object.keys(m).join(", ") || "none"}). `
+      + `React would render undefined here — minified error #306, the /social failure of 2026-11-06.`,
+    );
+  }
+  return resolved as React.ComponentType;
+}
+
 function lazyPage(
   factory: () => Promise<Record<string, unknown>>,
   exportName: string
 ): React.ComponentType {
   const Component = lazy(() =>
-    factory().then((m) => {
-      const resolved = m[exportName];
-      if (typeof resolved !== "function") {
-        // Fail with a message that names the actual problem. An undefined component
-        // otherwise becomes a bare "Element type is invalid" inside React: that is how
-        // /social failed in production (the page had only a default export while the
-        // router asked for the named one) and nothing said which module or which name.
-        throw new Error(
-          `lazyPage: module does not export a component named "${exportName}" (exports found: ${Object.keys(m).join(", ") || "none"})`,
-        );
-      }
-      return { default: resolved as React.ComponentType };
-    })
+    factory().then((m) => ({ default: resolvePageExport(m, exportName) }))
   );
   return function LazyWrapper() {
     return (
