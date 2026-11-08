@@ -37,6 +37,7 @@ import {
   type VacancyProposal,
 } from "@/lib/vacancy/vacancyNoticeFields";
 import { proposeVacancySlug } from "@/lib/vacancy/vacancySlug";
+import { jobPostingGaps } from "@/lib/vacancy/jobPostingGaps";
 import { getErrorMessage } from "@/lib/utils";
 
 interface QuickAddForm {
@@ -288,6 +289,7 @@ export function VacancyQuickAddPage() {
   };
 
   const proposals = extraction?.proposals ?? [];
+  const gaps = jobPostingGaps(proposals);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -423,6 +425,26 @@ export function VacancyQuickAddPage() {
             <ul className="list-disc pl-5 text-[11px] text-amber-700">
               {extraction.conflicts.map((c, i) => <li key={i}>{c}</li>)}
             </ul>
+          )}
+          {/* ── H2 (owner batch 9): what the checklist still needs and the text did not give ──
+              The list comes from JOBPOSTING_GATES, not from a second hand-kept copy, so it
+              cannot fall behind the schema builder. Two of those gates are never in the text
+              (the official link and verification), and they are listed with the ACTION that
+              satisfies them rather than left out — otherwise "nothing missing" would read as
+              "ready to publish". */}
+          {gaps.length > 0 && (
+            <div className="rounded border border-amber-200 bg-amber-50 p-3" data-testid="quick-add-not-found">
+              <p className="text-xs font-semibold text-amber-900">
+                What was NOT found — the JobPosting checklist still needs these
+              </p>
+              <ul className="mt-1 list-disc pl-5 text-[11px] text-amber-800">
+                {gaps.map((g) => (
+                  <li key={g.column}>
+                    <span className="font-medium">{g.label}</span> — {g.hint}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}

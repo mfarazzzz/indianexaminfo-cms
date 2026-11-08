@@ -120,6 +120,23 @@ describe("Quick add from notice", () => {
     expect(svc.createSarkariNaukri).not.toHaveBeenCalled();
   });
 
+  it("H2 — 'What was NOT found' names the JobPosting gaps the notice did not supply", async () => {
+    mount();
+    fireEvent.change(screen.getByTestId("quick-add-notice"), { target: { value: NOTICE } });
+    fireEvent.click(screen.getByRole("button", { name: /Extract the fields/i }));
+
+    const notFound = await screen.findByTestId("quick-add-not-found");
+    const text = notFound.textContent ?? "";
+    // The three dates ARE in this notice, so none of their gates is listed as missing.
+    expect(text).not.toMatch(/Notification date/i);
+    expect(text).not.toMatch(/Application end/i);
+    // These two can never come from the text, and an empty list would read as "ready".
+    expect(text).toMatch(/Official notification URL/i);
+    expect(text).toMatch(/Verified against that notice/i);
+    // Each line says WHAT TO DO, not just that something is missing.
+    expect(text).toMatch(/not in the text/i);
+  });
+
   it("shows the SOURCE LINE for every proposal", async () => {
     mount();
     fireEvent.change(screen.getByTestId("quick-add-notice"), { target: { value: NOTICE } });
