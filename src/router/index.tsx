@@ -207,6 +207,7 @@ const SarkariBhartiListPage = lazyPage(() => import("@/pages/sarkari-bharti/Sark
 // Vacancy Pages — editor for `sarkari_naukri` (the 361 rows the public site serves at /sarkari-naukri/{slug})
 const VacancyListPage = lazyPage(() => import("@/pages/sarkari-naukri/SarkariNaukriListPage"), "SarkariNaukriListPage");
 const VacancyEditPage = lazyPage(() => import("@/pages/sarkari-naukri/SarkariNaukriEditPage"), "SarkariNaukriEditPage");
+const VacancyQuickAddPage = lazyPage(() => import("@/pages/sarkari-naukri/VacancyQuickAddPage"), "VacancyQuickAddPage");
 // University Exams
 const UniversityExamsListPage = lazyPage(() => import("@/pages/university-exams/UniversityExamsListPage"), "UniversityExamsListPage");
 // Board Exams
@@ -289,6 +290,7 @@ export const router = createBrowserRouter([
           { path: "/govt-exam/:id",        element: <RequirePermission anyOf={[P.CREATE_EXAM, P.EDIT_ANY_EXAM]}><GovtExamEditorPage /></RequirePermission> },
           // Vacancy Pages — editor for `sarkari_naukri` (public: /sarkari-naukri/{slug})
           { path: "/vacancies",            element: <RequirePermission anyOf={[P.CREATE_POST, P.EDIT_ANY_POST, P.EDIT_OWN_POST]}><VacancyListPage /></RequirePermission> },
+          { path: "/vacancies/quick-add",  element: <RequirePermission anyOf={[P.CREATE_POST]}><VacancyQuickAddPage /></RequirePermission> },
           { path: "/vacancies/new",        element: <RequirePermission anyOf={[P.CREATE_POST]}><VacancyEditPage /></RequirePermission> },
           { path: "/vacancies/:id",        element: <RequirePermission anyOf={[P.CREATE_POST, P.EDIT_ANY_POST, P.EDIT_OWN_POST]}><VacancyEditPage /></RequirePermission> },
           // Legacy Sarkari Naukri routes → Vacancy Pages

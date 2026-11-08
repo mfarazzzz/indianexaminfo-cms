@@ -12,7 +12,7 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  queueHeadroom, redactError, telegramPayload, testContentRefusal,
+  queueHeadroom, redactError, telegramPayload, testContentRefusal, VACANCY_SOURCE_TYPE,
 } from "../_shared/social.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -69,9 +69,22 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Owner batch 8, H3 — the SAME guard for a VACANCY row. A vacancy candidate carries
+  // source_type 'sarkari_naukri', so its id is not in the exam map above. The landing URL
+  // would still catch a zz-test- slug, but the record's OWN slug is the direct check, and
+  // it must not depend on the URL having been resolved.
+  const vacancyIds = rows.filter((r) => r.source_type === VACANCY_SOURCE_TYPE).map((r) => r.source_id);
+  const vacancySlugById: Record<string, string> = {};
+  if (vacancyIds.length > 0) {
+    const { data: slugRows } = await supabase.from("sarkari_naukri").select("id, slug").in("id", vacancyIds);
+    for (const s of (slugRows ?? []) as Array<{ id: string; slug: string }>) {
+      if (s?.id && typeof s.slug === "string") vacancySlugById[s.id] = s.slug;
+    }
+  }
+
   const results: Array<{ id: string; status: string }> = [];
   for (const row of rows) {
-    const refusal = testContentRefusal({ landingUrl: row.landing_url, examSlugById, sourceId: row.source_id });
+    const refusal = testContentRefusal({ landingUrl: row.landing_url, examSlugById, vacancySlugById, sourceId: row.source_id });
     if (refusal) {
       await supabase.from("social_posts")
         .update({ status: "failed", error: `reference test content is never posted (${refusal})` })

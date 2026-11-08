@@ -11,6 +11,7 @@ import {
   redactError, telegramPayload, evaluateQueueGate, officialHost,
   goResolverUrl, isSameSiteUrl, pickLandingUrl,
   queueHeadroom, isTestSlug, landingUrlIsTest, testContentRefusal,
+  buildVacancyCaption, groupDigits, VACANCY_SOURCE_TYPE,
   TELEGRAM_CAPTION_MAX,
 } from "./social";
 
@@ -199,5 +200,93 @@ describe("testContentRefusal — the one decision social-candidate and social-pu
   it("never refuses a real exam on a real page, and never refuses nothing-at-all", () => {
     expect(testContentRefusal({ slug: "upssc-pet", landingUrl: "https://x/sarkari-naukri/upsssc-pet" })).toBe(null);
     expect(testContentRefusal({})).toBe(null);
+  });
+});
+
+/**
+ * Owner batch 8, H3 — the VACANCY candidate.
+ *
+ * The rule this file pins: a vacancy caption is built from the row's COLUMNS (title,
+ * organisation, state, post count, last date, reader page) and NEVER from the notice
+ * text — and a field that is missing is OMITTED rather than invented. An old row with
+ * no end date must not grow a date line.
+ */
+describe("buildVacancyCaption — a vacancy caption from columns only", () => {
+  const ROW = {
+    title: "UP Health Department 108 Ambulance Driver 2026 – 1,200 Posts",
+    organization: "108 Ambulance Service UP",
+    stateLabel: "Uttar Pradesh",
+    vacancyCount: 5244,
+    applicationEndDate: "2026-09-15",
+    pageUrl: "https://www.indianexaminfo.com/sarkari-naukri/up-swasthya-vibhag-ambulance-driver-2026",
+  };
+
+  it("carries the structured fields and nothing else", () => {
+    const c = buildVacancyCaption(ROW);
+    expect(c).toContain("<b>UP Health Department 108 Ambulance Driver 2026 – 1,200 Posts</b>");
+    expect(c).toContain("108 Ambulance Service UP");
+    expect(c).toContain("Uttar Pradesh");
+    expect(c).toContain("5,244 posts");
+    // The date goes through the SHARED formatDateIN (the same one the exam captions
+    // use), which en-IN renders September as "Sept" — hence the loose month match.
+    expect(c).toMatch(/Last date: 15 Sept? 2026/);
+    expect(c).toContain("indianexaminfo.com/sarkari-naukri/up-swasthya-vibhag-ambulance-driver-2026");
+  });
+
+  it("OMITS a missing last date — it never invents one", () => {
+    const c = buildVacancyCaption({ ...ROW, applicationEndDate: null });
+    expect(c).not.toContain("Last date");
+    expect(c).toContain("Uttar Pradesh");   // the other fields survive
+    expect(c).toContain("5,244 posts");
+  });
+
+  it("omits an unknown post count instead of printing zero", () => {
+    const c = buildVacancyCaption({ ...ROW, vacancyCount: null });
+    expect(c).not.toContain("posts");
+    expect(c).not.toContain("0 posts");
+  });
+
+  it("omits a missing organisation and a missing state", () => {
+    const c = buildVacancyCaption({ ...ROW, organization: null, stateLabel: null });
+    expect(c).not.toContain("108 Ambulance Service UP");
+    expect(c).not.toContain("Uttar Pradesh");
+    expect(c).toContain("Last date");
+  });
+
+  it("escapes Telegram HTML and clips to the hard max length", () => {
+    const c = buildVacancyCaption({ ...ROW, title: "A & B <script>" });
+    expect(c).toContain("&amp;");
+    expect(c).toContain("&lt;script&gt;");
+    expect(c).not.toContain("<script>");
+    const long = buildVacancyCaption({ ...ROW, title: "N".repeat(2000) });
+    expect(long.length).toBeLessThanOrEqual(TELEGRAM_CAPTION_MAX);
+  });
+
+  it("groups the post count the same way in every runtime", () => {
+    expect(groupDigits(5244)).toBe("5,244");
+    expect(groupDigits(120)).toBe("120");
+    expect(groupDigits(1200000)).toBe("1,200,000");
+  });
+});
+
+describe("the vacancy candidate's key and its test-content refusal", () => {
+  it("the idempotency key is channel|source_type|source_id|event", () => {
+    expect(idempotencyKey("telegram", VACANCY_SOURCE_TYPE, "v1", "published"))
+      .toBe("telegram|sarkari_naukri|v1|published");
+    expect(VACANCY_SOURCE_TYPE).toBe("sarkari_naukri");
+  });
+
+  it("refuses a vacancy whose OWN slug is test content, by id (the publish-side guard)", () => {
+    const vacancySlugById = { v1: "zz-test-vacancy-2026", v2: "up-anganwadi-bharti-2026" };
+    expect(testContentRefusal({ vacancySlugById, sourceId: "v1", landingUrl: "https://x/sarkari-naukri/zz-test-vacancy-2026" }))
+      .toBe("reference test exam");
+    expect(testContentRefusal({ vacancySlugById, sourceId: "v2", landingUrl: "https://x/sarkari-naukri/up-anganwadi-bharti-2026" }))
+      .toBe(null);
+  });
+
+  it("a vacancy id is NOT decided by the exam map (the two source types do not mix)", () => {
+    const examSlugById = { e1: "zz-test-entrance-exam" };
+    expect(testContentRefusal({ examSlugById, sourceId: "v1", landingUrl: "https://x/sarkari-naukri/up-anganwadi-bharti-2026" }))
+      .toBe(null);
   });
 });

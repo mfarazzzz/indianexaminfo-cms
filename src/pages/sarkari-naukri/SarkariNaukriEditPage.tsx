@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Save, Loader2, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Trash2, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import {
@@ -73,6 +73,27 @@ export function SarkariNaukriEditPage() {
     });
   };
 
+  /**
+   * The fee column is a JSON map ({ "General/OBC": "100" }). The input is plain text
+   * ("General/OBC: 100, SC/ST/PwBD: 0") because that is what a notice prints and what
+   * the owner can check against the notice. This is the one-way parse; the input always
+   * shows the stored map re-serialised, so what is saved is always what is on screen.
+   */
+  const feeText = Object.entries((item.applicationFee ?? {}) as Record<string, string>)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(", ");
+
+  const parseFeeText = (text: string): Record<string, string> | null => {
+    const map: Record<string, string> = {};
+    for (const part of text.split(",")) {
+      const [key, ...rest] = part.split(":");
+      const amount = rest.join(":").trim();
+      const k = (key ?? "").trim();
+      if (k && amount) map[k] = amount;
+    }
+    return Object.keys(map).length ? map : null;
+  };
+
   const handleSave = async () => {
     if (!item.title?.trim()) { toast.error("Title is required"); return; }
     if (!item.slug?.trim()) { toast.error("Slug is required"); return; }
@@ -109,6 +130,56 @@ export function SarkariNaukriEditPage() {
     }
   };
 
+  /**
+   * Owner batch 8, H2 — "Save + Verify": the fill-then-verify flow in one action.
+   *
+   * It runs the EXISTING path and nothing new: the same save, then the same
+   * verifySarkariNaukri call the "Verify against official notification" button makes.
+   * The database trigger (trg_sarkari_verify) is the authority — it refuses without an
+   * official http(s) notification link, without an application end date, and without the
+   * publish_post permission, and the refusal is shown in plain words (the service's
+   * humanizeVerifyError).
+   *
+   * IT NEVER AUTO-VERIFIES. Verification only ever happens because somebody pressed
+   * this button — there is no path in this page that verifies a row on its own.
+   */
+  const handleSaveAndVerify = async () => {
+    if (!item.title?.trim()) { toast.error("Title is required"); return; }
+    if (!item.slug?.trim()) { toast.error("Slug is required"); return; }
+    if (!item.organization?.trim()) { toast.error("Organization is required"); return; }
+    if (!item.state?.trim()) { toast.error("State is required — choose All India for national vacancies"); return; }
+    if (item.applicationStartDate && item.applicationEndDate && item.applicationStartDate > item.applicationEndDate) {
+      toast.error("Application start date must be on or before end date"); return;
+    }
+    setSaving(true);
+    setVerifyError(null);
+    try {
+      let rowId = id;
+      if (isNew) {
+        const created = await createSarkariNaukri({
+          ...item as SarkariNaukriInput,
+          createdBy: user?.id ?? null,
+        });
+        rowId = created.id;
+        navigate(`/vacancies/${created.id}`, { replace: true });
+      } else {
+        await updateSarkariNaukri(id!, item);
+      }
+      // The existing verify path — same call the standalone Verify button makes.
+      const updated = await verifySarkariNaukri(rowId!);
+      setVerifiedAt(updated.verifiedAt);
+      toast.success("Saved and verified against the official notification.");
+    } catch (err) {
+      // The save may have succeeded and the VERIFY may have been refused — say which,
+      // in plain words, and do not pretend the row is verified.
+      const msg = err instanceof Error ? err.message : "Save + verify failed.";
+      setVerifyError(msg);
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!confirm("Delete this entry permanently?")) return;
     try {
@@ -132,11 +203,23 @@ export function SarkariNaukriEditPage() {
    * links ~200 lines below it, past the Verify button - the wrong order for a job that must
    * be filled in sequence and then verified, which is why the database refuses verification
    * without a last date and an official link (trg_sarkari_verify).
+   *
+   * Owner batch 8, H2 — the checklist now states the JOB POSTING requirements in the
+   * owner's own words: a window that is OPEN TODAY, the notification date, the end date,
+   * the official notification link and the verification stamp. A row whose window has
+   * closed only tells a reader the last date, which is why "window open today" is its own
+   * item rather than a detail of the two date fields.
    */
+  const today = new Date().toISOString().slice(0, 10);
+  const windowOpenToday = !!(
+    item.applicationStartDate && item.applicationEndDate &&
+    item.applicationStartDate <= today && today <= item.applicationEndDate
+  );
   const checklist = [
     { label: "Notification date", filled: !!item.notificationDate },
     { label: "Application start", filled: !!item.applicationStartDate },
     { label: "Last date to apply", filled: !!item.applicationEndDate },
+    { label: "Window open today", filled: windowOpenToday },
     { label: "Official notification link", filled: !!item.officialNotificationUrl },
     { label: "Application link", filled: !!item.applicationUrl },
     { label: "Verified against the notice", filled: !!verifiedAt },
@@ -162,6 +245,15 @@ export function SarkariNaukriEditPage() {
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {isNew ? "Create" : "Save"}
+          </button>
+          {/* Owner batch 8, H2 — fill-then-verify in one action. It saves and then
+              runs the EXISTING verify path; a refusal is shown in plain words and
+              nothing is ever verified on its own. */}
+          <button type="button" onClick={handleSaveAndVerify} disabled={saving}
+            data-testid="vacancy-save-and-verify"
+            className="inline-flex items-center gap-2 rounded-lg border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-800 hover:bg-green-100 disabled:opacity-50">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+            Save + Verify
           </button>
         </div>
       </div>
@@ -442,6 +534,23 @@ export function SarkariNaukriEditPage() {
       {/* Content */}
       <div className="rounded-lg border border-slate-200 bg-white p-5 space-y-4">
         <h2 className="text-sm font-semibold text-slate-900">Content & Eligibility</h2>
+        {/* Owner batch 8, H1/H2 — the age limit and the fee had COLUMNS but no input,
+            so the "quick add from notice" proposals had nowhere to land. They are read
+            by the reader-facing page, so they belong next to the eligibility text. */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label htmlFor="vac-age-limit" className="mb-1 block text-xs font-medium text-slate-600">Age Limit</label>
+            <input id="vac-age-limit" value={item.ageLimit ?? ""} onChange={(e) => handleChange("ageLimit", e.target.value || null)}
+              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" placeholder="e.g. 18-32 years" />
+            <p className="mt-0.5 text-[11px] text-slate-400">As printed in the notice, e.g. &quot;18-32 years&quot;.</p>
+          </div>
+          <div>
+            <label htmlFor="vac-application-fee" className="mb-1 block text-xs font-medium text-slate-600">Application Fee</label>
+            <input id="vac-application-fee" value={feeText} onChange={(e) => handleChange("applicationFee", parseFeeText(e.target.value))}
+              className="w-full rounded border border-slate-200 px-3 py-2 text-sm" placeholder="General/OBC: 100, SC/ST/PwBD: 0" />
+            <p className="mt-0.5 text-[11px] text-slate-400">One category per entry: &quot;Category: amount&quot;, separated by commas.</p>
+          </div>
+        </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">Eligibility</label>
           <textarea value={item.eligibility ?? ""} onChange={(e) => handleChange("eligibility", e.target.value || null)}

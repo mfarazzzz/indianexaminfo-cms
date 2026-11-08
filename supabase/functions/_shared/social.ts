@@ -130,10 +130,15 @@ export function testContentRefusal(input: {
   slug?: string | null;
   landingUrl?: string | null;
   examSlugById?: Record<string, string>;
+  /** Owner batch 8, H3 — the vacancy slug for a claimed `sarkari_naukri` row. */
+  vacancySlugById?: Record<string, string>;
   sourceId?: string | null;
 }): string | null {
   if (isTestSlug(input.slug)) return "reference test exam";
-  if (input.sourceId && isTestSlug(input.examSlugById?.[input.sourceId])) return "reference test exam";
+  if (input.sourceId) {
+    if (isTestSlug(input.examSlugById?.[input.sourceId])) return "reference test exam";
+    if (isTestSlug(input.vacancySlugById?.[input.sourceId])) return "reference test exam";
+  }
   if (landingUrlIsTest(input.landingUrl)) return "landing url points at reference test content";
   return null;
 }
@@ -165,6 +170,56 @@ export function buildCaption(i: CaptionInput): string {
   if (i.pageUrl) lines.push(escapeTelegramHtml(i.pageUrl));
   const out = lines.join("\n");
   return out.length > TELEGRAM_CAPTION_MAX ? out.slice(0, TELEGRAM_CAPTION_MAX - 1) + "…" : out;
+}
+
+/**
+ * Owner batch 8, H3 — a VACANCY candidate.
+ *
+ * `social_posts.source_type` is free text: the live database has NO CHECK constraint on
+ * that column (verified 2026-11-08 — the only two checks on the table are on `channel`
+ * and on `status`). 'sarkari_naukri' is therefore accepted as it stands, and a vacancy
+ * needs NO migration: it is a new source_type, not a new column.
+ */
+export const VACANCY_SOURCE_TYPE = "sarkari_naukri";
+
+/** The fields a vacancy caption is built from — all of them COLUMNS, never notice text. */
+export interface VacancyCaptionInput {
+  title: string;
+  organization?: string | null;
+  stateLabel?: string | null;        // the region LABEL ("Uttar Pradesh"), not the slug
+  vacancyCount?: number | null;
+  applicationEndDate?: string | null; // the last date to apply
+  pageUrl: string;                    // the reader page, resolved through /go/{slug}
+}
+
+/**
+ * Build a VACANCY caption from structured fields only.
+ *
+ * The owner's rule for this hook: the caption may carry the title, the organisation, the
+ * state, the last date and the post count — every one of them a column somebody typed —
+ * and NEVER a sentence copied out of the notice. A missing field is OMITTED: an old row
+ * with no end date gets no date line rather than an invented one.
+ */
+export function buildVacancyCaption(i: VacancyCaptionInput): string {
+  const lines: string[] = [];
+  const title = escapeTelegramHtml((i.title ?? "").trim());
+  if (title) lines.push(`<b>${title}</b>`);
+  const org = escapeTelegramHtml((i.organization ?? "").trim());
+  if (org) lines.push(org);
+  const state = escapeTelegramHtml((i.stateLabel ?? "").trim());
+  if (state) lines.push(state);
+  const count = Number(i.vacancyCount);
+  if (Number.isFinite(count) && count > 0) lines.push(`${groupDigits(count)} posts`);
+  const end = (i.applicationEndDate ?? "").trim();
+  if (end) lines.push(`Last date: ${escapeTelegramHtml(formatDateIN(end))}`);
+  if (i.pageUrl) lines.push(escapeTelegramHtml(i.pageUrl));
+  const out = lines.join("\n");
+  return out.length > TELEGRAM_CAPTION_MAX ? out.slice(0, TELEGRAM_CAPTION_MAX - 1) + "…" : out;
+}
+
+/** 5244 -> "5,244". Hand-rolled so the output is the same in Deno and in Node. */
+export function groupDigits(n: number): string {
+  return String(Math.trunc(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 /** DD Mon YYYY (en-IN) — a stable, reader-friendly date. */

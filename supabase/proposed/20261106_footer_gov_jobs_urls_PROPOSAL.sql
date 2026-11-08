@@ -1,8 +1,10 @@
 -- ============================================================================
 -- W2 PROPOSAL — footer "Government Jobs" column: point each label at its own hub
--- Owner batch 6, Phase W2. NOT APPLIED. This file is a proposal only; applying it
--- is the owner's action (dashboard SQL editor or an explicit apply_migration).
--- No migration was created or run in batch 6.
+-- Owner batch 6, Phase W2. APPLIED 2026-11-08 (owner batch 8 approval line:
+-- "APPLY FOOTER URLS"). Remote version 20261108051517 (footer_gov_jobs_urls);
+-- the applied file is supabase/migrations/20261108051517_footer_gov_jobs_urls.sql.
+-- This file stays as the proposal of record — the applied migration carries the
+-- same SQL plus the pre-flight, the post-proof and the rollback block.
 -- ============================================================================
 --
 -- THE PROBLEM (re-verified 2026-11-06, backlog refresh V1)

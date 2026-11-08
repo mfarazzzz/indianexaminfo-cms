@@ -88,14 +88,37 @@ describe("the vacancy window card", () => {
     expect(screen.getAllByText("Application URL")).toHaveLength(1);
   });
 
-  it("lists the six checks in fill order and reports what is missing", async () => {
+  it("lists the seven checks in fill order and reports what is missing", async () => {
     mount(vacancy());
     const list = await screen.findByTestId("vacancy-checklist");
     const items = Array.from(list.querySelectorAll("li")).map((li) => li.textContent?.trim());
+    // Owner batch 8, H2 — "Window open today" joins the list. A row whose window has
+    // closed still tells the reader a last date, but it is NOT a live job listing,
+    // so the open-today state is its own check rather than a detail of the dates.
     expect(items).toEqual([
       "○ Notification date", "○ Application start", "○ Last date to apply",
+      "○ Window open today",
       "○ Official notification link", "○ Application link", "○ Verified against the notice",
     ]);
+  });
+
+  it("keeps 'Window open today' unfilled when the window has already closed", async () => {
+    // A closed window is the normal state of an old row: every other check can be
+    // green while this one stays open, because the dates are there but the job is over.
+    mount(vacancy({
+      notificationDate: "2026-01-10", applicationStartDate: "2026-01-15",
+      applicationEndDate: "2026-02-20",
+      officialNotificationUrl: "https://uphealth.up.gov.in/n.pdf",
+      applicationUrl: "https://uphealth.up.gov.in/apply",
+      verifiedAt: "2026-01-11T09:00:00Z",
+    }));
+    const list = await screen.findByTestId("vacancy-checklist");
+    const items = Array.from(list.querySelectorAll("li")).map((li) => li.textContent?.trim());
+    const open = items.find((t) => t?.includes("Window open today"));
+    expect(open, "the open-today check must be present").toBeTruthy();
+    expect(open?.startsWith("○"), "a closed window is NOT open today").toBe(true);
+    // The other checks are unaffected by the closed window.
+    expect(items.filter((t) => t?.startsWith("✓")).length).toBe(6);
   });
 
   it("turns a check green the moment its field is filled — live, before saving", async () => {

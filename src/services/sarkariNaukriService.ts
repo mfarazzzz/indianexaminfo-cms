@@ -7,6 +7,11 @@ import { db } from '@/lib/supabase/client'
 import { assertPermission, assertAffected } from '@/lib/auth/permissionGuard'
 import { P } from '@/config/permissions'
 import { revalidateAfterSarkariNaukriSave } from '@/lib/revalidation/revalidationService'
+import { vacancyTitleVerdict, distinctiveTitleTokens } from '@/lib/vacancy/vacancyDuplicate'
+import { createCandidate } from '@/services/social/socialQueueService'
+import {
+  VACANCY_SOURCE_TYPE, VACANCY_CANDIDATE_EVENT, mayQueueVacancyCandidate,
+} from '@/lib/social/vacancyCandidate'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -443,7 +448,101 @@ export async function updateSarkariNaukri(id: string, input: Partial<SarkariNauk
   if (oldRow && (oldRow.slug !== row.slug || (oldRow.state ?? null) !== (row.state ?? null))) {
     revalidateAfterSarkariNaukriSave({ slug: oldRow.slug, state: oldRow.state })
   }
+  // Owner batch 8, H3 — the social candidate hook for a vacancy. It fires on the PUBLISH
+  // act only (the save that set workflow_status = 'published'), and only when the row is
+  // also VERIFIED: an unverified vacancy has not been checked against the notice yet.
+  if (input.workflowStatus === 'published') {
+    queueVacancyCandidate(row)
+  }
   return row
+}
+
+/**
+ * Owner batch 8, H3 — the social candidate hook for a VACANCY.
+ *
+ * Fire-and-forget, and it never throws: a social failure must not block a publish or a
+ * verify. `createCandidate` swallows its own errors and only logs them, and it also
+ * refuses a `zz-test-` slug here (layer 1 of the three-layer test-content guard; the
+ * Edge Function refuses it again, and social-publish refuses it a third time).
+ *
+ * The event is ALWAYS "published" for a vacancy, so a row that is verified and then
+ * published collapses onto ONE idempotency key — and therefore one draft in the queue.
+ * Two drafts of one notice would be two posts to the channel.
+ */
+function queueVacancyCandidate(row: SarkariNaukri): void {
+  if (!mayQueueVacancyCandidate(row)) return
+  void createCandidate({
+    source_type: VACANCY_SOURCE_TYPE,
+    source_id: row.id,
+    event: VACANCY_CANDIDATE_EVENT,
+    page_url: '',
+    slug: row.slug,
+  })
+}
+
+// ── Duplicate check (before a create) ─────────────────────────────────────────
+
+/** A row that already covers this vacancy. */
+export interface VacancyDuplicateHit {
+  id: string
+  slug: string
+  title: string
+  state: string | null
+  workflowStatus: WorkflowStatus
+  /** "slug" = the same URL; "title" = the same job under a different URL. */
+  reason: 'slug' | 'title'
+}
+
+/**
+ * Is this vacancy already in the table? Checks the exact slug AND a near-match on
+ * the title's content words, and returns the rows it found so the editor can be
+ * pointed at the existing page instead of creating a second copy of one notice.
+ *
+ * Read-only. The create path still refuses a duplicate slug on its own (see
+ * createSarkariNaukri) — this is the EARLY warning, not the gate.
+ */
+export async function findVacancyDuplicates(
+  slug: string,
+  title: string,
+): Promise<VacancyDuplicateHit[]> {
+  const cleanSlug = (slug ?? '').trim().toLowerCase()
+  const cleanTitle = (title ?? '').trim()
+  if (!cleanSlug && !cleanTitle) return []
+
+  const orParts: string[] = []
+  if (cleanSlug) orParts.push(`slug.ilike.%${cleanSlug.replace(/[^a-z0-9-]/g, '')}%`)
+  for (const token of distinctiveTitleTokens(cleanTitle)) {
+    orParts.push(`title.ilike.%${token}%`)
+  }
+  if (orParts.length === 0) return []
+
+  const { data, error } = await db
+    .from('sarkari_naukri')
+    .select('id, slug, title, state, workflow_status')
+    .or(orParts.join(','))
+    .limit(50)
+  if (error) throw error
+
+  const hits: VacancyDuplicateHit[] = []
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const rowSlug = String(row.slug ?? '')
+    const rowTitle = String(row.title ?? '')
+    const base = {
+      id: String(row.id ?? ''),
+      slug: rowSlug,
+      title: rowTitle,
+      state: (row.state as string | null) ?? null,
+      workflowStatus: (row.workflow_status as WorkflowStatus) ?? 'draft',
+    }
+    if (cleanSlug && rowSlug.toLowerCase() === cleanSlug) {
+      hits.push({ ...base, reason: 'slug' })
+      continue
+    }
+    if (cleanTitle && vacancyTitleVerdict(cleanTitle, rowTitle).duplicate) {
+      hits.push({ ...base, reason: 'title' })
+    }
+  }
+  return hits
 }
 
 // ── Verification ─────────────────────────────────────────────────────────────
@@ -493,6 +592,11 @@ export async function verifySarkariNaukri(id: string): Promise<SarkariNaukri> {
   // L5: verification flips verified_at-gated UI (result/merit link, dates) —
   // the frontend must drop its cached render of this vacancy.
   revalidateAfterSarkariNaukriSave({ slug: row.slug, state: row.state })
+  // Owner batch 8, H3 — the second way a vacancy becomes publishable-and-verified. The
+  // row may already have been published; the verification is what completes it, so the
+  // candidate is queued from here too. The same idempotency key means the publish act
+  // and the verify act can never leave two drafts of one notice.
+  queueVacancyCandidate(row)
   return row
 }
 
