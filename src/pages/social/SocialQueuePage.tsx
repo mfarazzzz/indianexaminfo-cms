@@ -26,8 +26,8 @@ import { flagOn } from "@/config/featureFlags";
 import { useAuth } from "@/hooks/useAuth";
 import {
   listQueue, decide, setCaption, getConfig, setConfig, runDueQueue,
-  listChannels, createChannel, updateChannel,
-  type SocialPostRow, type SocialConfig, type SocialChannel,
+  listChannels, createChannel, updateChannel, checkChannel,
+  type SocialPostRow, type SocialConfig, type SocialChannel, type ChannelCheck,
 } from "@/services/social/socialQueueService";
 
 const STATUS_CHIP: Record<string, string> = {
@@ -48,6 +48,10 @@ export function SocialQueuePage() {
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // P3 (owner batch 9) — the last "Check channel" answer per row id. Kept by id so a
+  // re-check of one channel does not wipe the answer for another.
+  const [checks, setChecks] = useState<Record<string, ChannelCheck>>({});
+  const [checking, setChecking] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!enabled) return;
@@ -93,8 +97,24 @@ export function SocialQueuePage() {
     catch (e) { toast.error((e as Error).message); }
   };
   const toggleChannel = async (ch: SocialChannel) => {
-    try { await updateChannel(ch.id, { is_active: !ch.is_active }); await load(); }
+    try {
+      await updateChannel(ch.id, { is_active: !ch.is_active });
+      await load();
+      // Activating deactivates the other telegram rows in the same write (P2), so say so:
+      // the point of the rule is that the operator knows exactly where a post will go.
+      if (!ch.is_active) toast.success(`“${ch.label}” is now the only active Telegram channel.`);
+    }
     catch (e) { toast.error((e as Error).message); }
+  };
+  const runCheck = async (ch: SocialChannel) => {
+    setChecking(ch.id);
+    try {
+      const result = await checkChannel(ch.id);
+      setChecks((prev) => ({ ...prev, [ch.id]: result }));
+      if (result.ok) toast.success(`Telegram says “${result.chat_title || result.chat_id}” can be posted to.`);
+      else toast.error(result.reason || "The channel did not pass the check.");
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setChecking(null); }
   };
 
   const activeTelegram = channels.filter((c) => c.is_active && c.external_id);
@@ -162,20 +182,42 @@ export function SocialQueuePage() {
         )}
 
         <ul className="divide-y divide-slate-100 text-sm">
-          {channels.map((ch) => (
-            <li key={ch.id} className="flex items-center justify-between gap-3 py-2">
-              <span className="font-medium text-slate-800">{ch.label}</span>
-              <code className="text-xs text-slate-600">{ch.external_id || "(no chat id)"}</code>
-              <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${ch.is_active ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-500"}`}>
-                {ch.is_active ? "active" : "inactive"}
-              </span>
-              {isSuperAdmin && (
-                <button onClick={() => toggleChannel(ch)} className="text-xs rounded border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
-                  {ch.is_active ? "Set inactive" : "Set active"}
-                </button>
-              )}
-            </li>
-          ))}
+          {channels.map((ch) => {
+            const check = checks[ch.id];
+            return (
+              <li key={ch.id} className="py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium text-slate-800">{ch.label}</span>
+                  <code className="text-xs text-slate-600">{ch.external_id || "(no chat id)"}</code>
+                  <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${ch.is_active ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-500"}`}>
+                    {ch.is_active ? "active" : "inactive"}
+                  </span>
+                  {isSuperAdmin && (
+                    <span className="flex gap-2">
+                      {/* P3 — read-only: it asks Telegram what this chat is and whether the
+                          bot may post, and it posts nothing. Allowed with the kill switch on. */}
+                      <button onClick={() => runCheck(ch)} disabled={checking === ch.id}
+                        data-testid={`check-channel-${ch.id}`}
+                        className="text-xs rounded border border-slate-300 px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50">
+                        {checking === ch.id ? "Checking…" : "Check channel"}
+                      </button>
+                      <button onClick={() => toggleChannel(ch)} className="text-xs rounded border border-slate-300 px-3 py-1.5 hover:bg-slate-50">
+                        {ch.is_active ? "Set inactive" : "Set active"}
+                      </button>
+                    </span>
+                  )}
+                </div>
+                {check && (
+                  <p data-testid={`check-result-${ch.id}`}
+                    className={`mt-1 text-xs ${check.ok ? "text-green-700" : "text-red-700"}`}>
+                    {check.ok
+                      ? `Telegram: “${check.chat_title || check.chat_id}” (${check.chat_type || "channel"}) — the bot is ${check.bot_status || "an administrator"} and can post.`
+                      : check.reason || "The channel did not pass the check."}
+                  </p>
+                )}
+              </li>
+            );
+          })}
         </ul>
 
         {isSuperAdmin && (

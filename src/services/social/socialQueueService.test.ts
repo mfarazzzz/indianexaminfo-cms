@@ -24,7 +24,7 @@ vi.mock("@/lib/supabase/client", () => ({
 
 import { db } from "@/lib/supabase/client";
 import {
-  createCandidate, createChannel, updateChannel, listChannels,
+  createCandidate, createChannel, updateChannel, listChannels, checkChannel,
   validateTelegramChatId, validateChannelLabel,
 } from "./socialQueueService";
 
@@ -37,7 +37,7 @@ function chain(result: unknown): any {
     then: (onF: any, onR: any) => Promise.resolve(result).then(onF, onR),
     catch: (onR: any) => Promise.resolve(result).catch(onR),
   };
-  for (const m of ["select", "insert", "update", "delete", "eq", "is", "in", "or",
+  for (const m of ["select", "insert", "update", "delete", "eq", "neq", "is", "in", "or",
     "order", "limit", "range", "not", "ilike", "single", "maybeSingle"]) {
     c[m] = vi.fn(() => c);
   }
@@ -91,7 +91,7 @@ describe("createCandidate — layer 1 of the test-content guard (P5)", () => {
 });
 
 describe("validateTelegramChatId — what a chat id may look like (P2)", () => {
-  it.each(["@indianexaminfo", "@Exams_2026", "-1001234567890", "12345678"])(
+  it.each(["@indianexaminfo", "@Exams_2026", "-1001234567890", "-100999999999"])(
     "accepts %s", (v) => { expect(validateTelegramChatId(v)).toBeNull(); },
   );
 
@@ -104,11 +104,27 @@ describe("validateTelegramChatId — what a chat id may look like (P2)", () => {
     ["@has space", "no spaces"],
     ["https://t.me/joinchat/AAAAAE", "an invite LINK is not a chat id"],
     ["-100abc", "not numeric"],
-    ["123", "a numeric id needs 4+ digits"],
+    ["-10012", "too short to be a channel id"],
+    ["123", "a positive number is not a channel"],
   ])("refuses %s (%s)", (v) => {
     const err = validateTelegramChatId(v);
     expect(err).toBeTruthy();
-    expect(err).toMatch(/chat id|Telegram/i);
+    expect(err).toMatch(/chat id|Telegram|Channel ids|bot/i);
+  });
+
+  // The two values the owner actually entered on 2026-11-06, each with its own sentence.
+  // Neither is deleted; both are simply not usable, which is what the row now says.
+  it("refuses a bot's own handle, and says so in those words", () => {
+    expect(validateTelegramChatId("@IndianExamInfobot")).toBe("That is a bot, not a channel.");
+    expect(validateTelegramChatId("@someBOT")).toBe("That is a bot, not a channel.");
+    // Only the SUFFIX is reserved for bots — a channel name that merely contains it is fine.
+    expect(validateTelegramChatId("@botic_news")).toBeNull();
+  });
+
+  it("refuses a positive numeric id, and explains that channel ids start with -100", () => {
+    const expected = "Channel ids start with -100; a positive number is a person or a bot.";
+    expect(validateTelegramChatId("8747371610")).toBe(expected);
+    expect(validateTelegramChatId("12345678")).toBe(expected);
   });
 
   it("refuses a chat id whose value would be echoed back into its own error", () => {
@@ -165,5 +181,88 @@ describe("channel writes (P2)", () => {
     const payload = mockFrom.mock.results[0].value.insert.mock.calls[0][0];
     expect(Object.keys(payload).sort()).toEqual(["channel", "external_id", "is_active", "label"]);
     expect(JSON.stringify(payload)).not.toMatch(/token|TG_BOT/i);
+  });
+});
+
+describe("exactly one active telegram channel (P2, owner batch 9)", () => {
+  it("activating validates the STORED chat id first, and writes nothing when it is bad", async () => {
+    // The owner's two rows saved before these rules existed cannot be switched on: a
+    // switch-on is the moment the value the worker would use starts to matter.
+    mockFrom.mockReturnValue(chain({ data: { external_id: "@IndianExamInfobot", channel: "telegram" }, error: null }));
+    await expect(updateChannel("bot-row", { is_active: true }))
+      .rejects.toThrow("That is a bot, not a channel.");
+    expect(mockFrom.mock.results[0].value.update).not.toHaveBeenCalled();
+  });
+
+  it("activating a valid channel deactivates the other active telegram rows", async () => {
+    const results = [
+      chain({ data: { external_id: "@IndianExamInfo", channel: "telegram" }, error: null }), // read the row
+      chain({ error: null }),                                                                // set it active
+      chain({ error: null }),                                                                // deactivate the rest
+    ];
+    let i = 0;
+    mockFrom.mockImplementation(() => results[i++]);
+
+    await updateChannel("main", { is_active: true });
+
+    expect(results[1].update.mock.calls[0][0]).toEqual({ is_active: true });
+    // Only the OTHER active rows, and only in the same channel group.
+    expect(results[2].update.mock.calls[0][0]).toEqual({ is_active: false });
+    expect(results[2].eq.mock.calls).toEqual([["channel", "telegram"], ["is_active", true]]);
+    expect(results[2].neq.mock.calls).toEqual([["id", "main"]]);
+  });
+
+  it("adding a channel active excludes the new row from its own deactivation", async () => {
+    const results = [
+      chain({ data: { id: "new-row" }, error: null }), // insert().select("id").single()
+      chain({ error: null }),                           // deactivate the rest
+    ];
+    let i = 0;
+    mockFrom.mockImplementation(() => results[i++]);
+
+    await createChannel({ label: "Main", external_id: "@IndianExamInfo" });
+
+    expect(results[1].update.mock.calls[0][0]).toEqual({ is_active: false });
+    expect(results[1].neq.mock.calls).toEqual([["id", "new-row"]]);
+  });
+
+  it("a channel created INACTIVE leaves the active one alone", async () => {
+    mockFrom.mockReturnValue(chain({ data: { id: "new-row" }, error: null }));
+    await createChannel({ label: "Spare", external_id: "@IndianExamInfo", is_active: false });
+    // one call only: the insert. No deactivation at all.
+    expect(mockFrom).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("checkChannel — the read-only channel check (P3, owner batch 9)", () => {
+  it("asks social-publish for a check of that row, and nothing else", async () => {
+    mockInvoke.mockResolvedValue({
+      data: { ok: true, chat_title: "Indian Exam Info", chat_type: "channel", bot_is_admin: true, can_post_messages: true },
+      error: null,
+    });
+    const r = await checkChannel("c1");
+    expect(r.ok).toBe(true);
+    expect(r.chat_title).toBe("Indian Exam Info");
+    expect(mockInvoke).toHaveBeenCalledWith("social-publish", {
+      body: { action: "check_channel", channel_id: "c1" },
+    });
+  });
+
+  it("passes the function's plain-language reason straight through", async () => {
+    mockInvoke.mockResolvedValue({
+      data: { ok: false, reason: "That is a bot or a person, not a channel." }, error: null,
+    });
+    const r = await checkChannel("c1");
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/not a channel/);
+  });
+
+  it("uses no table write and no posting path of its own", async () => {
+    mockInvoke.mockResolvedValue({ data: { ok: true }, error: null });
+    await checkChannel("c1");
+    // The check is a single function call: it never touches social_posts or social_channels
+    // from the browser, so it cannot approve, skip or send anything.
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
   });
 });

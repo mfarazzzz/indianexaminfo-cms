@@ -14,7 +14,7 @@
  */
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 import { SocialQueuePage } from "./SocialQueuePage";
 
@@ -40,6 +40,7 @@ const svc = vi.hoisted(() => ({
   listQueue: vi.fn(), getConfig: vi.fn(), listChannels: vi.fn(),
   decide: vi.fn(), setCaption: vi.fn(), setConfig: vi.fn(), runDueQueue: vi.fn(),
   createChannel: vi.fn(), updateChannel: vi.fn(), createCandidate: vi.fn(),
+  checkChannel: vi.fn(),
 }));
 vi.mock("@/services/social/socialQueueService", () => svc);
 
@@ -139,5 +140,42 @@ describe("with the feature flag off", () => {
     expect(svc.listQueue).not.toHaveBeenCalled();
     expect(svc.getConfig).not.toHaveBeenCalled();
     expect(svc.listChannels).not.toHaveBeenCalled();
+  });
+});
+
+describe("Check channel (P3, owner batch 9)", () => {
+  it("a super-admin gets one button per channel, and it calls the read-only check", async () => {
+    svc.checkChannel.mockResolvedValue({
+      ok: true, chat_title: "Indian Exam Info", chat_type: "channel", bot_status: "administrator",
+    });
+    render(<SocialQueuePage />);
+    await screen.findByText("Main channel");
+
+    const btn = screen.getByTestId("check-channel-c1");
+    expect(btn.textContent).toBe("Check channel");
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(svc.checkChannel).toHaveBeenCalledWith("c1"));
+    // The answer is shown on the row, not only in a toast that disappears.
+    const out = await screen.findByTestId("check-result-c1");
+    expect(out.textContent).toContain("Indian Exam Info");
+  });
+
+  it("a refusal shows the function's plain-language reason on the row", async () => {
+    svc.checkChannel.mockResolvedValue({
+      ok: false, reason: "That is a bot or a person, not a channel.",
+    });
+    render(<SocialQueuePage />);
+    await screen.findByText("Main channel");
+    fireEvent.click(screen.getByTestId("check-channel-c1"));
+    const out = await screen.findByTestId("check-result-c1");
+    expect(out.textContent).toContain("That is a bot or a person, not a channel.");
+  });
+
+  it("no other role sees it — the button is super-admin only", async () => {
+    session.roleSlug = "editor";
+    render(<SocialQueuePage />);
+    await screen.findByText("Main channel");
+    expect(screen.queryByTestId("check-channel-c1")).toBeNull();
   });
 });
