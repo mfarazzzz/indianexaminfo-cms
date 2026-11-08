@@ -21,12 +21,19 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  buildCaption, buildVacancyCaption, idempotencyKey, isSameSiteUrl, pickLandingUrl,
-  testContentRefusal, VACANCY_SOURCE_TYPE, type CaptionInput, type VacancyCaptionInput,
+  buildCaption, buildVacancyCaption, corsFor, idempotencyKey, isSameSiteUrl, jsonWith,
+  pickLandingUrl, preflightFor, testContentRefusal, VACANCY_SOURCE_TYPE,
+  type CaptionInput, type VacancyCaptionInput,
 } from "../_shared/social.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+/**
+ * The browser origins allowed to call this function — the SAME ALLOWED_ORIGINS secret
+ * ai-fill and revalidate-frontend already read (owner batch 9, P1). Never "*".
+ */
+const ALLOWED_ORIGINS: string[] = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
+  .split(",").map((o) => o.trim()).filter(Boolean);
 // The PUBLIC reader origin. Deliberately not SUPABASE_URL: a landing link must be a page a
 // reader can open, and until now this function fell back to the project host when the caller
 // passed no page_url — which both CMS call sites do (they pass "").
@@ -41,11 +48,26 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 Deno.serve(async (req) => {
+  // ── P1 (owner batch 9): the preflight comes FIRST, before any auth check ──────
+  // A browser preflight carries no Authorization header by design. Answering it
+  // after the bearer check (the old order) returned 401 with no CORS headers, and
+  // the browser turned that into "Failed to send a request to the Edge Function".
+  const pre = preflightFor(req.method, req.headers.get("Origin"), ALLOWED_ORIGINS);
+  if (pre) return pre;
+  const cors = corsFor(req.headers.get("Origin"), ALLOWED_ORIGINS);
+  if (!cors.allowed) return jsonWith({ ok: false, error: "Origin not allowed" }, 403, cors.headers);
+  if (req.method !== "POST") return jsonWith({ ok: false, error: "Method not allowed" }, 405, cors.headers);
+
+  // Every response below leaves through `json`, which stamps the CORS headers on
+  // success AND on 400/404/422/500/502, so no error path can hide behind an opaque
+  // network failure in the browser.
+  const json = (o: unknown, status = 200) => jsonWith(o, status, cors.headers);
+
   // verify_jwt is ON, but double-check a user token is present and use it for the
   // insert so RLS (manage_social) is what actually authorises the write.
   const authHeader = req.headers.get("authorization") ?? "";
   if (!authHeader.startsWith("Bearer ")) {
-    return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+    return json({ ok: false, error: "unauthorized" }, 401);
   }
   let body: { source_type?: string; source_id?: string; event?: string; channel?: string; page_url?: string };
   try { body = await req.json(); } catch { return json({ ok: false, error: "bad json" }, 400); }
@@ -66,7 +88,7 @@ Deno.serve(async (req) => {
   if (source_type === VACANCY_SOURCE_TYPE) {
     return await vacancyCandidate(supabase, {
       sourceId: source_id, event, channel, pageUrl: page_url,
-    });
+    }, json);
   }
 
   // Pull the STRUCTURED fields only — name, derived status, the one date, official link, page URL.
@@ -153,6 +175,7 @@ async function resolveLanding(slug: string, pageUrl: string): Promise<string> {
 async function vacancyCandidate(
   supabase: any,
   args: { sourceId: string; event: string; channel: string; pageUrl: string },
+  json: (o: unknown, status?: number) => Response,
 ): Promise<Response> {
   const { data: vac, error } = await supabase
     .from("sarkari_naukri")
@@ -205,8 +228,4 @@ async function vacancyCandidate(
   );
   if (insErr) return json({ ok: false, error: insErr.message }, 500);
   return json({ ok: true, idempotency_key: key, source_type: VACANCY_SOURCE_TYPE });
-}
-
-function json(o: unknown, status = 200) {
-  return new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
 }

@@ -260,3 +260,88 @@ export function evaluateQueueGate(
   if (!ctx.hasToken || !ctx.hasChat) return "config_missing";
   return "send";
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * HTTP plumbing (owner batch 9, P1) — CORS for the two social functions.
+ *
+ * THE BUG THIS FIXES. Both functions answered with `content-type` only. The CMS is
+ * served from admincms1.indianexaminfo.com and calls functions on
+ * <ref>.supabase.co, so every call is CROSS-ORIGIN and the browser first sends an
+ * OPTIONS preflight. Neither function had an OPTIONS branch, so the preflight fell
+ * through to the bearer-token check and came back `401 {"ok":false,"error":
+ * "unauthorized"}` with no Access-Control-Allow-Origin — the browser then blocked
+ * the real POST and supabase-js raised the message the owner saw:
+ * "Failed to send a request to the Edge Function".
+ *
+ * Proven live on 2026-11-08 (see docs/social-queue-runbook.md §4a):
+ *   OPTIONS social-publish   -> 401, no Access-Control-* (owner's two clicks, 06:10Z)
+ *   OPTIONS ai-fill          -> 200 + Access-Control-Allow-Origin: https://admincms1…
+ *
+ * The rule is the SAME allow-list rule ai-fill and revalidate-frontend already use —
+ * never "*" — and an ABSENT Origin (curl, pg_net, a health probe) is not a browser
+ * and passes. Deno.env is deliberately NOT read here: the caller passes the list, so
+ * every branch below is unit-tested without a Deno runtime.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export interface CorsDecision {
+  /** False only for a foreign BROWSER origin; an absent Origin is allowed. */
+  allowed: boolean;
+  headers: Record<string, string>;
+}
+
+/** The CORS headers for one request, plus whether the browser origin may call at all. */
+export function corsFor(
+  origin: string | null | undefined,
+  allowedOrigins: readonly string[],
+): CorsDecision {
+  const o = origin ?? "";
+  const allowed = o === "" || allowedOrigins.includes(o);
+  return {
+    allowed,
+    headers: {
+      // Echo the exact origin and vary on it: never "*", so a cache cannot hand one
+      // origin's response to another.
+      ...(allowed && o ? { "Access-Control-Allow-Origin": o, Vary: "Origin" } : {}),
+      "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+    },
+  };
+}
+
+/**
+ * The answer to an OPTIONS preflight, or null when the request is not one.
+ *
+ * It MUST be called before any auth check: a preflight carries no Authorization
+ * header by design, so checking auth first is exactly the bug above. A disallowed
+ * origin gets a bare 403 with no Access-Control-* header, which the browser reports
+ * as a blocked call — the same choice revalidate-frontend makes.
+ */
+export function preflightFor(
+  method: string,
+  origin: string | null | undefined,
+  allowedOrigins: readonly string[],
+): Response | null {
+  if ((method ?? "").toUpperCase() !== "OPTIONS") return null;
+  const cors = corsFor(origin, allowedOrigins);
+  if (!cors.allowed) return new Response(null, { status: 403 });
+  return new Response("ok", { status: 200, headers: cors.headers });
+}
+
+/**
+ * A JSON response that ALWAYS carries the CORS headers of the current request.
+ *
+ * This is the single choke point: a 401 from our own code, a 400, a 404, a 422, a
+ * 500 and the success body all leave through here, so none of them can be the one
+ * path that forgets the header and turns a readable error into "Failed to send a
+ * request to the Edge Function".
+ */
+export function jsonWith(
+  body: unknown,
+  status: number,
+  corsHeaders: Record<string, string>,
+): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}

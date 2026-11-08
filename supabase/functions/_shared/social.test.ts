@@ -13,6 +13,7 @@ import {
   queueHeadroom, isTestSlug, landingUrlIsTest, testContentRefusal,
   buildVacancyCaption, groupDigits, VACANCY_SOURCE_TYPE,
   TELEGRAM_CAPTION_MAX,
+  corsFor, preflightFor, jsonWith,
 } from "./social";
 
 const TOKEN = "123456789:AA-supersecret-token-value-abcdefghij";
@@ -288,5 +289,79 @@ describe("the vacancy candidate's key and its test-content refusal", () => {
     const examSlugById = { e1: "zz-test-entrance-exam" };
     expect(testContentRefusal({ examSlugById, sourceId: "v1", landingUrl: "https://x/sarkari-naukri/up-anganwadi-bharti-2026" }))
       .toBe(null);
+  });
+});
+
+describe("CORS (owner batch 9, P1)", () => {
+  const CMS = "https://admincms1.indianexaminfo.com";
+  const ALLOWED = [CMS];
+
+  it("echoes the calling origin and never sends a wildcard", () => {
+    const { allowed, headers } = corsFor(CMS, ALLOWED);
+    expect(allowed).toBe(true);
+    expect(headers["Access-Control-Allow-Origin"]).toBe(CMS);
+    expect(headers["Access-Control-Allow-Origin"]).not.toBe("*");
+    expect(headers.Vary).toBe("Origin");
+  });
+
+  it("lists the non-simple headers the browser preflight asks about", () => {
+    const { headers } = corsFor(CMS, ALLOWED);
+    // If one of these is missing the browser blocks the real POST, which is how the
+    // owner got "Failed to send a request to the Edge Function" on an OPTIONS 401.
+    for (const h of ["authorization", "x-client-info", "apikey", "content-type"]) {
+      expect(headers["Access-Control-Allow-Headers"]).toContain(h);
+    }
+    expect(headers["Access-Control-Allow-Methods"]).toContain("POST");
+    expect(headers["Access-Control-Allow-Methods"]).toContain("OPTIONS");
+  });
+
+  it("refuses a foreign browser origin, and sends it no allow-origin header", () => {
+    const { allowed, headers } = corsFor("https://evil.example", ALLOWED);
+    expect(allowed).toBe(false);
+    expect(headers["Access-Control-Allow-Origin"]).toBeUndefined();
+  });
+
+  it("treats an ABSENT Origin as a non-browser caller (curl, pg_net, a probe)", () => {
+    for (const o of [null, undefined, ""]) {
+      const { allowed, headers } = corsFor(o, ALLOWED);
+      expect(allowed).toBe(true);
+      // …but still never echoes a wildcard in place of the missing origin
+      expect(headers["Access-Control-Allow-Origin"]).toBeUndefined();
+    }
+  });
+
+  it("fails closed when the allow-list is empty", () => {
+    expect(corsFor(CMS, []).allowed).toBe(false);
+  });
+
+  it("answers a preflight with 200 + CORS headers, and only a preflight", async () => {
+    const res = preflightFor("OPTIONS", CMS, ALLOWED) as Response;
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(CMS);
+    expect(res.headers.get("access-control-allow-headers")).toContain("authorization");
+    // Case-insensitive method, like any real HTTP server.
+    expect((preflightFor("options", CMS, ALLOWED) as Response).status).toBe(200);
+    // A POST is not a preflight: the caller must carry on to its own logic.
+    expect(preflightFor("POST", CMS, ALLOWED)).toBeNull();
+    expect(preflightFor("GET", CMS, ALLOWED)).toBeNull();
+  });
+
+  it("refuses a preflight from a foreign origin, with no allow-origin header", () => {
+    const res = preflightFor("OPTIONS", "https://evil.example", ALLOWED) as Response;
+    expect(res.status).toBe(403);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("jsonWith stamps the CORS headers on EVERY status, not just 200", async () => {
+    const cors = corsFor(CMS, ALLOWED).headers;
+    // The 401 from our own bearer check is the exact response that used to arrive
+    // without the header and became an opaque network error in the browser.
+    for (const status of [200, 400, 401, 403, 404, 405, 422, 500, 502]) {
+      const res = jsonWith({ ok: false }, status, cors);
+      expect(res.status).toBe(status);
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBe(CMS);
+      expect(res.headers.get("Content-Type")).toBe("application/json");
+      await expect(res.json()).resolves.toEqual({ ok: false });
+    }
   });
 });
