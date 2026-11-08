@@ -32,6 +32,33 @@ that putting the token in a browser address bar leaves it in browser history, so
 @userinfobot route above instead when it is enough. The agent never performs this step and never
 sees the token.
 
+### 1a. What the CMS now refuses (owner batch 9, P2)
+
+The owner added a **bot handle** and a **positive number** as "channels"; the form accepted both.
+`validateTelegramChatId` now accepts exactly two shapes and refuses everything else with a plain
+reason:
+
+| value | verdict |
+|---|---|
+| `@indianexaminfo` (5–32 letters/digits/underscore) | **accepted** |
+| `-1001234567890` (starts `-100`) | **accepted** |
+| `@IndianExamInfobot`, or any handle ending in `bot` | **refused** — "That is a bot, not a channel." |
+| `8747371610` (a positive number) | **refused** — "Channel ids start with -100; a positive number is a person or a bot." |
+
+Activation now also **re-validates the chat id already stored on the row**, so an old bad row
+cannot be switched on until it is corrected — and nothing is deleted.
+
+**Exactly one active Telegram channel.** Setting a channel active deactivates the other active
+`telegram` rows in the same write, so the publish worker's `is_active = true` lookup is never
+ambiguous. The amber warning in the page stays as a second warning. Since the owner has already set
+two of his three rows inactive, the database currently holds exactly one active row.
+
+**"Check channel"** (super-admin only, one button per row) calls `social-publish` with
+`{action:"check_channel", channel_id}` and answers in plain language: whether Telegram can see the
+chat, whether it is a channel at all, and whether the bot is an administrator that may post. It is
+read-only: it is allowed with the kill switch **on**, it never posts, and it never returns or logs
+the token.
+
 ## 2. Set the secrets (dashboard only)
 Supabase Dashboard → **Project Settings → Edge Functions → Secrets** (or `secrets` tab):
 - `TG_BOT_TOKEN` = the bot token from @BotFather. **You set this; never paste it in chat.**
@@ -50,9 +77,116 @@ staff-write guard trigger, and granted `manage_social` to super-admin. Kill swit
 run defaulted to **true** and still read true:
 `select kill_switch, dry_run, telegram_daily_cap from social_config where id = 1;`
 
-## 4. Deploy the functions — DONE, redeployed 29 Oct as version 2, then 8 Nov 2026 as version 3 (by the agent, with your approval)
+## 4. Deploy the functions — DONE, redeployed 29 Oct as version 2, then 8 Nov 2026 as version 3, then 8 Nov 2026 as version 4 (by the agent, with your approval)
 
-### 4a. Version 3 — 8 Nov 2026, owner batch 8 Phase H3 (the vacancy branch)
+### 4a. Version 4 — 8 Nov 2026, owner batch 9 Phase P (CORS + `check_channel`)
+
+**The bug the owner reported.** At ~11:40 IST (06:10 UTC) on 8 Nov the `/social` page showed a red
+toast **"Failed to send a request to the Edge Function"** when he pressed **Run due queue**. That
+message is supabase-js reporting that it never got a *readable* response — it is not what a normal
+4xx/5xx JSON body produces. The cause was CORS, proven three ways:
+
+1. **Source.** Both functions answered through a helper that set only `content-type`, and neither
+   had an `OPTIONS` branch. A cross-origin browser call therefore sent a preflight that fell
+   through to the bearer-token check.
+2. **Live logs** (Supabase `function_edge_logs`, 05:55–06:20 UTC):
+
+   ```
+   OPTIONS | 401 | …/social-publish    2026-11-08T06:10:03.711  ← the owner's click
+   OPTIONS | 401 | …/social-publish    2026-11-08T06:10:57.230  ← the owner's click
+   ```
+
+   Those were the ONLY edge-log rows in the window — there was no function boot error, so the
+   shared `_shared/social.ts` import was never the problem.
+3. **Preflight probe, before the fix:**
+
+   ```
+   OPTIONS social-publish  → HTTP 401  body {"ok":false,"error":"unauthorized"}  (no Access-Control-*)
+   OPTIONS social-candidate→ HTTP 401  body {"ok":false,"error":"unauthorized"}  (no Access-Control-*)
+   OPTIONS ai-fill         → HTTP 200  Access-Control-Allow-Origin: https://admincms1.indianexaminfo.com
+   ```
+
+   The 401 body was the **function's own JSON**, which proved the Supabase gateway forwards
+   `OPTIONS` to the function rather than blocking it — so the fix had to live inside the function.
+
+**Which button calls which function.** `src/services/social/socialQueueService.ts`:
+
+| CMS action | function |
+|---|---|
+| **Run due queue** (`runDueQueue`) | `social-publish` |
+| publish / verify hooks (`createCandidate`) | `social-candidate` |
+
+The log evidence points at `social-publish`, so the owner pressed **Run due queue**.
+
+**The fix.** One allow-list CORS implementation in `_shared/social.ts` — `corsFor`, `preflightFor`,
+`jsonWith` — the same rule `ai-fill` and `revalidate-frontend` already use: echo the exact origin,
+`Vary: Origin`, never `"*"`; an absent `Origin` (curl, pg_net, a probe) is not a browser and passes;
+a foreign browser origin gets no allow header. `preflightFor` runs **before** any auth check, and a
+handler-scoped `const json = (o, status) => jsonWith(o, status, cors.headers)` is the single exit for
+**every** path — 400, 401, 403, 404, 405, 422, 500, 502 and success — so no branch can forget the
+header and turn a readable error into an opaque network failure.
+
+**P3 — `{action:"check_channel"}`** was added to `social-publish` in the same deploy: a READ-ONLY
+`getChat` → `getMe` → `getChatMember` look at one configured channel, handled **before** the
+`kill_switch` read (a check posts nothing, and the moment an operator needs it is while the switch is
+still on). Super-admin only, re-checked inside the function through `current_user_role()` with the
+caller's own token, so hiding the button in the CMS is not the only enforcement. No posting method
+is reachable from it; the token appears only inside the request URL and every error description goes
+through `redactError`; the one log line carries the chat id, its type and the bot's status — never a
+title, never a message, never the token.
+
+| function | version | `ezbr_sha256` (read-back) |
+|---|---|---|
+| `social-candidate` | **4** (was 3) | `dad3e333de0d70a0b39322a58144cda493ff48ab4cbddd3cccf4ddcc7b023852` |
+| `social-publish` | **4** (was 3) | `84319072b20ef4a0c39e7801493a294f104b8a324ac6069bc847cddf92d6e046` |
+
+`verify_jwt: true`, `import_map: false`, entrypoint `source/index.ts`, sibling `_shared/social.ts`
+bundled — all confirmed on the read-back. Local sources uploaded:
+
+| file | bytes | lines | sha256 |
+|---|---:|---:|---|
+| `supabase/functions/_shared/social.ts` | 16695 | 347 | `f86d863213aa65b77d01f21eb85061ee1a711f958707b723bdbf15d0b8b54b6d` |
+| `supabase/functions/social-candidate/index.ts` | 12302 | 231 | `679fe2a1a7062ca3d3f0de9dd84f02836b7f81f7ba836faa305f440ba3ec2af2` |
+| `supabase/functions/social-publish/index.ts` | 18261 | 316 | `2043085dcaa1f91924ea45aba29b6e1920fed8d14eca48f9a5497098669a0413` |
+
+**The proof, after the deploy** (8 Nov 2026, 06:32 UTC):
+
+```
+OPTIONS social-candidate  → HTTP/1.1 200 OK
+                            Access-Control-Allow-Origin: https://admincms1.indianexaminfo.com
+                            Vary: Accept-Encoding, Origin
+                            access-control-allow-headers: authorization, x-client-info, apikey, content-type
+                            access-control-allow-methods: POST, OPTIONS
+
+POST   social-publish {action:check_channel, channel_id:""}    → 400 {"ok":false,"reason":"Pick a channel to check."}
+                            Access-Control-Allow-Origin: https://admincms1.indianexaminfo.com
+POST   social-publish {action:check_channel, channel_id:…}     → 403 {"ok":false,"reason":"Only a super-admin can check a channel."}
+                            Access-Control-Allow-Origin: https://admincms1.indianexaminfo.com
+POST   social-publish  no Authorization                        → 401 {"code":"UNAUTHORIZED_NO_AUTH_HEADER",…}
+                            Access-Control-Allow-Origin: *      ← the platform's own 401, always was readable
+```
+
+The 400 and the 403 are **our** code answering, and both carry the origin — that is the property that
+was missing. The platform-level 401 comes from `verify_jwt` before the function runs and always carried
+`*`, which is why it was never the cause.
+
+**A note on the two 401 paths.** Our own `401 {"ok":false,"error":"unauthorized"}` is only reachable
+when `SUPABASE_SERVICE_ROLE_KEY` is unset, so it cannot be probed while the secret is present; it is
+covered by the unit tests for `jsonWith` plus the source-level guard in `corsWiring.test.ts`.
+
+**Tests added** — `supabase/functions/_shared/social.test.ts` (8 CORS cases: allowed origin echoed,
+absent origin passes without an allow header, foreign origin refused, `Vary: Origin`, OPTIONS → 200,
+non-OPTIONS → null, foreign preflight → bare 403, `jsonWith` on 200/401/500 all carrying CORS),
+`supabase/functions/corsWiring.test.ts` (14 source-level guards: the preflight precedes the bearer
+check, the `json` alias exists, no module-level `json(`, no bare `new Response(JSON.stringify`, and the
+P3 rules — check before `kill_switch`, no `send*`/`copyMessage` reachable from `checkChannel`,
+`redactError` on every error string, the token only in the URL, the super-admin re-check),
+`src/services/social/socialQueueService.test.ts` and `src/pages/social/SocialQueuePage.mount.test.tsx`.
+
+**The safety levers were not touched:** `kill_switch = true`, `dry_run = true` throughout. Nothing was
+posted, and `check_channel` cannot post by construction.
+
+### 4b. Version 3 — 8 Nov 2026, owner batch 8 Phase H3 (the vacancy branch)
 
 Both functions were redeployed as **version 3** with `verify_jwt = true`, `import_map: false`,
 and the sibling `_shared/social.ts` bundled. The change is the **vacancy branch**: a vacancy
@@ -101,7 +235,7 @@ before sending (the shared `testContentRefusal` helper).
 **The idempotency key** is `channel|source_type|source_id|event` — so a vacancy that is
 verified and published twice produces **one** candidate row, not two.
 
-### 4b. Version 2 — 29 Oct 2026 (the original deploy)
+### 4c. Version 2 — 29 Oct 2026 (the original deploy)
 
 Both deployed with `verify_jwt = true`; each returns **401** to an unauthenticated `POST` and
 `GET` and to a bogus bearer token. Probed from outside on 29 Oct, verbatim:
