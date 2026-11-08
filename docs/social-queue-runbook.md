@@ -397,8 +397,11 @@ result — **never** the bot token or a JWT; the token is not needed to diagnose
   Proven by `supabase/functions/_shared/social.test.ts` ("landing url — the reader page,
   never the project host").
 
-End: SCHEMA APPLIED (20261028171123) · BOTH FUNCTIONS DEPLOYED v3 (verify_jwt true, 8/8 401 probes on 8 Nov; v3 adds the sarkari_naukri vacancy branch; 401 to
-unauthenticated calls, shared module bundled) · CMS FLAG ON and LIVE on the host (build stamp
-`0369f92` confirmed 6 Nov — push to main, the host builds it, confirm the admin build stamp) ·
+End: SCHEMA APPLIED (20261028171123) · BOTH FUNCTIONS DEPLOYED **v4** on 8 Nov 2026 (verify_jwt
+true; v3 added the sarkari_naukri vacancy branch, v4 adds the allow-list CORS on every response
+path and P3 `check_channel` — see §4a for the version/`ezbr_sha256` read-back and the
+after-fix `OPTIONS` probe, which now returns the same headers as `ai-fill`) · CMS FLAG ON and
+LIVE on the host (build stamp `1657a20` confirmed 8 Nov — push to main, the host builds it,
+confirm the admin build stamp) ·
 `kill_switch` and `dry_run` are ON, so nothing can post until you change those deliberately.
 Channel management exists in the UI (super-admin only) — §6 step 3.
